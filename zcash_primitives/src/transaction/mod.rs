@@ -298,7 +298,7 @@ impl Authorization for Unauthorized {
 }
 
 /// A Zcash transaction.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Transaction {
     txid: TxId,
     data: TransactionData<Authorized>,
