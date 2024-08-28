@@ -3,6 +3,7 @@ use core::time;
 use incrementalmerkletree::{Address, Marking, Position, Retention};
 use sapling::NullifierDerivingKey;
 use secrecy::{ExposeSecret, SecretVec};
+use serde::{Deserialize, Serialize};
 use shardtree::{error::ShardTreeError, store::memory::MemoryShardStore, ShardTree};
 use std::{
     cell::RefCell,
@@ -65,16 +66,21 @@ use {
 use crate::error::Error;
 
 /// Maps a block height and transaction index to a transaction ID.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TxLocatorMap(HashMap<(BlockHeight, u32), TxId>);
 
 /// Maps a block height and transaction (i.e. transaction locator) index to a nullifier.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NullifierMap(BTreeMap<Nullifier, (BlockHeight, u32)>);
 
 /// Keeps track of notes that are spent in which transaction
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReceievdNoteSpends(HashMap<NoteId, TxId>);
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReceivedNoteTable(pub Vec<ReceivedNote>);
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReceivedNote {
     // Uniquely identifies this note
     pub note_id: NoteId,
@@ -92,6 +98,7 @@ pub struct ReceivedNote {
 }
 
 /// A table of received notes. Corresponds to sapling_received_notes and orchard_received_notes tables.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionEntry {
     // created: String,
     /// Combines block height and mined_height into a txn status
@@ -137,7 +144,10 @@ impl TransactionEntry {
         self.raw.as_slice()
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionTable(HashMap<TxId, TransactionEntry>);
+
 impl TransactionTable {
     pub fn new() -> Self {
         Self(HashMap::new())
@@ -393,7 +403,7 @@ impl ReceievdNoteSpends {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Nullifier {
     #[cfg(feature = "orchard")]
     Orchard(orchard::note::Nullifier),

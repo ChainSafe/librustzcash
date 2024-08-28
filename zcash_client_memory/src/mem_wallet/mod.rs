@@ -4,6 +4,7 @@ use incrementalmerkletree::{Address, Marking, Retention};
 use sapling::NullifierDerivingKey;
 use scanning::ScanQueue;
 use secrecy::{ExposeSecret, SecretVec};
+use serde::{Deserialize, Serialize};
 use shardtree::{error::ShardTreeError, store::memory::MemoryShardStore, ShardTree};
 use std::{
     cmp::Ordering,
@@ -63,6 +64,7 @@ mod wallet_read;
 mod wallet_write;
 use tables::*;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct MemoryWalletBlock {
     height: BlockHeight,
     hash: BlockHash,
@@ -78,6 +80,7 @@ struct MemoryWalletBlock {
     orchard_action_count: Option<u32>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryWalletDb {
     network: Network,
     accounts: Vec<Account>,
@@ -261,7 +264,7 @@ impl MemoryWalletDb {
 }
 
 /// The viewing key that an [`Account`] has available to it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum ViewingKey {
     /// A full viewing key.
     ///
@@ -277,7 +280,7 @@ pub(crate) enum ViewingKey {
 }
 
 /// The ID type for accounts.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct AccountId(u32);
 
 impl Deref for AccountId {
@@ -289,7 +292,7 @@ impl Deref for AccountId {
 }
 
 /// An account stored in a `zcash_client_sqlite` database.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     account_id: AccountId,
     kind: AccountSource,

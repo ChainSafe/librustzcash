@@ -3,6 +3,7 @@ use core::time;
 use incrementalmerkletree::{Address, Marking, Position, Retention};
 use sapling::NullifierDerivingKey;
 use secrecy::{ExposeSecret, SecretVec};
+use serde::{Deserialize, Serialize};
 use shardtree::{error::ShardTreeError, store::memory::MemoryShardStore, ShardTree};
 use std::{
     cell::RefCell,
@@ -69,6 +70,7 @@ use crate::error::Error;
 
 /// A queue of scanning ranges. Contains the start and end heights of each range, along with the
 /// priority of scanning that range.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanQueue(Vec<(BlockHeight, BlockHeight, ScanPriority)>);
 
 impl ScanQueue {
