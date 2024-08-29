@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use incrementalmerkletree::Address;
 use scanning::ScanQueue;
 
@@ -322,7 +323,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         // scan backward and find the first checkpoint that matches a blockheight prior to max_checkpoint_height
         for height in max_checkpoint_height..0 {
             let height = BlockHeight::from_u32(height);
-            if let Some(_) = self.sapling_tree.store().get_checkpoint(&height)? {
+            if self.sapling_tree.store().get_checkpoint(&height)?.is_some() {
                 return Ok(Some(height));
             }
         }
@@ -340,7 +341,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         // scan backward and find the first checkpoint that matches a blockheight prior to max_checkpoint_height
         for height in max_checkpoint_height..0 {
             let height = BlockHeight::from_u32(height);
-            if let Some(_) = self.sapling_tree.store().get_checkpoint(&height)? {
+            if self.sapling_tree.store().get_checkpoint(&height)?.is_some() {
                 return Ok(Some(height));
             }
         }
