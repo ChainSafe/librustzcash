@@ -25,14 +25,11 @@ use zcash_client_backend::{
 };
 
 use zcash_client_backend::data_api::{
-    Account as _, AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, WalletRead,
-    WalletWrite,
+    AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, WalletRead, WalletWrite,
 };
 
 use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
-use crate::{
-    Account, AccountId, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote, ViewingKey,
-};
+use crate::{Accounts, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote, ViewingKey};
 use maybe_rayon::prelude::*;
 
 #[cfg(feature = "orchard")]
@@ -59,8 +56,8 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         let usk = UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), account_index)?;
         let ufvk = usk.to_unified_full_viewing_key();
 
-        let account = Account::new(
-            AccountId(self.accounts.len() as u32),
+        let (id, _account) = Accounts::new_account(
+            &mut self.accounts,
             AccountSource::Derived {
                 seed_fingerprint,
                 account_index,
@@ -69,9 +66,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             birthday.clone(),
             AccountPurpose::Spending,
         )?;
-
-        let id = account.id();
-        self.accounts.push(account);
 
         Ok((id, usk))
     }
@@ -82,7 +76,8 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         request: UnifiedAddressRequest,
     ) -> Result<Option<UnifiedAddress>, Self::Error> {
         tracing::debug!("get_next_available_address");
-        self.get_account_mut(account)
+        self.accounts
+            .get_mut(account)
             .map(|account| account.next_available_address(request))
             .transpose()
             .map(|a| a.flatten())
@@ -467,8 +462,8 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             .unwrap();
         let ufvk = usk.to_unified_full_viewing_key();
 
-        let account = Account::new(
-            AccountId(self.accounts.len() as u32),
+        let (_id, account) = Accounts::new_account(
+            &mut self.accounts,
             AccountSource::Derived {
                 seed_fingerprint,
                 account_index,
@@ -478,7 +473,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             AccountPurpose::Spending,
         )?;
         // TODO: Do we need to check if duplicate?
-        self.accounts.push(account.clone());
         Ok((account, usk))
     }
 
@@ -489,14 +483,13 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         purpose: AccountPurpose,
     ) -> Result<Self::Account, Self::Error> {
         tracing::debug!("import_account_ufvk");
-        let account = Account::new(
-            AccountId(self.accounts.len() as u32),
+        let (_id, account) = Accounts::new_account(
+            &mut self.accounts,
             AccountSource::Imported { purpose },
             ViewingKey::Full(Box::new(unified_key.to_owned())),
             birthday.clone(),
             purpose,
         )?;
-        self.accounts.push(account.clone());
         Ok(account)
     }
 
