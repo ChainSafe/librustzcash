@@ -206,6 +206,10 @@ impl Account {
             None => Ok(None),
         }
     }
+
+    pub(crate) fn account_id(&self) -> AccountId {
+        self.account_id
+    }
 }
 
 impl zcash_client_backend::data_api::Account<AccountId> for Account {
