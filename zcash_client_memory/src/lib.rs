@@ -1,12 +1,7 @@
 use scanning::ScanQueue;
 
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
-use std::{
-    collections::{hash_map::Entry, BTreeMap},
-    hash::Hash,
-    ops::Deref,
-};
-use subtle::ConditionallySelectable;
+use std::collections::{hash_map::Entry, BTreeMap};
 use zip32::fingerprint::SeedFingerprint;
 
 use zcash_primitives::{
@@ -33,30 +28,10 @@ pub mod wallet_read;
 pub mod wallet_write;
 pub(crate) use types::*;
 
-/// The ID type for accounts.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
-pub struct AccountId(u32);
-
-impl Deref for AccountId {
-    type Target = u32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl ConditionallySelectable for AccountId {
-    fn conditional_select(a: &Self, b: &Self, choice: subtle::Choice) -> Self {
-        AccountId(ConditionallySelectable::conditional_select(
-            &a.0, &b.0, choice,
-        ))
-    }
-}
-
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 pub struct MemoryWalletDb {
     network: Network,
-    accounts: Vec<Account>,
+    accounts: Accounts,
     blocks: BTreeMap<BlockHeight, MemoryWalletBlock>,
 
     tx_table: TransactionTable,
@@ -86,7 +61,7 @@ impl MemoryWalletDb {
     pub fn new(network: Network, max_checkpoints: usize) -> Self {
         Self {
             network,
-            accounts: Vec::new(),
+            accounts: Accounts::new(),
             blocks: BTreeMap::new(),
             sapling_tree: ShardTree::new(MemoryShardStore::empty(), max_checkpoints),
             #[cfg(feature = "orchard")]
@@ -116,10 +91,6 @@ impl MemoryWalletDb {
         Ok(())
     }
 
-    pub(crate) fn get_account_mut(&mut self, account_id: AccountId) -> Option<&mut Account> {
-        self.accounts.get_mut(*account_id as usize)
-    }
-
     #[cfg(feature = "orchard")]
     pub(crate) fn mark_orchard_note_spent(
         &mut self,
@@ -145,7 +116,7 @@ impl MemoryWalletDb {
         Ok(self
             .accounts
             .iter()
-            .filter_map(|a| match a.source() {
+            .filter_map(|(_, a)| match a.source() {
                 AccountSource::Derived {
                     seed_fingerprint: sf,
                     account_index,

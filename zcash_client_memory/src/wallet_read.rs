@@ -44,14 +44,14 @@ impl WalletRead for MemoryWalletDb {
     type Account = Account;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        Ok(self.accounts.iter().map(|a| a.id()).collect())
+        Ok(self.accounts.account_ids().copied().collect())
     }
 
     fn get_account(
         &self,
         account_id: Self::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        Ok(self.accounts.get(*account_id as usize).cloned())
+        Ok(self.accounts.get(account_id).cloned())
     }
 
     fn get_derived_account(
@@ -59,19 +59,22 @@ impl WalletRead for MemoryWalletDb {
         seed: &SeedFingerprint,
         account_id: zip32::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        Ok(self.accounts.iter().find_map(|acct| match acct.kind() {
-            AccountSource::Derived {
-                seed_fingerprint,
-                account_index,
-            } => {
-                if seed_fingerprint == seed && account_index == &account_id {
-                    Some(acct.clone())
-                } else {
-                    None
+        Ok(self
+            .accounts
+            .iter()
+            .find_map(|(_id, acct)| match acct.kind() {
+                AccountSource::Derived {
+                    seed_fingerprint,
+                    account_index,
+                } => {
+                    if seed_fingerprint == seed && account_index == &account_id {
+                        Some(acct.clone())
+                    } else {
+                        None
+                    }
                 }
-            }
-            AccountSource::Imported { purpose: _ } => None,
-        }))
+                AccountSource::Imported { purpose: _ } => None,
+            }))
     }
 
     fn validate_seed(
@@ -156,7 +159,7 @@ impl WalletRead for MemoryWalletDb {
     ) -> Result<Option<Self::Account>, Self::Error> {
         let ufvk_req =
             UnifiedAddressRequest::all().expect("At least one protocol should be enabled");
-        Ok(self.accounts.iter().find_map(|acct| {
+        Ok(self.accounts.iter().find_map(|(_id, acct)| {
             if acct.ufvk()?.default_address(ufvk_req).unwrap()
                 == ufvk.default_address(ufvk_req).unwrap()
             {
@@ -179,7 +182,7 @@ impl WalletRead for MemoryWalletDb {
 
     fn get_account_birthday(&self, account: Self::AccountId) -> Result<BlockHeight, Self::Error> {
         self.accounts
-            .get(*account as usize)
+            .get(account)
             .map(|account| account.birthday().height())
             .ok_or(Error::AccountUnknown(account))
     }
@@ -188,7 +191,7 @@ impl WalletRead for MemoryWalletDb {
         Ok(self
             .accounts
             .iter()
-            .map(|account| account.birthday().height())
+            .map(|(_id, account)| account.birthday().height())
             .min())
     }
 
@@ -330,7 +333,7 @@ impl WalletRead for MemoryWalletDb {
         Ok(self
             .accounts
             .iter()
-            .filter_map(|account| account.ufvk().map(|ufvk| (account.id(), ufvk.clone())))
+            .filter_map(|(_id, account)| account.ufvk().map(|ufvk| (account.id(), ufvk.clone())))
             .collect())
     }
 

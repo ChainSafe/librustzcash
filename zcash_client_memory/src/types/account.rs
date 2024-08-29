@@ -1,6 +1,8 @@
-use crate::AccountId;
-
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    ops::{Deref, DerefMut},
+};
+use subtle::ConditionallySelectable;
 use zcash_keys::keys::{AddressGenerationError, UnifiedIncomingViewingKey};
 use zip32::DiversifierIndex;
 
@@ -15,8 +17,115 @@ use zcash_client_backend::data_api::AccountBirthday;
 
 use crate::error::Error;
 
-/// An account stored in a `zcash_client_sqlite` database.
+/// Internal representation of ID type for accounts. Will be unique for each account.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
+pub struct AccountId(u32);
+
+impl Deref for AccountId {
+    type Target = u32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ConditionallySelectable for AccountId {
+    fn conditional_select(a: &Self, b: &Self, choice: subtle::Choice) -> Self {
+        AccountId(ConditionallySelectable::conditional_select(
+            &a.0, &b.0, choice,
+        ))
+    }
+}
+
+/// This is the top-level struct that handles accounts. We could theoretically have this just be a Vec
+/// but we want to have control over the internal AccountId values. The account ids are unique.
+pub(crate) struct Accounts {
+    nonce: u32,
+    accounts: BTreeMap<AccountId, Account>,
+}
+
+impl Accounts {
+    pub(crate) fn new() -> Self {
+        Self {
+            nonce: 0,
+            accounts: BTreeMap::new(),
+        }
+    }
+
+    /// Creates a new account. The account id will be determined by the internal nonce.
+    pub(crate) fn new_account(
+        &mut self,
+        kind: AccountSource,
+        viewing_key: ViewingKey,
+        birthday: AccountBirthday,
+        purpose: AccountPurpose,
+    ) -> Result<(AccountId, Account), Error> {
+        let account_id = AccountId(self.nonce);
+        let mut acc = Account {
+            account_id,
+            kind,
+            viewing_key,
+            birthday,
+            _purpose: purpose,
+            addresses: BTreeMap::new(),
+            _notes: HashSet::new(),
+        };
+        let ua_request = acc
+            .viewing_key
+            .uivk()
+            .to_address_request()
+            .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
+            .ok_or_else(|| {
+                Error::AddressGeneration(AddressGenerationError::ShieldedReceiverRequired)
+            })?;
+
+        let (addr, diversifier_index) = acc.default_address(ua_request)?;
+        acc.addresses.insert(diversifier_index, addr);
+
+        self.accounts.insert(account_id, acc.clone());
+        self.nonce += 1;
+        Ok((account_id, acc))
+    }
+
+    pub(crate) fn get(&self, account_id: AccountId) -> Option<&Account> {
+        self.accounts.get(&account_id)
+    }
+
+    pub(crate) fn get_mut(&mut self, account_id: AccountId) -> Option<&mut Account> {
+        self.accounts.get_mut(&account_id)
+    }
+    /// Gets the account ids of all accounts
+    pub(crate) fn account_ids(&self) -> impl Iterator<Item = &AccountId> {
+        self.accounts.keys()
+    }
+}
+
+impl IntoIterator for Accounts {
+    type Item = (AccountId, Account);
+    type IntoIter = std::collections::btree_map::IntoIter<AccountId, Account>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.accounts.into_iter()
+    }
+}
+
+impl Deref for Accounts {
+    type Target = BTreeMap<AccountId, Account>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.accounts
+    }
+}
+
+impl DerefMut for Accounts {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.accounts
+    }
+}
+
+/// An internal representation account stored in the database.
 #[derive(Debug, Clone)]
+
 pub struct Account {
     account_id: AccountId,
     kind: AccountSource,
@@ -44,35 +153,6 @@ pub(crate) enum ViewingKey {
 }
 
 impl Account {
-    pub(crate) fn new(
-        account_id: AccountId,
-        kind: AccountSource,
-        viewing_key: ViewingKey,
-        birthday: AccountBirthday,
-        purpose: AccountPurpose,
-    ) -> Result<Self, Error> {
-        let mut acc = Self {
-            account_id,
-            kind,
-            viewing_key,
-            birthday,
-            _purpose: purpose,
-            addresses: BTreeMap::new(),
-            _notes: HashSet::new(),
-        };
-        let ua_request = acc
-            .viewing_key
-            .uivk()
-            .to_address_request()
-            .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
-            .ok_or_else(|| {
-                Error::AddressGeneration(AddressGenerationError::ShieldedReceiverRequired)
-            })?;
-
-        let (addr, diversifier_index) = acc.default_address(ua_request)?;
-        acc.addresses.insert(diversifier_index, addr);
-        Ok(acc)
-    }
     /// Returns the default Unified Address for the account,
     /// along with the diversifier index that generated it.
     ///
