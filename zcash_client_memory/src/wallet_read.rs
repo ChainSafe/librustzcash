@@ -1,47 +1,38 @@
-use incrementalmerkletree::{Address, Marking, Retention};
 use nonempty::NonEmpty;
-use sapling::NullifierDerivingKey;
+
 use secrecy::{ExposeSecret, SecretVec};
-use shardtree::{error::ShardTreeError, store::memory::MemoryShardStore, ShardTree};
+use shardtree::store::ShardStore as _;
+
 use std::{
-    clone,
-    cmp::Ordering,
-    collections::{BTreeMap, HashMap, HashSet},
-    convert::Infallible,
-    hash::Hash,
+    collections::{hash_map::Entry, HashMap},
     num::NonZeroU32,
 };
-use zcash_keys::keys::{AddressGenerationError, DerivationError, UnifiedIncomingViewingKey};
-use zip32::{fingerprint::SeedFingerprint, DiversifierIndex, Scope};
+use zcash_keys::keys::UnifiedIncomingViewingKey;
+use zip32::fingerprint::SeedFingerprint;
 
-use std::ops::Add;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        chain::ChainState, scanning::ScanPriority, Account as _, AccountPurpose, AccountSource,
-        SeedRelevance, TransactionDataRequest, TransactionStatus,
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, SeedRelevance,
+        TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
-    wallet::{NoteId, WalletSpend, WalletTransparentOutput, WalletTx},
+    wallet::NoteId,
 };
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, Network},
+    consensus::BlockHeight,
     transaction::{Transaction, TransactionData, TxId},
 };
 use zcash_protocol::{
     consensus::{self, BranchId},
-    memo::{self, Memo, MemoBytes},
-    value::Zatoshis,
-    ShieldedProtocol::{Orchard, Sapling},
+    memo::Memo,
+    PoolType,
 };
 
 use zcash_client_backend::data_api::{
-    chain::CommitmentTreeRoot, scanning::ScanRange, AccountBirthday, BlockMetadata,
-    DecryptedTransaction, NullifierQuery, ScannedBlock, SentTransaction, WalletCommitmentTrees,
-    WalletRead, WalletSummary, WalletWrite, SAPLING_SHARD_HEIGHT,
+    scanning::ScanRange, BlockMetadata, NullifierQuery, WalletRead, WalletSummary,
 };
-use zcash_primitives::transaction::components::OutPoint;
 
 #[cfg(feature = "transparent-inputs")]
 use {
@@ -50,22 +41,24 @@ use {
 };
 
 use super::{Account, AccountId, MemoryWalletDb};
-use crate::{error::Error, mem_wallet::MemoryWalletBlock};
+use crate::{error::Error, MemoryWalletBlock};
 
-impl WalletRead for MemoryWalletDb {
+impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     type Error = Error;
     type AccountId = AccountId;
     type Account = Account;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        Ok(self.accounts.iter().map(|a| a.id()).collect())
+        tracing::debug!("get_account_ids");
+        Ok(self.accounts.account_ids().copied().collect())
     }
 
     fn get_account(
         &self,
         account_id: Self::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        Ok(self.accounts.get(*account_id as usize).map(|a| a.clone()))
+        tracing::debug!("get_account: {:?}", account_id);
+        Ok(self.accounts.get(account_id).cloned())
     }
 
     fn get_derived_account(
@@ -73,19 +66,23 @@ impl WalletRead for MemoryWalletDb {
         seed: &SeedFingerprint,
         account_id: zip32::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        Ok(self.accounts.iter().find_map(|acct| match acct.kind() {
-            AccountSource::Derived {
-                seed_fingerprint,
-                account_index,
-            } => {
-                if seed_fingerprint == seed && account_index == &account_id {
-                    Some(acct.clone())
-                } else {
-                    None
+        tracing::debug!("get_derived_account: {:?}, {:?}", seed, account_id);
+        Ok(self
+            .accounts
+            .iter()
+            .find_map(|(_id, acct)| match acct.kind() {
+                AccountSource::Derived {
+                    seed_fingerprint,
+                    account_index,
+                } => {
+                    if seed_fingerprint == seed && account_index == &account_id {
+                        Some(acct.clone())
+                    } else {
+                        None
+                    }
                 }
-            }
-            AccountSource::Imported { purpose } => None,
-        }))
+                AccountSource::Imported { purpose: _ } => None,
+            }))
     }
 
     fn validate_seed(
@@ -93,6 +90,7 @@ impl WalletRead for MemoryWalletDb {
         account_id: Self::AccountId,
         seed: &SecretVec<u8>,
     ) -> Result<bool, Self::Error> {
+        tracing::debug!("validate_seed: {:?}", account_id);
         if let Some(account) = self.get_account(account_id)? {
             if let AccountSource::Derived {
                 seed_fingerprint,
@@ -100,7 +98,7 @@ impl WalletRead for MemoryWalletDb {
             } = account.source()
             {
                 seed_matches_derived_account(
-                    &self.network,
+                    &self.params,
                     seed,
                     &seed_fingerprint,
                     account_index,
@@ -119,6 +117,7 @@ impl WalletRead for MemoryWalletDb {
         &self,
         seed: &SecretVec<u8>,
     ) -> Result<SeedRelevance<Self::AccountId>, Self::Error> {
+        tracing::debug!("seed_relevance_to_derived_accounts");
         let mut has_accounts = false;
         let mut has_derived = false;
         let mut relevant_account_ids = vec![];
@@ -139,7 +138,7 @@ impl WalletRead for MemoryWalletDb {
                 has_derived = true;
 
                 if seed_matches_derived_account(
-                    &self.network,
+                    &self.params,
                     seed,
                     &seed_fingerprint,
                     account_index,
@@ -168,9 +167,10 @@ impl WalletRead for MemoryWalletDb {
         &self,
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
+        tracing::debug!("get_account_for_ufvk");
         let ufvk_req =
             UnifiedAddressRequest::all().expect("At least one protocol should be enabled");
-        Ok(self.accounts.iter().find_map(|acct| {
+        Ok(self.accounts.iter().find_map(|(_id, acct)| {
             if acct.ufvk()?.default_address(ufvk_req).unwrap()
                 == ufvk.default_address(ufvk_req).unwrap()
             {
@@ -185,6 +185,7 @@ impl WalletRead for MemoryWalletDb {
         &self,
         account: Self::AccountId,
     ) -> Result<Option<UnifiedAddress>, Self::Error> {
+        tracing::debug!("get_current_address: {:?}", account);
         Ok(self
             .get_account(account)?
             .and_then(|account| Account::current_address(&account))
@@ -192,38 +193,122 @@ impl WalletRead for MemoryWalletDb {
     }
 
     fn get_account_birthday(&self, account: Self::AccountId) -> Result<BlockHeight, Self::Error> {
+        tracing::debug!("get_account_birthday: {:?}", account);
         self.accounts
-            .get(*account as usize)
+            .get(account)
             .map(|account| account.birthday().height())
             .ok_or(Error::AccountUnknown(account))
     }
 
     fn get_wallet_birthday(&self) -> Result<Option<BlockHeight>, Self::Error> {
+        tracing::debug!("get_wallet_birthday");
         Ok(self
             .accounts
             .iter()
-            .map(|account| account.birthday().height())
+            .map(|(_id, account)| account.birthday().height())
             .min())
     }
 
     fn get_wallet_summary(
         &self,
-        _min_confirmations: u32,
+        min_confirmations: u32,
     ) -> Result<Option<WalletSummary<Self::AccountId>>, Self::Error> {
-        todo!()
+        tracing::debug!("get_wallet_summary");
+        let chain_tip_height = match self.chain_height()? {
+            Some(height) => height,
+            None => return Ok(None),
+        };
+        let birthday_height = self
+            .get_wallet_birthday()?
+            .expect("If a scan range exists, we know the wallet birthday.");
+
+        let fully_scanned_height = self
+            .block_fully_scanned()?
+            .map_or(birthday_height - 1, |m| m.block_height());
+
+        let mut account_balances = self
+            .accounts
+            .iter()
+            .map(|(_id, account)| (account.account_id(), AccountBalance::ZERO))
+            .collect::<HashMap<AccountId, AccountBalance>>();
+
+        for note in self.get_received_notes().iter() {
+            // don't count spent notes
+            if self.note_is_spent(note, min_confirmations)? {
+                continue;
+            }
+            // TODO: We need to receiving transaction to be mined
+            // TODO: We require a witness in the shard tree to spend the note
+
+            match note.pool() {
+                PoolType::SAPLING => {
+                    let account_id = note.account_id();
+                    match account_balances.entry(account_id) {
+                        Entry::Occupied(mut entry) => {
+                            entry.get_mut().with_sapling_balance_mut(|b| {
+                                b.add_spendable_value(note.note.value())
+                            })?;
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(AccountBalance::ZERO);
+                        }
+                    };
+                }
+                PoolType::ORCHARD => {
+                    let account_id = note.account_id();
+                    match account_balances.entry(account_id) {
+                        Entry::Occupied(mut entry) => {
+                            entry.get_mut().with_orchard_balance_mut(|b| {
+                                b.add_spendable_value(note.note.value())
+                            })?;
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(AccountBalance::ZERO);
+                        }
+                    };
+                }
+                _ => unimplemented!("Unknown pool type"),
+            }
+        }
+
+        let next_sapling_subtree_index = self
+            .sapling_tree
+            .store()
+            .last_shard()?
+            .map(|s| s.root_addr().index())
+            .unwrap_or(0);
+
+        #[cfg(feature = "orchard")]
+        let next_orchard_subtree_index = self
+            .orchard_tree
+            .store()
+            .last_shard()?
+            .map(|s| s.root_addr().index())
+            .unwrap_or(0);
+
+        let summary = WalletSummary::new(
+            account_balances,
+            chain_tip_height,
+            fully_scanned_height,
+            None, // TODO: Deal with scan progress (I dont believe thats actually a hard requirement)
+            next_sapling_subtree_index,
+            #[cfg(feature = "orchard")]
+            next_orchard_subtree_index,
+        );
+        Ok(Some(summary))
     }
 
     fn chain_height(&self) -> Result<Option<BlockHeight>, Self::Error> {
+        tracing::debug!("chain_height");
         Ok(self
             .scan_queue
             .iter()
             .max_by(|(_, end_a, _), (_, end_b, _)| end_a.cmp(end_b))
-            // Scan ranges are end-exclusive, so we subtract 1 from `max_height` to obtain the
-            // height of the last known chain tip;
-            .and_then(|(_, end, _)| Some(end.saturating_sub(1))))
+            .map(|(_, end, _)| end.saturating_sub(1)))
     }
 
     fn get_block_hash(&self, block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
+        tracing::debug!("get_block_hash: {:?}", block_height);
         Ok(self.blocks.iter().find_map(|b| {
             if b.0 == &block_height {
                 Some(b.1.hash)
@@ -234,6 +319,7 @@ impl WalletRead for MemoryWalletDb {
     }
 
     fn block_metadata(&self, height: BlockHeight) -> Result<Option<BlockMetadata>, Self::Error> {
+        tracing::debug!("block_metadata: {:?}", height);
         Ok(self.blocks.get(&height).map(|block| {
             let MemoryWalletBlock {
                 height,
@@ -255,6 +341,7 @@ impl WalletRead for MemoryWalletDb {
     }
 
     fn block_fully_scanned(&self) -> Result<Option<BlockMetadata>, Self::Error> {
+        tracing::debug!("block_fully_scanned");
         if let Some(birthday_height) = self.get_wallet_birthday()? {
             // We assume that the only way we get a contiguous range of block heights in the `blocks` table
             // starting with the birthday block, is if all scanning operations have been performed on those
@@ -278,22 +365,20 @@ impl WalletRead for MemoryWalletDb {
                 .filter(|(_, _, p)| p == &ScanPriority::Scanned)
                 .collect();
             scanned_ranges.sort_by(|(start_a, _, _), (start_b, _, _)| start_a.cmp(start_b));
-            if let Some(fully_scanned_height) =
-                scanned_ranges
-                    .first()
-                    .and_then(|(block_range_start, block_range_end, priority)| {
-                        // If the start of the earliest scanned range is greater than
-                        // the birthday height, then there is an unscanned range between
-                        // the wallet birthday and that range, so there is no fully
-                        // scanned height.
-                        if *block_range_start <= birthday_height {
-                            // Scan ranges are end-exclusive.
-                            Some(*block_range_end - 1)
-                        } else {
-                            None
-                        }
-                    })
-            {
+            if let Some(fully_scanned_height) = scanned_ranges.first().and_then(
+                |(block_range_start, block_range_end, _priority)| {
+                    // If the start of the earliest scanned range is greater than
+                    // the birthday height, then there is an unscanned range between
+                    // the wallet birthday and that range, so there is no fully
+                    // scanned height.
+                    if *block_range_start <= birthday_height {
+                        // Scan ranges are end-exclusive.
+                        Some(*block_range_end - 1)
+                    } else {
+                        None
+                    }
+                },
+            ) {
                 self.block_metadata(fully_scanned_height)
             } else {
                 Ok(None)
@@ -304,6 +389,7 @@ impl WalletRead for MemoryWalletDb {
     }
 
     fn get_max_height_hash(&self) -> Result<Option<(BlockHeight, BlockHash)>, Self::Error> {
+        tracing::debug!("get_max_height_hash");
         Ok(self
             .blocks
             .last_key_value()
@@ -311,6 +397,7 @@ impl WalletRead for MemoryWalletDb {
     }
 
     fn block_max_scanned(&self) -> Result<Option<BlockMetadata>, Self::Error> {
+        tracing::debug!("block_max_scanned");
         Ok(self
             .blocks
             .last_key_value()
@@ -320,21 +407,59 @@ impl WalletRead for MemoryWalletDb {
     }
 
     fn suggest_scan_ranges(&self) -> Result<Vec<ScanRange>, Self::Error> {
+        tracing::debug!("suggest_scan_ranges");
         Ok(self.scan_queue.suggest_scan_ranges(ScanPriority::Historic))
     }
 
     fn get_target_and_anchor_heights(
         &self,
-        _min_confirmations: NonZeroU32,
+        min_confirmations: NonZeroU32,
     ) -> Result<Option<(BlockHeight, BlockHeight)>, Self::Error> {
-        todo!()
+        if let Some(chain_tip_height) = self.chain_height()? {
+            let sapling_anchor_height =
+                self.get_sapling_max_checkpointed_height(chain_tip_height, min_confirmations)?;
+
+            #[cfg(feature = "orchard")]
+            let orchard_anchor_height =
+                self.get_orchard_max_checkpointed_height(chain_tip_height, min_confirmations)?;
+            #[cfg(not(feature = "orchard"))]
+            let orchard_anchor_height: Option<BlockHeight> = None;
+
+            let anchor_height = sapling_anchor_height
+                .zip(orchard_anchor_height)
+                .map(|(s, o)| std::cmp::min(s, o))
+                .or(sapling_anchor_height)
+                .or(orchard_anchor_height);
+
+            Ok(anchor_height.map(|h| (chain_tip_height + 1, h)))
+        } else {
+            Ok(None)
+        }
     }
 
+    /// Gets the height to which the database must be truncated if any truncation that would remove a
+    /// number of blocks greater than the pruning height is attempted
     fn get_min_unspent_height(&self) -> Result<Option<BlockHeight>, Self::Error> {
-        todo!()
+        Ok(self
+            .received_notes
+            .iter()
+            .filter(|note| !self.note_is_spent(note, 0).unwrap())
+            .map(|note| note.txid)
+            .filter_map(|txid| {
+                self.tx_table.tx_status(&txid).map(|status| {
+                    if let TransactionStatus::Mined(height) = status {
+                        Some(height)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .flatten()
+            .min())
     }
 
     fn get_tx_height(&self, txid: TxId) -> Result<Option<BlockHeight>, Self::Error> {
+        tracing::debug!("get_tx_height: {:?}", txid);
         if let Some(TransactionStatus::Mined(height)) = self.tx_table.tx_status(&txid) {
             Ok(Some(height))
         } else {
@@ -345,27 +470,29 @@ impl WalletRead for MemoryWalletDb {
     fn get_unified_full_viewing_keys(
         &self,
     ) -> Result<HashMap<Self::AccountId, UnifiedFullViewingKey>, Self::Error> {
+        tracing::debug!("get_unified_full_viewing_keys");
         Ok(self
             .accounts
             .iter()
-            .filter_map(|account| match account.ufvk() {
-                Some(ufvk) => Some((account.id(), ufvk.clone())),
-                None => None,
-            })
+            .filter_map(|(_id, account)| account.ufvk().map(|ufvk| (account.id(), ufvk.clone())))
             .collect())
     }
 
     fn get_memo(&self, id_note: NoteId) -> Result<Option<Memo>, Self::Error> {
-        todo!()
+        tracing::debug!("get_memo: {:?}", id_note);
+        Ok(self
+            .get_received_note(id_note)
+            .map(|note| note.memo.clone()))
     }
 
     fn get_transaction(&self, txid: TxId) -> Result<Option<Transaction>, Self::Error> {
-        let raw = self.tx_table.get_tx_raw(&txid);
-        let status = self.tx_table.tx_status(&txid);
-        let expiry_height = self.tx_table.expiry_height(&txid);
+        tracing::debug!("get_transaction: {:?}", txid);
+        let _raw = self.tx_table.get_tx_raw(&txid);
+        let _status = self.tx_table.tx_status(&txid);
+        let _expiry_height = self.tx_table.expiry_height(&txid);
         self.tx_table
             .get(&txid)
-            .and_then(|tx| Some((tx.status(), tx.expiry_height(), tx.raw())))
+            .map(|tx| (tx.status(), tx.expiry_height(), tx.raw()))
             .map(|(status, expiry_height, raw)| {
                 // We need to provide a consensus branch ID so that pre-v5 `Transaction` structs
                 // (which don't commit directly to one) can store it internally.
@@ -377,52 +504,50 @@ impl WalletRead for MemoryWalletDb {
                 //   consensus branch ID is not used there), and then either use its non-zero expiry
                 //   height or return an error.
                 if let TransactionStatus::Mined(height) = status {
-                    return Ok(Some(
-                        Transaction::read(&raw[..], BranchId::for_height(&self.network, height))
-                            .map(|t| (height, t)),
-                    ));
+                    return Ok(Transaction::read(
+                        raw,
+                        BranchId::for_height(&self.params, height),
+                    )?);
                 }
                 if let Some(height) = expiry_height.filter(|h| h > &BlockHeight::from(0)) {
-                    return Ok(Some(
-                        Transaction::read(&raw[..], BranchId::for_height(&self.network, height))
-                            .map(|t| (height, t)),
-                    ));
+                    return Ok(Transaction::read(
+                        raw,
+                        BranchId::for_height(&self.params, height),
+                    )?);
                 }
 
-                let tx_data = Transaction::read(&raw[..], BranchId::Sprout)
+                let tx_data = Transaction::read(raw, BranchId::Sprout)
                     .map_err(Self::Error::from)?
                     .into_data();
 
                 let expiry_height = tx_data.expiry_height();
                 if expiry_height > BlockHeight::from(0) {
-                    Ok(Some(
-                        TransactionData::from_parts(
-                            tx_data.version(),
-                            BranchId::for_height(&self.network, expiry_height),
-                            tx_data.lock_time(),
-                            expiry_height,
-                            tx_data.transparent_bundle().cloned(),
-                            tx_data.sprout_bundle().cloned(),
-                            tx_data.sapling_bundle().cloned(),
-                            tx_data.orchard_bundle().cloned(),
-                        )
-                        .freeze()
-                        .map(|t| (expiry_height, t)),
-                    ))
+                    Ok(TransactionData::from_parts(
+                        tx_data.version(),
+                        BranchId::for_height(&self.params, expiry_height),
+                        tx_data.lock_time(),
+                        expiry_height,
+                        tx_data.transparent_bundle().cloned(),
+                        tx_data.sprout_bundle().cloned(),
+                        tx_data.sapling_bundle().cloned(),
+                        tx_data.orchard_bundle().cloned(),
+                    )
+                    .freeze()?)
                 } else {
                     Err(Self::Error::CorruptedData(
                     "Consensus branch ID not known, cannot parse this transaction until it is mined"
                         .to_string(),
                 ))
                 }
-            });
-        todo!()
+            })
+            .transpose()
     }
 
     fn get_sapling_nullifiers(
         &self,
         query: NullifierQuery,
     ) -> Result<Vec<(Self::AccountId, sapling::Nullifier)>, Self::Error> {
+        tracing::debug!("get_sapling_nullifiers");
         let nullifiers = self.received_notes.get_sapling_nullifiers();
         Ok(match query {
             NullifierQuery::All => nullifiers
@@ -449,6 +574,7 @@ impl WalletRead for MemoryWalletDb {
         &self,
         query: NullifierQuery,
     ) -> Result<Vec<(Self::AccountId, orchard::note::Nullifier)>, Self::Error> {
+        tracing::debug!("get_orchard_nullifiers");
         let nullifiers = self.received_notes.get_orchard_nullifiers();
         Ok(match query {
             NullifierQuery::All => nullifiers
@@ -475,19 +601,22 @@ impl WalletRead for MemoryWalletDb {
         &self,
         _account: Self::AccountId,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
+        tracing::debug!("get_transparent_receivers");
         Ok(HashMap::new())
     }
 
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_balances(
         &self,
-        account: Self::AccountId,
-        max_height: BlockHeight,
-    ) -> Result<HashMap<TransparentAddress, Zatoshis>, Self::Error> {
+        _account: Self::AccountId,
+        _max_height: BlockHeight,
+    ) -> Result<HashMap<TransparentAddress, zcash_protocol::value::Zatoshis>, Self::Error> {
+        tracing::debug!("get_transparent_balances");
         todo!()
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
+        tracing::debug!("transaction_data_requests");
         todo!()
     }
 }
