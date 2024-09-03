@@ -17,7 +17,7 @@ use zip32::fingerprint::SeedFingerprint;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use zcash_client_backend::{
-    data_api::{Account as _, AccountSource, TransactionStatus, WalletRead},
+    data_api::{Account as _, AccountSource, InputSource, TransactionStatus, WalletRead},
     wallet::{NoteId, WalletSaplingOutput},
 };
 
@@ -158,6 +158,47 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             None => false,
         };
         Ok(spent)
+    }
+
+    /// To be spendable a note must be:
+    /// - unspent (obviously)
+    /// - not dust (value > 5000 ZATs)
+    /// - be associated with an account with a ufvk
+    /// - have a recipient key scope
+    /// - We know the nullifier
+    /// - We know the commitment tree position
+    /// - be in a block less than or equal to the anchor height
+    /// - not be in the given exclude list
+    ///
+    /// Additionally the tree shard containing the node must not be in an unscanned range
+    /// excluding ranges that start above the anchor height or end below the wallet birthday.
+    /// This is determined by looking at the scan queue
+    pub(crate) fn note_is_spendable(
+        &self,
+        note: &ReceivedNote,
+        birthday_height: zcash_protocol::consensus::BlockHeight,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+        exclude: &[<MemoryWalletDb<P> as InputSource>::NoteRef],
+    ) -> Result<bool, Error> {
+        let note_account = self
+            .get_account(note.account_id())?
+            .ok_or_else(|| Error::AccountUnknown(note.account_id))?;
+        let note_txn = self
+            .tx_table
+            .get(&note.txid())
+            .ok_or_else(|| Error::TransactionNotFound(note.txid()))?;
+
+        // TODO: Add the unscanned range check
+
+        Ok(!self.note_is_spent(note, 0)?
+            && note.note.value().into_u64() > 5000
+            && note_account.ufvk().is_some()
+            && note.recipient_key_scope.is_some()
+            && note.nullifier().is_some()
+            && note.commitment_tree_position.is_some()
+            && note_txn.mined_height().is_some()
+            && note_txn.mined_height().unwrap() <= anchor_height
+            && !exclude.contains(&note.note_id()))
     }
 
     pub fn summary_height(&self, min_confirmations: u32) -> Result<Option<BlockHeight>, Error> {
