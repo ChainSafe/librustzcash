@@ -2,6 +2,8 @@
 use incrementalmerkletree::Address;
 use scanning::ScanQueue;
 
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},
     ShardTree,
@@ -16,12 +18,12 @@ use zip32::fingerprint::SeedFingerprint;
 
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
+use serde_with::Seq;
+use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
     data_api::{Account as _, AccountSource, InputSource, TransactionStatus, WalletRead},
     wallet::{NoteId, WalletSaplingOutput},
 };
-
-use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 
 #[cfg(feature = "orchard")]
 use zcash_client_backend::{data_api::ORCHARD_SHARD_HEIGHT, wallet::WalletOrchardOutput};

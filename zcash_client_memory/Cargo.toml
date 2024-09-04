@@ -52,6 +52,7 @@ shardtree = { workspace = true, features = ["legacy-api"] }
 thiserror = "1.0.61"
 
 maybe-rayon.workspace = true
+serde_with = "3.9.0"
 
 [features]
 default = ["multicore"]

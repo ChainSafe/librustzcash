@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use std::{
     collections::{BTreeMap, HashSet},
     ops::{Deref, DerefMut},
@@ -6,19 +8,22 @@ use subtle::ConditionallySelectable;
 use zcash_keys::keys::{AddressGenerationError, UnifiedIncomingViewingKey};
 use zip32::DiversifierIndex;
 
+use crate::error::Error;
+use crate::serialization::*;
+use serde_with::Seq;
+use serde_with::SetPreventDuplicates;
+use serde_with::TryFromInto;
+use zcash_client_backend::data_api::AccountBirthday;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{Account as _, AccountPurpose, AccountSource},
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey},
     wallet::NoteId,
 };
-
-use zcash_client_backend::data_api::AccountBirthday;
-
-use crate::error::Error;
-
 /// Internal representation of ID type for accounts. Will be unique for each account.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct AccountId(u32);
 
 impl Deref for AccountId {
@@ -39,6 +44,7 @@ impl ConditionallySelectable for AccountId {
 
 /// This is the top-level struct that handles accounts. We could theoretically have this just be a Vec
 /// but we want to have control over the internal AccountId values. The account ids are unique.
+// #[derive(Serialize, Deserialize)]
 pub(crate) struct Accounts {
     nonce: u32,
     accounts: BTreeMap<AccountId, Account>,
@@ -128,14 +134,17 @@ impl DerefMut for Accounts {
 
 pub struct Account {
     account_id: AccountId,
+    // #[serde_as(as = "AccountSourceWrapper")]
     kind: AccountSource,
     viewing_key: ViewingKey,
     birthday: AccountBirthday,
+    // #[serde_as(as = "AccountPurposeWrapper")]
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
+    // #[serde_as(as = "Seq<(TryFromInto<u128>, MemoBytesWrapper)>")]
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
+    // #[serde_as(as = "SetPreventDuplicates<NoteIdWrapper>")]
     _notes: HashSet<NoteId>,
 }
-
 /// The viewing key that an [`Account`] has available to it.
 #[derive(Debug, Clone)]
 pub(crate) enum ViewingKey {

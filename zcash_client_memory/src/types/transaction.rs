@@ -60,6 +60,7 @@ impl TransactionEntry {
         self.raw.as_slice()
     }
 }
+
 pub(crate) struct TransactionTable(HashMap<TxId, TransactionEntry>);
 impl TransactionTable {
     pub(crate) fn new() -> Self {
