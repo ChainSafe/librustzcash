@@ -316,7 +316,7 @@ impl<AccountId> Nullifiers<AccountId> {
     }
 
     /// Construct a nullifier set from its constituent parts.
-    pub(crate) fn new(
+    pub fn new(
         sapling: Vec<(AccountId, sapling::Nullifier)>,
         #[cfg(feature = "orchard")] orchard: Vec<(AccountId, orchard::note::Nullifier)>,
     ) -> Self {
