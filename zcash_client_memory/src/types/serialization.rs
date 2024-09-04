@@ -6,6 +6,7 @@ use zcash_client_backend::{
     wallet::NoteId,
 };
 use zcash_primitives::{block::BlockHash, transaction::TxId};
+use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::memo::Memo;
 use zcash_protocol::{memo::MemoBytes, ShieldedProtocol};
 use zip32::fingerprint::SeedFingerprint;

@@ -9,7 +9,7 @@ use shardtree::{
     ShardTree,
 };
 use std::{
-    collections::{hash_map::Entry, BTreeMap},
+    collections::{btree_map::Entry, BTreeMap},
     num::NonZeroU32,
     ops::RangeInclusive,
 };
@@ -18,7 +18,6 @@ use zip32::fingerprint::SeedFingerprint;
 
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use serde_with::Seq;
 use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
     data_api::{Account as _, AccountSource, InputSource, TransactionStatus, WalletRead},

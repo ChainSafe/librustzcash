@@ -1,5 +1,6 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{btree_map::Entry, BTreeMap};
 
+use serde::{Deserialize, Serialize};
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{Transaction, TxId},
@@ -11,24 +12,32 @@ use zcash_client_backend::{data_api::TransactionStatus, wallet::WalletTx};
 use crate::AccountId;
 
 use crate::error::Error;
-
+use crate::types::serialization::*;
+use serde_with::serde_as;
+use serde_with::{FromInto, TryFromInto};
 /// Maps a block height and transaction index to a transaction ID.
-pub(crate) struct TxLocatorMap(HashMap<(BlockHeight, u32), TxId>);
+pub(crate) struct TxLocatorMap(BTreeMap<(BlockHeight, u32), TxId>);
 
 /// A table of received notes. Corresponds to sapling_received_notes and orchard_received_notes tables.
+#[serde_as]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct TransactionEntry {
     // created: String,
     /// Combines block height and mined_height into a txn status
+    #[serde(with = "serialization::TransactionStatusWrapper")]
     tx_status: TransactionStatus,
     tx_index: Option<u32>,
+    #[serde_as(as = "Option<FromInto<u32>>")]
     expiry_height: Option<BlockHeight>,
     raw: Vec<u8>,
+    #[serde_as(as = "Option<TryFromInto<u64>>")]
     fee: Option<Zatoshis>,
     /// - `target_height`: stores the target height for which the transaction was constructed, if
     ///   known. This will ordinarily be null for transactions discovered via chain scanning; it
     ///   will only be set for transactions created using this wallet specifically, and not any
     ///   other wallet that uses the same seed (including previous installations of the same
     ///   wallet application.)
+    #[serde_as(as = "Option<FromInto<u32>>")]
     _target_height: Option<BlockHeight>,
 }
 impl TransactionEntry {
@@ -60,11 +69,15 @@ impl TransactionEntry {
         self.raw.as_slice()
     }
 }
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub(crate) struct TransactionTable(
+    #[serde_as(as = "BTreeMap<TxIdWrapper, _>")] BTreeMap<TxId, TransactionEntry>,
+);
 
-pub(crate) struct TransactionTable(HashMap<TxId, TransactionEntry>);
 impl TransactionTable {
     pub(crate) fn new() -> Self {
-        Self(HashMap::new())
+        Self(BTreeMap::new())
     }
     /// Returns transaction status for a given transaction ID. None if the transaction is not known.
     pub(crate) fn tx_status(&self, txid: &TxId) -> Option<TransactionStatus> {
@@ -150,7 +163,7 @@ impl TransactionTable {
 
 impl TxLocatorMap {
     pub(crate) fn new() -> Self {
-        Self(HashMap::new())
+        Self(BTreeMap::new())
     }
     pub(crate) fn _insert(&mut self, height: BlockHeight, index: u32, txid: TxId) {
         self.0.insert((height, index), txid);
@@ -161,5 +174,25 @@ impl TxLocatorMap {
     }
     pub(crate) fn entry(&mut self, k: (BlockHeight, u32)) -> Entry<(BlockHeight, u32), TxId> {
         self.0.entry(k)
+    }
+}
+
+mod serialization {
+    use serde::{Deserialize, Serialize};
+    use serde_with::serde_as;
+    use serde_with::FromInto;
+    #[serde_as]
+    #[derive(Serialize, Deserialize)]
+    #[serde(remote = "zcash_client_backend::data_api::TransactionStatus")]
+    pub enum TransactionStatusWrapper {
+        /// The requested transaction ID was not recognized by the node.
+        TxidNotRecognized,
+        /// The requested transaction ID corresponds to a transaction that is recognized by the node,
+        /// but is in the mempool or is otherwise not mined in the main chain (but may have been mined
+        /// on a fork that was reorged away).
+        NotInMainChain,
+        /// The requested transaction ID corresponds to a transaction that has been included in the
+        /// block at the provided height.
+        Mined(#[serde_as(as = "FromInto<u32>")] zcash_primitives::consensus::BlockHeight),
     }
 }
