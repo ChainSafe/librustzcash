@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     ops::{Deref, DerefMut},
 };
 use subtle::ConditionallySelectable;
@@ -74,7 +74,7 @@ impl Accounts {
             birthday,
             _purpose: purpose,
             addresses: BTreeMap::new(),
-            _notes: HashSet::new(),
+            _notes: BTreeSet::new(),
         };
         let ua_request = acc
             .viewing_key
@@ -130,20 +130,22 @@ impl DerefMut for Accounts {
 }
 
 /// An internal representation account stored in the database.
-#[derive(Debug, Clone)]
-
+#[serde_as]
+#[derive(Debug, Clone, Serialize)]
 pub struct Account {
     account_id: AccountId,
-    // #[serde_as(as = "AccountSourceWrapper")]
+    #[serde_as(as = "AccountSourceWrapper")]
     kind: AccountSource,
+    #[serde(skip_serializing)]
     viewing_key: ViewingKey,
+    #[serde(skip_serializing)]
     birthday: AccountBirthday,
-    // #[serde_as(as = "AccountPurposeWrapper")]
+    #[serde_as(as = "AccountPurposeWrapper")]
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
-    // #[serde_as(as = "Seq<(TryFromInto<u128>, MemoBytesWrapper)>")]
+    #[serde(skip_serializing)]
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
-    // #[serde_as(as = "SetPreventDuplicates<NoteIdWrapper>")]
-    _notes: HashSet<NoteId>,
+    #[serde_as(as = "BTreeSet<NoteIdWrapper>")]
+    _notes: BTreeSet<NoteId>,
 }
 /// The viewing key that an [`Account`] has available to it.
 #[derive(Debug, Clone)]

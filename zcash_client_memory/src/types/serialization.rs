@@ -46,6 +46,18 @@ impl From<AccountSourceWrapper> for AccountSource {
     }
 }
 
+// trait MySer: Serialize {
+//     type Wraps;
+// }
+// impl<'_, T, U: MySer<Wraps = T> + From<&'_ T>> serde_with::SerializeAs<T> for U {
+//     fn serialize_as<S>(source: &'_ T, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: serde::Serializer,
+//     {
+//         U::serialize(&U::from(source), serializer)
+//     }
+// }
+
 impl serde_with::SerializeAs<AccountSource> for AccountSourceWrapper {
     fn serialize_as<S>(value: &AccountSource, serializer: S) -> Result<S::Ok, S::Error>
     where
