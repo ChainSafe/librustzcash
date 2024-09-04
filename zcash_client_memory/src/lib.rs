@@ -26,8 +26,8 @@ use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 #[cfg(feature = "orchard")]
 use zcash_client_backend::{data_api::ORCHARD_SHARD_HEIGHT, wallet::WalletOrchardOutput};
 
-use crate::error::Error;
-mod error;
+pub use crate::error::Error;
+pub mod error;
 pub mod input_source;
 pub mod types;
 pub mod wallet_commitment_trees;
