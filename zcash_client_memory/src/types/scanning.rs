@@ -4,6 +4,7 @@ use incrementalmerkletree::{Address, Marking, Position, Retention};
 use sapling::NullifierDerivingKey;
 use secrecy::{ExposeSecret, SecretVec};
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use shardtree::{error::ShardTreeError, store::memory::MemoryShardStore, ShardTree};
 use std::{
     cell::RefCell,
@@ -23,13 +24,18 @@ use zcash_primitives::consensus::BlockHeight;
 
 use zcash_client_backend::data_api::scanning::{spanning_tree::SpanningTree, ScanPriority};
 
-use zcash_client_backend::data_api::scanning::ScanRange;
-
 use crate::error::Error;
+use serde_with::FromInto;
+use zcash_client_backend::data_api::scanning::ScanRange;
 
 /// A queue of scanning ranges. Contains the start and end heights of each range, along with the
 /// priority of scanning that range.
-pub(crate) struct ScanQueue(Vec<(BlockHeight, BlockHeight, ScanPriority)>);
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ScanQueue(
+    #[serde_as(as = "Vec<(FromInto<u32>, FromInto<u32>, serialization::ScanPriorityWrapper)>")]
+    Vec<(BlockHeight, BlockHeight, ScanPriority)>,
+);
 
 impl ScanQueue {
     pub(crate) fn new() -> Self {
@@ -171,5 +177,56 @@ impl Deref for ScanQueue {
 impl DerefMut for ScanQueue {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0[..]
+    }
+}
+
+mod serialization {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_with::serde_as;
+
+    #[serde_as]
+    #[derive(Serialize, Deserialize)]
+    #[serde(remote = "zcash_client_backend::data_api::scanning::ScanPriority")]
+    pub enum ScanPriorityWrapper {
+        /// Block ranges that are ignored have lowest priority.
+        Ignored,
+        /// Block ranges that have already been scanned will not be re-scanned.
+        Scanned,
+        /// Block ranges to be scanned to advance the fully-scanned height.
+        Historic,
+        /// Block ranges adjacent to heights at which the user opened the wallet.
+        OpenAdjacent,
+        /// Blocks that must be scanned to complete note commitment tree shards adjacent to found notes.
+        FoundNote,
+        /// Blocks that must be scanned to complete the latest note commitment tree shard.
+        ChainTip,
+        /// A previously scanned range that must be verified to check it is still in the
+        /// main chain, has highest priority.
+        Verify,
+    }
+    impl serde_with::SerializeAs<zcash_client_backend::data_api::scanning::ScanPriority>
+        for ScanPriorityWrapper
+    {
+        fn serialize_as<S>(
+            source: &zcash_client_backend::data_api::scanning::ScanPriority,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            ScanPriorityWrapper::serialize(source, serializer)
+        }
+    }
+    impl<'de> serde_with::DeserializeAs<'de, zcash_client_backend::data_api::scanning::ScanPriority>
+        for ScanPriorityWrapper
+    {
+        fn deserialize_as<D>(
+            deserializer: D,
+        ) -> Result<zcash_client_backend::data_api::scanning::ScanPriority, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            ScanPriorityWrapper::deserialize(deserializer)
+        }
     }
 }

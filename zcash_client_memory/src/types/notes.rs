@@ -4,6 +4,7 @@ use sapling::circuit::Spend;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::{FromInto, TryFromInto};
+use std::collections::BTreeMap;
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
@@ -29,11 +30,15 @@ use {
 use crate::{error::Error, Nullifier};
 
 /// Keeps track of notes that are spent in which transaction
-pub(crate) struct ReceievdNoteSpends(HashMap<NoteId, TxId>);
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ReceievdNoteSpends(
+    #[serde_as(as = "BTreeMap<NoteIdWrapper, TxIdWrapper>")] BTreeMap<NoteId, TxId>,
+);
 
 impl ReceievdNoteSpends {
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self(BTreeMap::new())
     }
     pub fn insert_spend(&mut self, note_id: NoteId, txid: TxId) -> Option<TxId> {
         self.0.insert(note_id, txid)
@@ -45,6 +50,7 @@ impl ReceievdNoteSpends {
 
 /// A note that has been received by the wallet
 /// TODO: Instead of Vec, perhaps we should identify by some unique ID
+#[derive(Serialize, Deserialize)]
 pub(crate) struct ReceivedNoteTable(pub Vec<ReceivedNote>);
 
 #[serde_as]

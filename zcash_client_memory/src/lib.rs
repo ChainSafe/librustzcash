@@ -58,14 +58,11 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     #[serde_as(as = "BTreeMap<FromInto<u32>, _>")]
     blocks: BTreeMap<BlockHeight, MemoryWalletBlock>,
     tx_table: TransactionTable,
-    #[serde(skip_serializing)]
     received_notes: ReceivedNoteTable,
-    #[serde(skip_serializing)]
     received_note_spends: ReceievdNoteSpends,
     nullifiers: NullifierMap,
 
     tx_locator: TxLocatorMap,
-    #[serde(skip_serializing)]
     scan_queue: ScanQueue,
     #[serde(skip_serializing)]
     sapling_tree: ShardTree<
@@ -86,7 +83,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     >,
     #[cfg(feature = "orchard")]
     /// Stores the block height corresponding to the last note commitment in a shard
-    #[serde(skip_serializing)]
+    #[serde_as(as = "BTreeMap<TreeAddressWrapper, FromInto<u32>>")]
     orchard_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 }
 
