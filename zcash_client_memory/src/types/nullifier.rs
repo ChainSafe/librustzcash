@@ -2,11 +2,16 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use serde_with::FromInto;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_protocol::PoolType;
 
 /// Maps a block height and transaction (i.e. transaction locator) index to a nullifier.
-pub(crate) struct NullifierMap(BTreeMap<Nullifier, (BlockHeight, u32)>);
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub(crate) struct NullifierMap(
+    #[serde_as(as = "BTreeMap<_, (FromInto<u32>, _)>")] BTreeMap<Nullifier, (BlockHeight, u32)>,
+);
 
 impl NullifierMap {
     pub fn new() -> Self {

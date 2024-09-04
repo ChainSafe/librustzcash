@@ -44,30 +44,41 @@ pub(crate) const PRUNING_DEPTH: u32 = 100;
 /// The number of blocks to verify ahead when the chain tip is updated.
 pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 
+use serde_with::{FromInto, TryFromInto};
+use types::serialization::*;
+
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
+#[serde_as]
+#[derive(Serialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
+    #[serde(skip_serializing)]
     params: P,
+    #[serde(skip_serializing)]
     accounts: Accounts,
+    #[serde_as(as = "BTreeMap<FromInto<u32>, _>")]
     blocks: BTreeMap<BlockHeight, MemoryWalletBlock>,
     tx_table: TransactionTable,
-
+    #[serde(skip_serializing)]
     received_notes: ReceivedNoteTable,
+    #[serde(skip_serializing)]
     received_note_spends: ReceievdNoteSpends,
     nullifiers: NullifierMap,
 
     tx_locator: TxLocatorMap,
-
+    #[serde(skip_serializing)]
     scan_queue: ScanQueue,
-
+    #[serde(skip_serializing)]
     sapling_tree: ShardTree<
         MemoryShardStore<sapling::Node, BlockHeight>,
         { SAPLING_SHARD_HEIGHT * 2 },
         SAPLING_SHARD_HEIGHT,
     >,
     /// Stores the block height corresponding to the last note commitment in a shard
+    #[serde_as(as = "BTreeMap<TreeAddressWrapper, FromInto<u32>>")]
     sapling_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 
     #[cfg(feature = "orchard")]
+    #[serde(skip_serializing)]
     orchard_tree: ShardTree<
         MemoryShardStore<orchard::tree::MerkleHashOrchard, BlockHeight>,
         { ORCHARD_SHARD_HEIGHT * 2 },
@@ -75,6 +86,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     >,
     #[cfg(feature = "orchard")]
     /// Stores the block height corresponding to the last note commitment in a shard
+    #[serde(skip_serializing)]
     orchard_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 }
 

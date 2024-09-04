@@ -1,4 +1,5 @@
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde_with::FromInto;
 use serde_with::TryFromInto;
 use serde_with::{ser::SerializeAsWrap, serde_as};
 use zcash_client_backend::{
@@ -251,6 +252,40 @@ impl<'de> serde_with::DeserializeAs<'de, SeedFingerprint> for SeedFingerprintWra
         Ok(SeedFingerprint::from_bytes(<[u8; 32]>::deserialize(
             deserializer,
         )?))
+    }
+}
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "incrementalmerkletree::Address")]
+pub struct TreeAddressWrapper {
+    #[serde_as(as = "FromInto<u8>")]
+    #[serde(getter = "incrementalmerkletree::Address::level")]
+    level: incrementalmerkletree::Level,
+    #[serde(getter = "incrementalmerkletree::Address::index")]
+    index: u64,
+}
+impl From<TreeAddressWrapper> for incrementalmerkletree::Address {
+    fn from(def: TreeAddressWrapper) -> incrementalmerkletree::Address {
+        incrementalmerkletree::Address::from_parts(def.level, def.index)
+    }
+}
+impl serde_with::SerializeAs<incrementalmerkletree::Address> for TreeAddressWrapper {
+    fn serialize_as<S>(
+        value: &incrementalmerkletree::Address,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        TreeAddressWrapper::serialize(value, serializer)
+    }
+}
+impl<'de> serde_with::DeserializeAs<'de, incrementalmerkletree::Address> for TreeAddressWrapper {
+    fn deserialize_as<D>(deserializer: D) -> Result<incrementalmerkletree::Address, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        TreeAddressWrapper::deserialize(deserializer).map(Into::into)
     }
 }
 

@@ -16,7 +16,12 @@ use crate::types::serialization::*;
 use serde_with::serde_as;
 use serde_with::{FromInto, TryFromInto};
 /// Maps a block height and transaction index to a transaction ID.
-pub(crate) struct TxLocatorMap(BTreeMap<(BlockHeight, u32), TxId>);
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub(crate) struct TxLocatorMap(
+    #[serde_as(as = "BTreeMap<(FromInto<u32>, _), TxIdWrapper>")]
+    BTreeMap<(BlockHeight, u32), TxId>,
+);
 
 /// A table of received notes. Corresponds to sapling_received_notes and orchard_received_notes tables.
 #[serde_as]
