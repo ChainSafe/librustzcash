@@ -2,7 +2,7 @@
 use incrementalmerkletree::Address;
 use scanning::ScanQueue;
 
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
 use serde_with::serde_as;
 use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},
@@ -44,7 +44,7 @@ pub(crate) const PRUNING_DEPTH: u32 = 100;
 /// The number of blocks to verify ahead when the chain tip is updated.
 pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 
-use serde_with::{FromInto, TryFromInto};
+use serde_with::{FromInto};
 use types::serialization::*;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
@@ -186,7 +186,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub(crate) fn note_is_spendable(
         &self,
         note: &ReceivedNote,
-        birthday_height: zcash_protocol::consensus::BlockHeight,
+        _birthday_height: zcash_protocol::consensus::BlockHeight,
         anchor_height: zcash_protocol::consensus::BlockHeight,
         exclude: &[<MemoryWalletDb<P> as InputSource>::NoteRef],
     ) -> Result<bool, Error> {

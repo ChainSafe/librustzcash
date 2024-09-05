@@ -128,10 +128,8 @@ impl<'de> serde_with::DeserializeAs<'de, MemoBytes> for MemoBytesWrapper {
         D: serde::Deserializer<'de>,
     {
         let b = <Vec<u8>>::deserialize(deserializer)?;
-        Ok(
-            MemoBytes::from_bytes(&b)
-                .map_err(|_| serde::de::Error::custom("Invalid memo bytes"))?,
-        )
+        MemoBytes::from_bytes(&b)
+                .map_err(|_| serde::de::Error::custom("Invalid memo bytes"))
     }
 }
 
@@ -150,7 +148,7 @@ impl<'de> serde_with::DeserializeAs<'de, Memo> for MemoBytesWrapper {
         D: serde::Deserializer<'de>,
     {
         let b = <Vec<u8>>::deserialize(deserializer)?;
-        Ok(Memo::from_bytes(&b).map_err(|_| serde::de::Error::custom("Invalid memo"))?)
+        Memo::from_bytes(&b).map_err(|_| serde::de::Error::custom("Invalid memo"))
     }
 }
 
@@ -342,10 +340,8 @@ impl<'de> serde_with::DeserializeAs<'de, sapling::PaymentAddress> for PaymentAdd
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(
-            sapling::PaymentAddress::from_bytes(&arrays::deserialize::<_, u8, 43>(deserializer)?)
-                .ok_or_else(|| serde::de::Error::custom("Invalid sapling payment address"))?,
-        )
+        sapling::PaymentAddress::from_bytes(&arrays::deserialize::<_, u8, 43>(deserializer)?)
+                .ok_or_else(|| serde::de::Error::custom("Invalid sapling payment address"))
     }
 }
 #[cfg(feature = "orchard")]
@@ -363,13 +359,11 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::Address> for PaymentAddressWra
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(
-            orchard::Address::from_raw_address_bytes(&arrays::deserialize::<_, u8, 43>(
+        orchard::Address::from_raw_address_bytes(&arrays::deserialize::<_, u8, 43>(
                 deserializer,
             )?)
             .into_option()
-            .ok_or_else(|| serde::de::Error::custom("Invalid orchard payment address"))?,
-        )
+            .ok_or_else(|| serde::de::Error::custom("Invalid orchard payment address"))
     }
 }
 
@@ -495,11 +489,9 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Rho> for RhoWrapper {
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(
-            orchard::note::Rho::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
+        orchard::note::Rho::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
                 .into_option()
-                .ok_or_else(|| serde::de::Error::custom("Invalid rho"))?,
-        )
+                .ok_or_else(|| serde::de::Error::custom("Invalid rho"))
     }
 }
 
@@ -610,11 +602,9 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWra
                 let rseed = orchard::note::RandomSeed::from_bytes(rseed, &rho)
                     .into_option()
                     .ok_or_else(|| serde::de::Error::custom("Invalid rseed"))?;
-                Ok(
-                    orchard::note::Note::from_parts(recipient, value, rho, rseed)
+                orchard::note::Note::from_parts(recipient, value, rho, rseed)
                         .into_option()
-                        .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))?,
-                )
+                        .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
             }
             fn visit_map<A>(self, mut map: A) -> Result<orchard::note::Note, A::Error>
             where
@@ -667,11 +657,9 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWra
                 let rseed = orchard::note::RandomSeed::from_bytes(rseed, &rho)
                     .into_option()
                     .ok_or_else(|| serde::de::Error::custom("Invalid rseed"))?;
-                Ok(
-                    orchard::note::Note::from_parts(recipient, value, rho, rseed)
+                orchard::note::Note::from_parts(recipient, value, rho, rseed)
                         .into_option()
-                        .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))?,
-                )
+                        .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
             }
         }
         deserializer.deserialize_struct(
@@ -758,7 +746,7 @@ impl<'de> DeserializeAs<'de, AccountBirthday> for AccountBirthdayWrapper {
 impl From<AccountBirthdayWrapper> for zcash_client_backend::data_api::AccountBirthday {
     fn from(wrapper: AccountBirthdayWrapper) -> Self {
         Self::from_parts(
-            wrapper.prior_chain_state.into(),
+            wrapper.prior_chain_state,
             wrapper.recover_until.map(Into::into),
         )
     }
@@ -843,7 +831,7 @@ impl From<Frontier<sapling::Node, { sapling::NOTE_COMMITMENT_TREE_DEPTH }>>
     for SaplingFrontierWrapper
 {
     fn from(frontier: Frontier<sapling::Node, { sapling::NOTE_COMMITMENT_TREE_DEPTH }>) -> Self {
-        match frontier.take().and_then(|f| Some(f.into_parts())) {
+        match frontier.take().map(|f| f.into_parts()) {
             Some((position, leaf, ommers)) => SaplingFrontierWrapper {
                 frontier: Some(NonEmptySaplingFrontierWrapper {
                     position,
@@ -886,7 +874,7 @@ impl From<Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_
             { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
         >,
     ) -> Self {
-        match frontier.take().and_then(|f| Some(f.into_parts())) {
+        match frontier.take().map(|f| f.into_parts()) {
             Some((position, leaf, ommers)) => OrchardFrontierWrapper {
                 frontier: Some(NonEmptyOrchardFrontierWrapper {
                     position,
@@ -1003,11 +991,9 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Nullifier> for OrchardNu
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(
-            orchard::note::Nullifier::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
+        orchard::note::Nullifier::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
                 .into_option()
-                .ok_or_else(|| serde::de::Error::custom("Invalid nullifier"))?,
-        )
+                .ok_or_else(|| serde::de::Error::custom("Invalid nullifier"))
     }
 }
 

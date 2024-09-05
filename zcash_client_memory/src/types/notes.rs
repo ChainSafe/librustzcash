@@ -1,12 +1,11 @@
 use crate::serialization::*;
 use incrementalmerkletree::Position;
-use sapling::circuit::Spend;
+
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use serde_with::{FromInto, TryFromInto};
+use serde_with::{FromInto};
 use std::collections::BTreeMap;
 use std::{
-    collections::HashMap,
     ops::{Deref, DerefMut},
 };
 

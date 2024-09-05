@@ -92,6 +92,6 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             })
             .collect();
 
-        Ok(to_spendable_notes(&selection)?)
+        to_spendable_notes(&selection)
     }
 }
