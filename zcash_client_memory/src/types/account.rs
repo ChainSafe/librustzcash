@@ -60,7 +60,7 @@ impl Accounts {
     pub(crate) fn new_account(
         &mut self,
         kind: AccountSource,
-        viewing_key: ViewingKey,
+        viewing_key: UnifiedFullViewingKey,
         birthday: AccountBirthday,
         purpose: AccountPurpose,
     ) -> Result<(AccountId, Account), Error> {
@@ -76,7 +76,7 @@ impl Accounts {
         };
         let ua_request = acc
             .viewing_key
-            .uivk()
+            .to_unified_incoming_viewing_key()
             .to_address_request()
             .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
             .ok_or_else(|| {
@@ -135,7 +135,7 @@ pub struct Account {
     #[serde_as(as = "AccountSourceWrapper")]
     kind: AccountSource,
     #[serde(skip)]
-    viewing_key: ViewingKey,
+    viewing_key: UnifiedFullViewingKey,
     #[serde_as(as = "AccountBirthdayWrapper")]
     birthday: AccountBirthday,
     #[serde_as(as = "AccountPurposeWrapper")]
@@ -144,22 +144,6 @@ pub struct Account {
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
     #[serde_as(as = "BTreeSet<NoteIdWrapper>")]
     _notes: BTreeSet<NoteId>,
-}
-
-/// The viewing key that an [`Account`] has available to it.
-#[derive(Debug, Clone)]
-pub(crate) enum ViewingKey {
-    /// A full viewing key.
-    ///
-    /// This is available to derived accounts, as well as accounts directly imported as
-    /// full viewing keys.
-    Full(Box<UnifiedFullViewingKey>),
-
-    /// An incoming viewing key.
-    ///
-    /// Accounts that have this kind of viewing key cannot be used in wallet contexts,
-    /// because they are unable to maintain an accurate balance.
-    _Incoming(Box<UnifiedIncomingViewingKey>),
 }
 
 impl Account {
@@ -191,9 +175,7 @@ impl Account {
     pub(crate) fn kind(&self) -> &AccountSource {
         &self.kind
     }
-    pub(crate) fn _viewing_key(&self) -> &ViewingKey {
-        &self.viewing_key
-    }
+
     pub(crate) fn next_available_address(
         &mut self,
         request: UnifiedAddressRequest,
@@ -232,26 +214,10 @@ impl zcash_client_backend::data_api::Account<AccountId> for Account {
     }
 
     fn ufvk(&self) -> Option<&UnifiedFullViewingKey> {
-        self.viewing_key.ufvk()
+        Some(&self.viewing_key)
     }
 
     fn uivk(&self) -> UnifiedIncomingViewingKey {
-        self.viewing_key.uivk()
-    }
-}
-
-impl ViewingKey {
-    fn ufvk(&self) -> Option<&UnifiedFullViewingKey> {
-        match self {
-            ViewingKey::Full(ufvk) => Some(ufvk),
-            ViewingKey::_Incoming(_) => None,
-        }
-    }
-
-    fn uivk(&self) -> UnifiedIncomingViewingKey {
-        match self {
-            ViewingKey::Full(ufvk) => ufvk.as_ref().to_unified_incoming_viewing_key(),
-            ViewingKey::_Incoming(uivk) => uivk.as_ref().clone(),
-        }
+        self.viewing_key.to_unified_incoming_viewing_key()
     }
 }
