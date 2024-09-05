@@ -29,7 +29,7 @@ pub(crate) struct TxLocatorMap(
 pub(crate) struct TransactionEntry {
     // created: String,
     /// Combines block height and mined_height into a txn status
-    #[serde(with = "serialization::TransactionStatusWrapper")]
+    #[serde(with = "TransactionStatusWrapper")]
     tx_status: TransactionStatus,
     tx_index: Option<u32>,
     #[serde_as(as = "Option<FromInto<u32>>")]
@@ -179,25 +179,5 @@ impl TxLocatorMap {
     }
     pub(crate) fn entry(&mut self, k: (BlockHeight, u32)) -> Entry<(BlockHeight, u32), TxId> {
         self.0.entry(k)
-    }
-}
-
-mod serialization {
-    use serde::{Deserialize, Serialize};
-    use serde_with::serde_as;
-    use serde_with::FromInto;
-    #[serde_as]
-    #[derive(Serialize, Deserialize)]
-    #[serde(remote = "zcash_client_backend::data_api::TransactionStatus")]
-    pub enum TransactionStatusWrapper {
-        /// The requested transaction ID was not recognized by the node.
-        TxidNotRecognized,
-        /// The requested transaction ID corresponds to a transaction that is recognized by the node,
-        /// but is in the mempool or is otherwise not mined in the main chain (but may have been mined
-        /// on a fork that was reorged away).
-        NotInMainChain,
-        /// The requested transaction ID corresponds to a transaction that has been included in the
-        /// block at the provided height.
-        Mined(#[serde_as(as = "FromInto<u32>")] zcash_primitives::consensus::BlockHeight),
     }
 }

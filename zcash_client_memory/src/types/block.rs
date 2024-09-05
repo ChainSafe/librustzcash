@@ -53,5 +53,3 @@ impl Ord for MemoryWalletBlock {
         (self.height, self.block_time).cmp(&(other.height, other.block_time))
     }
 }
-
-mod serialization {}
