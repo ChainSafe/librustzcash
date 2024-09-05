@@ -134,13 +134,13 @@ pub struct Account {
     account_id: AccountId,
     #[serde_as(as = "AccountSourceWrapper")]
     kind: AccountSource,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     viewing_key: ViewingKey,
     #[serde_as(as = "AccountBirthdayWrapper")]
     birthday: AccountBirthday,
     #[serde_as(as = "AccountPurposeWrapper")]
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
     #[serde_as(as = "BTreeSet<NoteIdWrapper>")]
     _notes: BTreeSet<NoteId>,

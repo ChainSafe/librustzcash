@@ -2,7 +2,7 @@
 use incrementalmerkletree::Address;
 use scanning::ScanQueue;
 
-use serde::{Serialize};
+use serde::Serialize;
 use serde_with::serde_as;
 use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},
@@ -44,16 +44,16 @@ pub(crate) const PRUNING_DEPTH: u32 = 100;
 /// The number of blocks to verify ahead when the chain tip is updated.
 pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 
-use serde_with::{FromInto};
+use serde_with::FromInto;
 use types::serialization::*;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[serde_as]
 #[derive(Serialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     params: P,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     accounts: Accounts,
     #[serde_as(as = "BTreeMap<FromInto<u32>, _>")]
     blocks: BTreeMap<BlockHeight, MemoryWalletBlock>,
@@ -64,7 +64,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
 
     tx_locator: TxLocatorMap,
     scan_queue: ScanQueue,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     sapling_tree: ShardTree<
         MemoryShardStore<sapling::Node, BlockHeight>,
         { SAPLING_SHARD_HEIGHT * 2 },
@@ -75,7 +75,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     sapling_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 
     #[cfg(feature = "orchard")]
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     orchard_tree: ShardTree<
         MemoryShardStore<orchard::tree::MerkleHashOrchard, BlockHeight>,
         { ORCHARD_SHARD_HEIGHT * 2 },
