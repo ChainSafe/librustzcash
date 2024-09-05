@@ -1594,7 +1594,6 @@ impl AccountBirthday {
     ///
     /// This API is intended primarily to be used in testing contexts; under normal circumstances,
     /// [`AccountBirthday::from_treestate`] should be used instead.
-    #[cfg(any(test, feature = "test-dependencies"))]
     pub fn from_parts(prior_chain_state: ChainState, recover_until: Option<BlockHeight>) -> Self {
         Self {
             prior_chain_state,
@@ -1648,6 +1647,11 @@ impl AccountBirthday {
     /// Returns the height at which the wallet should exit "recovery mode".
     pub fn recover_until(&self) -> Option<BlockHeight> {
         self.recover_until
+    }
+
+    /// Returns the chain state prior to the birthday height of the account.
+    pub fn prior_chain_state(&self) -> &ChainState {
+        &self.prior_chain_state
     }
 
     #[cfg(any(test, feature = "test-dependencies"))]

@@ -297,7 +297,7 @@ impl<'de> serde_with::DeserializeAs<'de, incrementalmerkletree::Address> for Tre
     where
         D: serde::Deserializer<'de>,
     {
-        TreeAddressWrapper::deserialize(deserializer).map(Into::into)
+        TreeAddressWrapper::deserialize(deserializer)
     }
 }
 
