@@ -7,11 +7,32 @@ use zcash_client_backend::{
     data_api::{AccountPurpose, AccountSource},
     wallet::NoteId,
 };
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::{BlockHeight, MainNetwork};
 use zcash_protocol::memo::Memo;
 use zcash_protocol::{memo::MemoBytes, ShieldedProtocol};
 use zip32::fingerprint::SeedFingerprint;
+
+pub struct UnifiedFullViewingKeyWrapper;
+impl serde_with::SerializeAs<UnifiedFullViewingKey> for UnifiedFullViewingKeyWrapper {
+    fn serialize_as<S>(value: &UnifiedFullViewingKey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        value.encode(&MainNetwork).serialize(serializer)
+    }
+}
+impl<'de> serde_with::DeserializeAs<'de, UnifiedFullViewingKey> for UnifiedFullViewingKeyWrapper {
+    fn deserialize_as<D>(deserializer: D) -> Result<UnifiedFullViewingKey, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let b = String::deserialize(deserializer)?;
+        UnifiedFullViewingKey::decode(&MainNetwork, &b)
+            .map_err(|_| serde::de::Error::custom("Invalid unified full viewing key"))
+    }
+}
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -128,8 +149,7 @@ impl<'de> serde_with::DeserializeAs<'de, MemoBytes> for MemoBytesWrapper {
         D: serde::Deserializer<'de>,
     {
         let b = <Vec<u8>>::deserialize(deserializer)?;
-        MemoBytes::from_bytes(&b)
-                .map_err(|_| serde::de::Error::custom("Invalid memo bytes"))
+        MemoBytes::from_bytes(&b).map_err(|_| serde::de::Error::custom("Invalid memo bytes"))
     }
 }
 
@@ -341,7 +361,7 @@ impl<'de> serde_with::DeserializeAs<'de, sapling::PaymentAddress> for PaymentAdd
         D: serde::Deserializer<'de>,
     {
         sapling::PaymentAddress::from_bytes(&arrays::deserialize::<_, u8, 43>(deserializer)?)
-                .ok_or_else(|| serde::de::Error::custom("Invalid sapling payment address"))
+            .ok_or_else(|| serde::de::Error::custom("Invalid sapling payment address"))
     }
 }
 #[cfg(feature = "orchard")]
@@ -359,9 +379,7 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::Address> for PaymentAddressWra
     where
         D: serde::Deserializer<'de>,
     {
-        orchard::Address::from_raw_address_bytes(&arrays::deserialize::<_, u8, 43>(
-                deserializer,
-            )?)
+        orchard::Address::from_raw_address_bytes(&arrays::deserialize::<_, u8, 43>(deserializer)?)
             .into_option()
             .ok_or_else(|| serde::de::Error::custom("Invalid orchard payment address"))
     }
@@ -490,8 +508,8 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Rho> for RhoWrapper {
         D: serde::Deserializer<'de>,
     {
         orchard::note::Rho::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
-                .into_option()
-                .ok_or_else(|| serde::de::Error::custom("Invalid rho"))
+            .into_option()
+            .ok_or_else(|| serde::de::Error::custom("Invalid rho"))
     }
 }
 
@@ -603,8 +621,8 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWra
                     .into_option()
                     .ok_or_else(|| serde::de::Error::custom("Invalid rseed"))?;
                 orchard::note::Note::from_parts(recipient, value, rho, rseed)
-                        .into_option()
-                        .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
+                    .into_option()
+                    .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
             }
             fn visit_map<A>(self, mut map: A) -> Result<orchard::note::Note, A::Error>
             where
@@ -658,8 +676,8 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWra
                     .into_option()
                     .ok_or_else(|| serde::de::Error::custom("Invalid rseed"))?;
                 orchard::note::Note::from_parts(recipient, value, rho, rseed)
-                        .into_option()
-                        .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
+                    .into_option()
+                    .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
             }
         }
         deserializer.deserialize_struct(
@@ -992,8 +1010,8 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Nullifier> for OrchardNu
         D: serde::Deserializer<'de>,
     {
         orchard::note::Nullifier::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
-                .into_option()
-                .ok_or_else(|| serde::de::Error::custom("Invalid nullifier"))
+            .into_option()
+            .ok_or_else(|| serde::de::Error::custom("Invalid nullifier"))
     }
 }
 

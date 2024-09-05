@@ -134,7 +134,7 @@ pub struct Account {
     account_id: AccountId,
     #[serde_as(as = "AccountSourceWrapper")]
     kind: AccountSource,
-    #[serde(skip)]
+    #[serde_as(as = "UnifiedFullViewingKeyWrapper")]
     viewing_key: UnifiedFullViewingKey,
     #[serde_as(as = "AccountBirthdayWrapper")]
     birthday: AccountBirthday,
