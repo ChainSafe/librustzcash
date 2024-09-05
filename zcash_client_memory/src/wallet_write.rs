@@ -29,7 +29,7 @@ use zcash_client_backend::data_api::{
 };
 
 use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
-use crate::{Accounts, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote, ViewingKey};
+use crate::{Accounts, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
 use maybe_rayon::prelude::*;
 
 #[cfg(feature = "orchard")]
@@ -62,7 +62,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 seed_fingerprint,
                 account_index,
             },
-            ViewingKey::Full(Box::new(ufvk)),
+            ufvk,
             birthday.clone(),
             AccountPurpose::Spending,
         )?;
@@ -468,7 +468,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 seed_fingerprint,
                 account_index,
             },
-            ViewingKey::Full(Box::new(ufvk)),
+            ufvk,
             birthday.clone(),
             AccountPurpose::Spending,
         )?;
@@ -486,7 +486,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         let (_id, account) = Accounts::new_account(
             &mut self.accounts,
             AccountSource::Imported { purpose },
-            ViewingKey::Full(Box::new(unified_key.to_owned())),
+            unified_key.to_owned(),
             birthday.clone(),
             purpose,
         )?;
