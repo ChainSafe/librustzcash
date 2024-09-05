@@ -1,10 +1,8 @@
 use incrementalmerkletree::{Marking, Position, Retention};
 
-use secrecy::{ExposeSecret, SecretVec};
+use secrecy::SecretVec;
 
 use std::{collections::HashMap, ops::Range};
-
-use zip32::fingerprint::SeedFingerprint;
 
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_protocol::{
