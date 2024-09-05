@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde_with::{serde_as, TryFromInto};
 use std::{
     collections::{BTreeMap, BTreeSet},
     ops::{Deref, DerefMut},
@@ -131,7 +131,7 @@ impl DerefMut for Accounts {
 
 /// An internal representation account stored in the database.
 #[serde_as]
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     account_id: AccountId,
     #[serde_as(as = "AccountSourceWrapper")]
@@ -143,7 +143,7 @@ pub struct Account {
     #[serde_as(as = "AccountPurposeWrapper")]
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
     /// The current diversifier index for this Account
-    #[serde(skip)]
+    #[serde_as(as = "TryFromInto<u128>")]
     diversifier_index: DiversifierIndex,
     #[serde_as(as = "BTreeSet<NoteIdWrapper>")]
     _notes: BTreeSet<NoteId>,
