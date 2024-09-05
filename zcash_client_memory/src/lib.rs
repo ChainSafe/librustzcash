@@ -53,7 +53,6 @@ use types::serialization::*;
 pub struct MemoryWalletDb<P: consensus::Parameters> {
     #[serde(skip)]
     params: P,
-    #[serde(skip)]
     accounts: Accounts,
     #[serde_as(as = "BTreeMap<FromInto<u32>, _>")]
     blocks: BTreeMap<BlockHeight, MemoryWalletBlock>,
@@ -61,7 +60,6 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     received_notes: ReceivedNoteTable,
     received_note_spends: ReceievdNoteSpends,
     nullifiers: NullifierMap,
-
     tx_locator: TxLocatorMap,
     scan_queue: ScanQueue,
     #[serde(skip)]
