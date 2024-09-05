@@ -188,8 +188,9 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         tracing::debug!("get_current_address: {:?}", account);
         Ok(self
             .get_account(account)?
-            .and_then(|account| Account::current_address(&account))
-            .map(|(_, a)| a.clone()))
+            .map(|account| Account::current_address(&account))
+            .transpose()?
+            .map(|(addr, _)| addr.clone()))
     }
 
     fn get_account_birthday(&self, account: Self::AccountId) -> Result<BlockHeight, Self::Error> {
