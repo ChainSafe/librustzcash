@@ -1,10 +1,8 @@
 use incrementalmerkletree::{Marking, Position, Retention};
 
-use secrecy::{ExposeSecret, SecretVec};
+use secrecy::SecretVec;
 
 use std::{collections::HashMap, ops::Range};
-
-use zip32::fingerprint::SeedFingerprint;
 
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_protocol::{
@@ -40,34 +38,13 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
 
     fn create_account(
         &mut self,
-        seed: &SecretVec<u8>,
-        birthday: &AccountBirthday,
+        _seed: &SecretVec<u8>,
+        _birthday: &AccountBirthday,
     ) -> Result<(Self::AccountId, UnifiedSpendingKey), Self::Error> {
-        tracing::debug!("create_account");
-        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
-            .ok_or_else(|| Self::Error::InvalidSeedLength)?;
-        let account_index = self
-            .max_zip32_account_index(&seed_fingerprint)
-            .unwrap()
-            .map(|a| a.next().ok_or_else(|| Self::Error::AccountOutOfRange))
-            .transpose()?
-            .unwrap_or(zip32::AccountId::ZERO);
-
-        let usk = UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), account_index)?;
-        let ufvk = usk.to_unified_full_viewing_key();
-
-        let (id, _account) = Accounts::new_account(
-            &mut self.accounts,
-            AccountSource::Derived {
-                seed_fingerprint,
-                account_index,
-            },
-            ufvk,
-            birthday.clone(),
-            AccountPurpose::Spending,
-        )?;
-
-        Ok((id, usk))
+        unimplemented!(
+            "Memwallet does not support adding accounts from seed phrases. 
+Instead derive the ufvk in the calling code and import it using `import_account_ufvk`"
+        )
     }
 
     fn get_next_available_address(
@@ -448,32 +425,14 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
 
     fn import_account_hd(
         &mut self,
-        seed: &SecretVec<u8>,
-        account_index: zip32::AccountId,
-        birthday: &AccountBirthday,
+        _seed: &SecretVec<u8>,
+        _account_index: zip32::AccountId,
+        _birthday: &AccountBirthday,
     ) -> Result<(Self::Account, UnifiedSpendingKey), Self::Error> {
-        tracing::debug!("import_account_hd");
-        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
-            .ok_or_else(|| "Seed must be between 32 and 252 bytes in length.".to_owned())
-            .unwrap();
-
-        let usk = UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), account_index)
-            .map_err(|_| "key derivation error".to_string())
-            .unwrap();
-        let ufvk = usk.to_unified_full_viewing_key();
-
-        let (_id, account) = Accounts::new_account(
-            &mut self.accounts,
-            AccountSource::Derived {
-                seed_fingerprint,
-                account_index,
-            },
-            ufvk,
-            birthday.clone(),
-            AccountPurpose::Spending,
-        )?;
-        // TODO: Do we need to check if duplicate?
-        Ok((account, usk))
+        unimplemented!(
+            "Memwallet does not support adding accounts from seed phrases. 
+Instead derive the ufvk in the calling code and import it using `import_account_ufvk`"
+        )
     }
 
     fn import_account_ufvk(
