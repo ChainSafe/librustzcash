@@ -57,11 +57,11 @@ pub struct ChainStateWrapper {
     #[serde_as(as = "BlockHashWrapper")]
     #[serde(getter = "zcash_client_backend::data_api::chain::ChainState::block_hash")]
     pub block_hash: BlockHash,
-    #[serde_as(as = "FrontierWrapper<sapling::Node>")]
+    #[serde_as(as = "FrontierWrapper")]
     #[serde(getter = "zcash_client_backend::data_api::chain::ChainState::final_sapling_tree")]
     pub final_sapling_tree: Frontier<sapling::Node, { sapling::NOTE_COMMITMENT_TREE_DEPTH }>,
     #[cfg(feature = "orchard")]
-    #[serde_as(as = "FrontierWrapper<orchard::tree::MerkleHashOrchard>")]
+    #[serde_as(as = "FrontierWrapper")]
     #[serde(getter = "zcash_client_backend::data_api::chain::ChainState::final_orchard_tree")]
     pub final_orchard_tree:
         Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,

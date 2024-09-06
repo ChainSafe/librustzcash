@@ -7,12 +7,8 @@ use serde_with::{FromInto, SerializeAs};
 
 use crate::{ToFromBytes, ToFromBytesWrapper};
 
-pub struct FrontierWrapper<T: ToFromBytes + Clone> {
-    pub frontier: Option<NonEmptyFrontier<T>>,
-}
-impl<T: ToFromBytes + Clone, const DEPTH: u8> SerializeAs<Frontier<T, DEPTH>>
-    for FrontierWrapper<T>
-{
+pub struct FrontierWrapper;
+impl<T: ToFromBytes + Clone, const DEPTH: u8> SerializeAs<Frontier<T, DEPTH>> for FrontierWrapper {
     fn serialize_as<S>(value: &Frontier<T, DEPTH>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -20,13 +16,13 @@ impl<T: ToFromBytes + Clone, const DEPTH: u8> SerializeAs<Frontier<T, DEPTH>>
         let mut s = serializer.serialize_struct("Frontier", 1)?;
         s.serialize_field(
             "frontier",
-            &SerializeAsWrap::<_, Option<NonEmptyFrontierWrapper<T>>>::new(&value.value().cloned()),
+            &SerializeAsWrap::<_, Option<NonEmptyFrontierWrapper>>::new(&value.value().cloned()),
         )?;
         s.end()
     }
 }
 impl<'de, T: ToFromBytes + Clone, const DEPTH: u8> DeserializeAs<'de, Frontier<T, DEPTH>>
-    for FrontierWrapper<T>
+    for FrontierWrapper
 {
     fn deserialize_as<D>(deserializer: D) -> Result<Frontier<T, DEPTH>, D::Error>
     where
@@ -53,10 +49,7 @@ impl<'de, T: ToFromBytes + Clone, const DEPTH: u8> DeserializeAs<'de, Frontier<T
                         "frontier" => {
                             frontier = map
                                 .next_value::<Option<
-                                    DeserializeAsWrap<
-                                        NonEmptyFrontier<T>,
-                                        NonEmptyFrontierWrapper<T>,
-                                    >,
+                                    DeserializeAsWrap<NonEmptyFrontier<T>, NonEmptyFrontierWrapper>,
                                 >>()?
                                 .map(|f| f.into_inner());
                         }
@@ -80,13 +73,9 @@ impl<'de, T: ToFromBytes + Clone, const DEPTH: u8> DeserializeAs<'de, Frontier<T
     }
 }
 
-pub struct NonEmptyFrontierWrapper<T: ToFromBytes> {
-    pub position: Position,
-    pub leaf: T,
-    pub ommers: Vec<T>,
-}
+pub struct NonEmptyFrontierWrapper;
 
-impl<T: ToFromBytes> SerializeAs<NonEmptyFrontier<T>> for NonEmptyFrontierWrapper<T> {
+impl<T: ToFromBytes> SerializeAs<NonEmptyFrontier<T>> for NonEmptyFrontierWrapper {
     fn serialize_as<S>(value: &NonEmptyFrontier<T>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -110,7 +99,7 @@ impl<T: ToFromBytes> SerializeAs<NonEmptyFrontier<T>> for NonEmptyFrontierWrappe
     }
 }
 
-impl<'de, T: ToFromBytes> DeserializeAs<'de, NonEmptyFrontier<T>> for NonEmptyFrontierWrapper<T> {
+impl<'de, T: ToFromBytes> DeserializeAs<'de, NonEmptyFrontier<T>> for NonEmptyFrontierWrapper {
     fn deserialize_as<D>(deserializer: D) -> Result<NonEmptyFrontier<T>, D::Error>
     where
         D: serde::Deserializer<'de>,
