@@ -833,33 +833,6 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWra
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("struct OrchardNote")
             }
-            fn visit_seq<A>(self, mut seq: A) -> Result<orchard::note::Note, A::Error>
-            where
-                A: serde::de::SeqAccess<'de>,
-            {
-                let recipient = seq
-                    .next_element::<DeserializeAsWrap<orchard::Address, ToFromBytesWrapper<orchard::Address>>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(0, &"a recipient"))?
-                    .into_inner();
-                let value = seq
-                    .next_element::<DeserializeAsWrap<orchard::value::NoteValue, NoteValueWrapper>>(
-                    )?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &"a value"))?
-                    .into_inner();
-                let rho = seq
-                    .next_element::<DeserializeAsWrap<orchard::note::Rho, RhoWrapper>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(2, &"a rho"))?
-                    .into_inner();
-                let rseed = seq
-                    .next_element::<[u8; 32]>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(3, &"an rseed"))?;
-                let rseed = orchard::note::RandomSeed::from_bytes(rseed, &rho)
-                    .into_option()
-                    .ok_or_else(|| serde::de::Error::custom("Invalid rseed"))?;
-                orchard::note::Note::from_parts(recipient, value, rho, rseed)
-                    .into_option()
-                    .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
-            }
             fn visit_map<A>(self, mut map: A) -> Result<orchard::note::Note, A::Error>
             where
                 A: serde::de::MapAccess<'de>,
