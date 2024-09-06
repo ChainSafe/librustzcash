@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::fmt::Display;
 use std::io;
@@ -13,7 +13,7 @@ use serde_with::FromInto;
 use serde_with::TryFromInto;
 use serde_with::{ser::SerializeAsWrap, serde_as};
 use shardtree::store::memory::MemoryShardStore;
-use shardtree::store::Checkpoint;
+use shardtree::store::{Checkpoint, TreeState};
 use shardtree::RetentionFlags;
 use shardtree::{store::ShardStore, LocatedPrunableTree, Node as TreeNode, PrunableTree};
 use zcash_client_backend::data_api::scanning::ScanPriority;
@@ -190,15 +190,74 @@ impl<H: ToFromBytes> serde_with::SerializeAs<LocatedPrunableTree<H>>
     }
 }
 
-// pub struct MemoryShardStore<H, C: Ord> {
-//     shards: Vec<LocatedPrunableTree<H>>,
-//     checkpoints: BTreeMap<C, Checkpoint>,
-//     cap: PrunableTree<H>,
-// }
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "shardtree::store::TreeState")]
+pub enum TreeStateWrapper {
+    /// Checkpoints of the empty tree.
+    Empty,
+    /// Checkpoint at a (possibly pruned) leaf state corresponding to the
+    /// wrapped leaf position.
+    AtPosition(#[serde_as(as = "FromInto<u64>")] Position),
+}
+impl SerializeAs<TreeState> for TreeStateWrapper {
+    fn serialize_as<S>(value: &TreeState, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        TreeStateWrapper::serialize(value, serializer)
+    }
+}
+impl<'de> DeserializeAs<'de, TreeState> for TreeStateWrapper {
+    fn deserialize_as<D>(deserializer: D) -> Result<TreeState, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        TreeStateWrapper::deserialize(deserializer)
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "shardtree::store::Checkpoint")]
+pub struct CheckpointWrapper {
+    #[serde_as(as = "TreeStateWrapper")]
+    #[serde(getter = "shardtree::store::Checkpoint::tree_state")]
+    pub tree_state: TreeState,
+    #[serde_as(as = "BTreeSet<FromInto<u64>>")]
+    #[serde(getter = "Checkpoint::marks_removed")]
+    pub marks_removed: BTreeSet<Position>,
+}
+impl From<CheckpointWrapper> for Checkpoint {
+    fn from(def: CheckpointWrapper) -> Checkpoint {
+        Checkpoint::from_parts(def.tree_state, def.marks_removed)
+    }
+}
+impl serde_with::SerializeAs<Checkpoint> for CheckpointWrapper {
+    fn serialize_as<S>(value: &Checkpoint, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CheckpointWrapper::serialize(value, serializer)
+    }
+}
+impl<'de> serde_with::DeserializeAs<'de, Checkpoint> for CheckpointWrapper {
+    fn deserialize_as<D>(deserializer: D) -> Result<Checkpoint, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        CheckpointWrapper::deserialize(deserializer)
+    }
+}
 
 pub struct MemoryShardStoreWrapper;
-impl<H: Clone + ToFromBytes, C: Ord + Clone, T: ShardStore<H = H, CheckpointId = C>>
-    serde_with::SerializeAs<T> for MemoryShardStoreWrapper
+impl<
+        H: Clone + ToFromBytes,
+        C: Ord + Clone + From<u32> + Into<u32>, // Most Cases this will be height
+        T: ShardStore<H = H, CheckpointId = C>,
+    > serde_with::SerializeAs<T> for MemoryShardStoreWrapper
+where
+    u32: From<C>,
 {
     fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -218,13 +277,44 @@ impl<H: Clone + ToFromBytes, C: Ord + Clone, T: ShardStore<H = H, CheckpointId =
                             .get_shard(shard_root)
                             .map_err(serde::ser::Error::custom)?
                             .ok_or_else(|| serde::ser::Error::custom("Missing shard"))?;
-                        // match *shard {}
                         Ok(shard)
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             ),
         )?;
-        // s.serialize_field("checkpoints", value)
+        let checkpoint_count = value
+            .checkpoint_count()
+            .map_err(|_| serde::ser::Error::custom("Failed to get checkpoint count"))?;
+        let mut checkpoints: Vec<(C, Checkpoint)> = Vec::with_capacity(checkpoint_count);
+        let min_checkpoint: u32 = value
+            .max_checkpoint_id()
+            .map_err(|_| serde::ser::Error::custom("Failed to get max checkpoint id"))?
+            .unwrap()
+            .into();
+        let max_checkpoint: u32 = value
+            .min_checkpoint_id()
+            .map_err(|_| serde::ser::Error::custom("Failed to get min checkpoint id"))?
+            .unwrap()
+            .into();
+
+        for checkpoint_id in min_checkpoint..=max_checkpoint {
+            let checkpoint = value
+                .get_checkpoint(&checkpoint_id.into())
+                .map_err(|_| serde::ser::Error::custom("Failed to get checkpoint"))?
+                .ok_or_else(|| serde::ser::Error::custom("Missing checkpoint"))?; // TODO: I think we can skip this and just do a length check at the end
+            checkpoints.push((checkpoint_id.into(), checkpoint));
+        }
+        if checkpoints.len() != checkpoint_count {
+            return Err(serde::ser::Error::custom(format!(
+                "Expected {} checkpoints but got {}",
+                checkpoint_count,
+                checkpoints.len()
+            )));
+        }
+        s.serialize_field(
+            "checkpoints",
+            &SerializeAsWrap::<_, Vec<(FromInto<u32>, CheckpointWrapper)>>::new(&checkpoints),
+        )?;
         s.serialize_field(
             "cap",
             &SerializeAsWrap::<_, PrunableTreeWrapper>::new(
@@ -236,6 +326,7 @@ impl<H: Clone + ToFromBytes, C: Ord + Clone, T: ShardStore<H = H, CheckpointId =
         s.end()
     }
 }
+
 impl<'de, H, C: Ord> serde_with::DeserializeAs<'de, MemoryShardStore<H, C>>
     for MemoryShardStoreWrapper
 {
@@ -247,23 +338,20 @@ impl<'de, H, C: Ord> serde_with::DeserializeAs<'de, MemoryShardStore<H, C>>
     }
 }
 
-pub struct UnifiedFullViewingKeyWrapper;
-impl serde_with::SerializeAs<UnifiedFullViewingKey> for UnifiedFullViewingKeyWrapper {
-    fn serialize_as<S>(value: &UnifiedFullViewingKey, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value.encode(&MainNetwork).serialize(serializer)
+impl ToFromBytes for UnifiedFullViewingKey {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.encode(&MainNetwork).as_bytes().to_vec()
     }
-}
-impl<'de> serde_with::DeserializeAs<'de, UnifiedFullViewingKey> for UnifiedFullViewingKeyWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<UnifiedFullViewingKey, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let b = String::deserialize(deserializer)?;
-        UnifiedFullViewingKey::decode(&MainNetwork, &b)
-            .map_err(|_| serde::de::Error::custom("Invalid unified full viewing key"))
+
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        let b = std::str::from_utf8(bytes)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid utf8"))?;
+        UnifiedFullViewingKey::decode(&MainNetwork, b).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid unified full viewing key",
+            )
+        })
     }
 }
 

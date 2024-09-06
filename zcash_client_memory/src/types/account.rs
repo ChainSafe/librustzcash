@@ -136,7 +136,7 @@ pub struct Account {
     account_id: AccountId,
     #[serde_as(as = "AccountSourceWrapper")]
     kind: AccountSource,
-    #[serde_as(as = "UnifiedFullViewingKeyWrapper")]
+    #[serde_as(as = "ToFromBytesWrapper<UnifiedFullViewingKey>")]
     viewing_key: UnifiedFullViewingKey,
     #[serde_as(as = "AccountBirthdayWrapper")]
     birthday: AccountBirthday,
