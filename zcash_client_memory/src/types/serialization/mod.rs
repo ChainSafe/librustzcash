@@ -244,9 +244,6 @@ impl<'de, H, C: Ord> serde_with::DeserializeAs<'de, MemoryShardStore<H, C>>
         D: serde::Deserializer<'de>,
     {
         todo!()
-        // let b = String::deserialize(deserializer)?;
-        // UnifiedFullViewingKey::decode(&MainNetwork, &b)
-        //     .map_err(|_| serde::de::Error::custom("Invalid unified full viewing key"))
     }
 }
 
@@ -582,45 +579,48 @@ impl<'de> serde_with::DeserializeAs<'de, Scope> for ScopeWrapper {
     }
 }
 
-pub struct PaymentAddressWrapper;
-impl serde_with::SerializeAs<sapling::PaymentAddress> for PaymentAddressWrapper {
-    fn serialize_as<S>(value: &sapling::PaymentAddress, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value.to_bytes().serialize(serializer)
-    }
-}
-impl<'de> serde_with::DeserializeAs<'de, sapling::PaymentAddress> for PaymentAddressWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<sapling::PaymentAddress, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        sapling::PaymentAddress::from_bytes(&arrays::deserialize::<_, u8, 43>(deserializer)?)
-            .ok_or_else(|| serde::de::Error::custom("Invalid sapling payment address"))
-    }
-}
-#[cfg(feature = "orchard")]
-impl serde_with::SerializeAs<orchard::Address> for PaymentAddressWrapper {
-    fn serialize_as<S>(value: &orchard::Address, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value.to_raw_address_bytes().serialize(serializer)
-    }
-}
-#[cfg(feature = "orchard")]
-impl<'de> serde_with::DeserializeAs<'de, orchard::Address> for PaymentAddressWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<orchard::Address, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        orchard::Address::from_raw_address_bytes(&arrays::deserialize::<_, u8, 43>(deserializer)?)
-            .into_option()
-            .ok_or_else(|| serde::de::Error::custom("Invalid orchard payment address"))
-    }
-}
+// pub struct PaymentAddressWrapper;
 
+impl ToFromBytes for sapling::PaymentAddress {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_bytes().to_vec()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        sapling::PaymentAddress::from_bytes(
+            bytes
+                .try_into()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}", e)))?,
+        )
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid sapling payment address",
+            )
+        })
+    }
+}
+#[cfg(feature = "orchard")]
+impl ToFromBytes for orchard::Address {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_raw_address_bytes().to_vec()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        orchard::Address::from_raw_address_bytes(
+            bytes
+                .try_into()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}", e)))?,
+        )
+        .into_option()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid sapling payment address",
+            )
+        })
+    }
+}
 pub enum RseedWrapper {
     BeforeZip212(jubjub::Fr),
     AfterZip212([u8; 32]),
@@ -754,7 +754,7 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Rho> for RhoWrapper {
 #[serde(remote = "sapling::Note")]
 pub struct SaplingNoteWrapper {
     /// The recipient of the funds.
-    #[serde_as(as = "PaymentAddressWrapper")]
+    #[serde_as(as = "ToFromBytesWrapper<PaymentAddress>")]
     #[serde(getter = "sapling::Note::recipient")]
     recipient: PaymentAddress,
     /// The value of this note.
@@ -810,7 +810,7 @@ impl serde_with::SerializeAs<orchard::note::Note> for OrchardNoteWrapper {
         let mut s = serializer.serialize_struct("OrchardNote", 4)?;
         s.serialize_field(
             "recipient",
-            &SerializeAsWrap::<_, PaymentAddressWrapper>::new(&value.recipient()),
+            &SerializeAsWrap::<_, ToFromBytesWrapper<orchard::Address>>::new(&value.recipient()),
         )?;
         s.serialize_field(
             "value",
@@ -838,7 +838,7 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWra
                 A: serde::de::SeqAccess<'de>,
             {
                 let recipient = seq
-                    .next_element::<DeserializeAsWrap<orchard::Address, PaymentAddressWrapper>>()?
+                    .next_element::<DeserializeAsWrap<orchard::Address, ToFromBytesWrapper<orchard::Address>>>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &"a recipient"))?
                     .into_inner();
                 let value = seq
@@ -871,11 +871,10 @@ impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWra
                 while let Some(key) = map.next_key()? {
                     match key {
                         "recipient" => {
-                            recipient =
-                                Some(map.next_value::<DeserializeAsWrap<
-                                    orchard::Address,
-                                    PaymentAddressWrapper,
-                                >>()?);
+                            recipient = Some(map.next_value::<DeserializeAsWrap<
+                                orchard::Address,
+                                ToFromBytesWrapper<orchard::Address>,
+                            >>()?);
                         }
                         "value" => {
                             value =
