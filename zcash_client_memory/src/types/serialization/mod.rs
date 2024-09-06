@@ -6,6 +6,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use incrementalmerkletree::frontier::{self, FrontierError};
+use incrementalmerkletree::Hashable;
 use serde::ser::{SerializeSeq, SerializeTuple};
 use serde::{de, Deserializer};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -16,6 +17,7 @@ use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, TreeState};
 use shardtree::RetentionFlags;
 use shardtree::{store::ShardStore, LocatedPrunableTree, Node as TreeNode, PrunableTree};
+use std::fmt::Debug;
 use zcash_client_backend::data_api::scanning::ScanPriority;
 use zcash_client_backend::{
     data_api::{AccountPurpose, AccountSource},
@@ -28,19 +30,110 @@ use zcash_protocol::consensus::{BlockHeight, MainNetwork};
 use zcash_protocol::memo::Memo;
 use zcash_protocol::{memo::MemoBytes, ShieldedProtocol};
 use zip32::fingerprint::SeedFingerprint;
-
 const SER_V1: u8 = 1;
 
 const NIL_TAG: u8 = 0;
 const LEAF_TAG: u8 = 1;
 const PARENT_TAG: u8 = 2;
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-struct Test {
-    #[serde_as(as = "MemoryShardStoreWrapper")]
-    pub x: MemoryShardStore<sapling::Node, BlockHeight>,
+
+pub struct MemoryShardTreeWrapper;
+impl<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
+    SerializeAs<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
+    for MemoryShardTreeWrapper
+where
+    H: Clone + Hashable + PartialEq + ToFromBytes,
+    C: Ord + Clone + Debug + From<u32> + Into<u32>,
+{
+    fn serialize_as<S>(
+        value: &shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("MemoryShardTree", 2)?;
+
+        s.serialize_field(
+            "store",
+            &SerializeAsWrap::<_, MemoryShardStoreWrapper>::new(value.store()),
+        )?;
+        s.serialize_field("max_checkpoints", &value.max_checkpoints())?;
+        s.end()
+    }
 }
 
+impl<'de, H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
+    DeserializeAs<'de, shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
+    for MemoryShardTreeWrapper
+where
+    H: Clone + Hashable + PartialEq + ToFromBytes,
+    C: Ord + Clone + Debug + From<u32> + Into<u32>,
+{
+    fn deserialize_as<D>(
+        deserializer: D,
+    ) -> Result<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+            std::marker::PhantomData<(H, C)>,
+        );
+        impl<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8> Visitor<H, C, DEPTH, SHARD_HEIGHT> {
+            fn new() -> Self {
+                Self(std::marker::PhantomData)
+            }
+        }
+        impl<
+                'de,
+                H: Clone + Hashable + PartialEq + ToFromBytes,
+                C: Ord + Clone + Debug + From<u32> + Into<u32>,
+                const DEPTH: u8,
+                const SHARD_HEIGHT: u8,
+            > serde::de::Visitor<'de> for Visitor<H, C, DEPTH, SHARD_HEIGHT>
+        {
+            type Value = shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a ShardTree")
+            }
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut store = None;
+                let mut max_checkpoints = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "store" => {
+                            store = Some(
+                                map.next_value::<DeserializeAsWrap<_, MemoryShardStoreWrapper>>()?,
+                            );
+                        }
+                        "max_checkpoints" => {
+                            max_checkpoints = Some(map.next_value::<usize>()?);
+                        }
+                        _ => {
+                            return Err(serde::de::Error::custom(format!(
+                                "Unexpected key: {}",
+                                key
+                            )));
+                        }
+                    }
+                }
+                let store = store
+                    .ok_or_else(|| serde::de::Error::missing_field("store"))?
+                    .into_inner();
+                let max_checkpoints = max_checkpoints
+                    .ok_or_else(|| serde::de::Error::missing_field("max_checkpoints"))?;
+                Ok(shardtree::ShardTree::new(store, max_checkpoints))
+            }
+        }
+        deserializer.deserialize_struct(
+            "MemoryShardTree",
+            &["store", "max_checkpoints"],
+            Visitor::<H, C, DEPTH, SHARD_HEIGHT>::new(),
+        )
+    }
+}
 pub struct PrunableTreeWrapper;
 // This is copied from zcash_client_backend/src/serialization/shardtree.rs
 impl<H: ToFromBytes> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
@@ -260,6 +353,7 @@ impl<'de> serde_with::DeserializeAs<'de, Checkpoint> for CheckpointWrapper {
     }
 }
 
+#[serde_as]
 pub struct MemoryShardStoreWrapper;
 impl<
         H: Clone + ToFromBytes,

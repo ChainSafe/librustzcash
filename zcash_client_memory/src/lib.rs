@@ -62,7 +62,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     nullifiers: NullifierMap,
     tx_locator: TxLocatorMap,
     scan_queue: ScanQueue,
-    #[serde(skip)]
+    #[serde_as(as = "MemoryShardTreeWrapper")]
     sapling_tree: ShardTree<
         MemoryShardStore<sapling::Node, BlockHeight>,
         { SAPLING_SHARD_HEIGHT * 2 },
@@ -73,7 +73,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     sapling_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 
     #[cfg(feature = "orchard")]
-    #[serde(skip)]
+    #[serde_as(as = "MemoryShardTreeWrapper")]
     orchard_tree: ShardTree<
         MemoryShardStore<orchard::tree::MerkleHashOrchard, BlockHeight>,
         { ORCHARD_SHARD_HEIGHT * 2 },
