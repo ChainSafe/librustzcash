@@ -1,30 +1,10 @@
-
-
-
-
-
-
-
-
-
 use serde::{Deserialize, Serialize};
 
-use serde_with::{serde_as};
+use serde_with::serde_as;
 
-use serde_with::{FromInto};
+use serde_with::FromInto;
 
-
-
-
-
-
-
-use zcash_primitives::{transaction::TxId};
-
-
-
-
-
+use zcash_primitives::transaction::TxId;
 
 pub(crate) struct TxIdWrapper;
 

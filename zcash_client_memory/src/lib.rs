@@ -11,7 +11,7 @@ use shardtree::{
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     num::NonZeroU32,
-    ops::{RangeInclusive},
+    ops::RangeInclusive,
 };
 
 use zcash_protocol::consensus::{self};

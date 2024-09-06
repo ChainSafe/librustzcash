@@ -1,30 +1,9 @@
-
-
-
-
-
-
-
-
-
 use serde::{Deserialize, Serialize};
 
-
-use serde_with::{DeserializeAs};
-use serde_with::{SerializeAs};
-
-
+use serde_with::DeserializeAs;
+use serde_with::SerializeAs;
 
 use zcash_client_backend::data_api::scanning::ScanPriority;
-
-
-
-
-
-
-
-
-
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "zcash_client_backend::data_api::scanning::ScanPriority")]

@@ -3,11 +3,9 @@ use incrementalmerkletree::Position;
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use serde_with::{FromInto};
+use serde_with::FromInto;
 use std::collections::BTreeMap;
-use std::{
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 use zip32::Scope;
 

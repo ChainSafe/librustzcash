@@ -1,30 +1,11 @@
-
-
-
-
-
-
 use incrementalmerkletree::frontier::{self, Frontier, NonEmptyFrontier};
-use incrementalmerkletree::{Position};
+use incrementalmerkletree::Position;
+use serde::ser::SerializeStruct;
 use serde::ser::{SerializeSeq, SerializeTuple};
 use serde::Deserializer;
-use serde::{ser::SerializeStruct};
 
 use serde_with::{de::DeserializeAs, de::DeserializeAsWrap, ser::SerializeAsWrap};
 use serde_with::{FromInto, SerializeAs};
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 use crate::{ToFromBytes, ToFromBytesWrapper};
 

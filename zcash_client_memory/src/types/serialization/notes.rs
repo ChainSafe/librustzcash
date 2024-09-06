@@ -7,35 +7,21 @@ use zip32::Scope;
 
 use std::io;
 
-
-
-
 use serde::ser::{SerializeSeq, SerializeTuple};
 use serde::Deserializer;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-
 use serde_with::{ser::SerializeAsWrap, serde_as};
 
+use zcash_client_backend::wallet::NoteId;
 
-
-
-
-
-use zcash_client_backend::{
-    wallet::NoteId,
-};
-
-
-use zcash_primitives::{transaction::TxId};
-
+use zcash_primitives::transaction::TxId;
 
 use crate::ToFromBytes;
 use crate::ToFromBytesWrapper;
 use crate::TxIdWrapper;
 
-use zcash_protocol::{ShieldedProtocol};
-
+use zcash_protocol::ShieldedProtocol;
 
 pub(crate) struct ShieldedProtocolWrapper;
 impl serde_with::SerializeAs<ShieldedProtocol> for ShieldedProtocolWrapper {

@@ -2,41 +2,11 @@ mod frontier;
 mod tree;
 pub use frontier::*;
 
-
-
-
 pub use tree::*;
-
-
 
 use std::io;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 use crate::ToFromBytes;
-
-
-
-
 
 impl ToFromBytes for sapling::Node {
     fn to_bytes(&self) -> Vec<u8> {

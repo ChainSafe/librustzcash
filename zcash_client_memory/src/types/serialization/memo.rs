@@ -1,30 +1,7 @@
-
-
-
-
-
-
-
-
-
 use serde::{Deserialize, Serialize};
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 use zcash_protocol::memo::Memo;
-use zcash_protocol::{memo::MemoBytes};
-
+use zcash_protocol::memo::MemoBytes;
 
 pub struct MemoBytesWrapper;
 impl serde_with::SerializeAs<MemoBytes> for MemoBytesWrapper {

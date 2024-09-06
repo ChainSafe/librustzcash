@@ -1,30 +1,6 @@
-
-
 use std::io;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 use crate::ToFromBytes;
-
-
 
 impl ToFromBytes for sapling::Nullifier {
     fn to_bytes(&self) -> Vec<u8> {
