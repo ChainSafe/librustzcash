@@ -26,16 +26,136 @@ use zcash_client_backend::{
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::merkle_tree::HashSer;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
-use zcash_protocol::consensus::{BlockHeight, MainNetwork};
+use zcash_protocol::consensus::{
+    self, BlockHeight, MainNetwork, TestNetwork, MAIN_NETWORK, TEST_NETWORK,
+};
+
 use zcash_protocol::memo::Memo;
 use zcash_protocol::{memo::MemoBytes, ShieldedProtocol};
 use zip32::fingerprint::SeedFingerprint;
+
+#[cfg(feature = "local-consensus")]
+use zcash_protocol::local_consensus::LocalNetwork;
+
 const SER_V1: u8 = 1;
 
 const NIL_TAG: u8 = 0;
 const LEAF_TAG: u8 = 1;
 const PARENT_TAG: u8 = 2;
 
+#[serde_as]
+#[derive(Clone, Deserialize, Serialize)]
+pub enum NetWrapper {
+    Main,
+    Test,
+    #[cfg(feature = "local-consensus")]
+    Regtest(#[serde_as(as = "LocalNetworkWrapper")] LocalNetwork),
+}
+impl consensus::Parameters for NetWrapper {
+    fn network_type(&self) -> consensus::NetworkType {
+        match self {
+            NetWrapper::Main => MAIN_NETWORK.network_type(),
+            NetWrapper::Test => TEST_NETWORK.network_type(),
+            #[cfg(feature = "local-consensus")]
+            NetWrapper::Regtest(n) => n.network_type(),
+        }
+    }
+
+    fn activation_height(&self, nu: consensus::NetworkUpgrade) -> Option<BlockHeight> {
+        match self {
+            NetWrapper::Main => MAIN_NETWORK.activation_height(nu),
+            NetWrapper::Test => TEST_NETWORK.activation_height(nu),
+            #[cfg(feature = "local-consensus")]
+            NetWrapper::Regtest(n) => n.activation_height(nu),
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "consensus::NetworkType")]
+pub enum NetworkTypeWrapper {
+    Main,
+    Test,
+    Regtest,
+}
+impl SerializeAs<consensus::NetworkType> for NetworkTypeWrapper {
+    fn serialize_as<S>(value: &consensus::NetworkType, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        NetworkTypeWrapper::serialize(value, serializer)
+    }
+}
+impl<'de> DeserializeAs<'de, consensus::NetworkType> for NetworkTypeWrapper {
+    fn deserialize_as<D>(deserializer: D) -> Result<consensus::NetworkType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        NetworkTypeWrapper::deserialize(deserializer)
+    }
+}
+
+// #[serde_with::apply(
+//     Option<BlockHeight> => #[serde_as(as = "Option<FromInto<u32>>")],
+// )]
+#[cfg(feature = "local-consensus")]
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "LocalNetwork")]
+pub struct LocalNetworkWrapper {
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    pub overwinter: Option<BlockHeight>,
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    pub sapling: Option<BlockHeight>,
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    pub blossom: Option<BlockHeight>,
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    pub heartwood: Option<BlockHeight>,
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    pub canopy: Option<BlockHeight>,
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    pub nu5: Option<BlockHeight>,
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    pub nu6: Option<BlockHeight>,
+    #[cfg(zcash_unstable = "zfuture")]
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    pub z_future: Option<BlockHeight>,
+}
+#[cfg(feature = "local-consensus")]
+impl From<LocalNetworkWrapper> for LocalNetwork {
+    fn from(def: LocalNetworkWrapper) -> LocalNetwork {
+        LocalNetwork {
+            overwinter: def.overwinter,
+            sapling: def.sapling,
+            blossom: def.blossom,
+            heartwood: def.heartwood,
+            canopy: def.canopy,
+            nu5: def.nu5,
+            nu6: def.nu6,
+            #[cfg(zcash_unstable = "zfuture")]
+            z_future: def.z_future,
+        }
+    }
+}
+#[cfg(feature = "local-consensus")]
+impl SerializeAs<LocalNetwork> for LocalNetworkWrapper {
+    fn serialize_as<S>(value: &LocalNetwork, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        LocalNetworkWrapper::serialize(value, serializer)
+    }
+}
+#[cfg(feature = "local-consensus")]
+impl<'de> DeserializeAs<'de, LocalNetwork> for LocalNetworkWrapper {
+    fn deserialize_as<D>(deserializer: D) -> Result<LocalNetwork, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        LocalNetworkWrapper::deserialize(deserializer)
+    }
+}
 pub struct MemoryShardTreeWrapper;
 impl<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
     SerializeAs<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>

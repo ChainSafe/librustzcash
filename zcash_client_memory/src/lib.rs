@@ -49,8 +49,9 @@ use types::serialization::*;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[serde_as]
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
+    // #[serde_as(as = "ConsensusParamsWrapper")]
     #[serde(skip)]
     params: P,
     accounts: Accounts,

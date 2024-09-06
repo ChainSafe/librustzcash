@@ -56,7 +56,7 @@ serde_with = "3.9.0"
 
 [features]
 default = ["multicore"]
-
+local-consensus = ["zcash_protocol/local-consensus"]
 ## Enables multithreading support for creating proofs and building subtrees.
 multicore = ["maybe-rayon/threads", "zcash_primitives/multicore"]
 
