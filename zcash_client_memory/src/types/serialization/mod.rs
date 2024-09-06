@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use incrementalmerkletree::frontier::{self, FrontierError};
 use serde::ser::{SerializeSeq, SerializeTuple};
-use serde::Deserializer;
+use serde::{de, Deserializer};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use serde_with::FromInto;
 use serde_with::TryFromInto;
@@ -189,6 +189,16 @@ impl<H: ToFromBytes> serde_with::SerializeAs<LocatedPrunableTree<H>>
         LocatedPrunableTreeWrapper::serialize(value, serializer)
     }
 }
+impl<'de, H: ToFromBytes> serde_with::DeserializeAs<'de, LocatedPrunableTree<H>>
+    for LocatedPrunableTreeWrapper<H>
+{
+    fn deserialize_as<D>(deserializer: D) -> Result<LocatedPrunableTree<H>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        LocatedPrunableTreeWrapper::deserialize(deserializer)
+    }
+}
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -256,8 +266,6 @@ impl<
         C: Ord + Clone + From<u32> + Into<u32>, // Most Cases this will be height
         T: ShardStore<H = H, CheckpointId = C>,
     > serde_with::SerializeAs<T> for MemoryShardStoreWrapper
-where
-    u32: From<C>,
 {
     fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -327,14 +335,98 @@ where
     }
 }
 
-impl<'de, H, C: Ord> serde_with::DeserializeAs<'de, MemoryShardStore<H, C>>
-    for MemoryShardStoreWrapper
+impl<'de, H: Clone + ToFromBytes, C: Clone + Ord + From<u32> + Into<u32>>
+    serde_with::DeserializeAs<'de, MemoryShardStore<H, C>> for MemoryShardStoreWrapper
 {
     fn deserialize_as<D>(deserializer: D) -> Result<MemoryShardStore<H, C>, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        todo!()
+        struct Visitor<H, C>(std::marker::PhantomData<(H, C)>);
+        impl<H, C> Visitor<H, C> {
+            fn new() -> Self {
+                Self(std::marker::PhantomData)
+            }
+        }
+        impl<'de, H, C> serde::de::Visitor<'de> for Visitor<H, C>
+        where
+            H: Clone + ToFromBytes,
+            C: Ord + Clone + From<u32> + Into<u32>, // Most Cases this will be height
+        {
+            type Value = MemoryShardStore<H, C>;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a MemoryShardStore")
+            }
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut shards = None;
+                let mut checkpoints = None;
+                let mut cap = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "shards" => {
+                            shards = Some (
+                                map.next_value::<DeserializeAsWrap<
+                                _,
+                                Vec<LocatedPrunableTreeWrapper<_>>>>()?
+                             );
+                        }
+                        "checkpoints" => {
+                            checkpoints =
+                                Some(map.next_value::<DeserializeAsWrap<
+                                    _,
+                                    Vec<(FromInto<u32>, CheckpointWrapper)>,
+                                >>()?);
+                        }
+                        "cap" => {
+                            cap = Some(
+                                map.next_value::<DeserializeAsWrap<_, PrunableTreeWrapper>>()?,
+                            );
+                        }
+                        _ => {
+                            return Err(serde::de::Error::custom(format!(
+                                "Unexpected key: {}",
+                                key
+                            )));
+                        }
+                    }
+                }
+                let shards = shards
+                    .ok_or_else(|| serde::de::Error::missing_field("shards"))?
+                    .into_inner();
+                let checkpoints: Vec<(C, Checkpoint)> = checkpoints
+                    .ok_or_else(|| serde::de::Error::missing_field("checkpoints"))?
+                    .into_inner();
+                let cap = cap
+                    .ok_or_else(|| serde::de::Error::missing_field("cap"))?
+                    .into_inner();
+
+                let mut store = MemoryShardStore::empty();
+                for shard in shards {
+                    store
+                        .put_shard(shard)
+                        .map_err(|_e| serde::de::Error::custom("Failed to put shard into store"))?;
+                }
+                store
+                    .put_cap(cap)
+                    .map_err(|_e| serde::de::Error::custom("Failed to put cap into store"))?;
+                for (checkpoint_id, checkpoint) in checkpoints {
+                    store
+                        .add_checkpoint(checkpoint_id, checkpoint)
+                        .map_err(|_e| {
+                            serde::de::Error::custom("Failed to add checkpoint to store")
+                        })?;
+                }
+                Ok(store)
+            }
+        }
+        deserializer.deserialize_struct(
+            "MemoryShardStore",
+            &["shards", "checkpoints", "cap"],
+            Visitor::<H, C>::new(),
+        )
     }
 }
 
