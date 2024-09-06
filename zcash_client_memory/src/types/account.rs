@@ -172,7 +172,7 @@ impl Account {
             .to_unified_incoming_viewing_key()
             .to_address_request()
             .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
-            .ok_or_else(|| AddressGenerationError::ShieldedReceiverRequired)?;
+            .ok_or(AddressGenerationError::ShieldedReceiverRequired)?;
         self.uivk()
             .find_address(self.diversifier_index, request)
             .map_err(Error::from)

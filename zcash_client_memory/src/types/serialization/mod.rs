@@ -1,14 +1,14 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::convert::Infallible;
-use std::fmt::Display;
+use std::collections::{BTreeSet};
+
+
 use std::io;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use incrementalmerkletree::frontier::{self, FrontierError};
+use incrementalmerkletree::frontier::{self};
 use incrementalmerkletree::Hashable;
 use serde::ser::{SerializeSeq, SerializeTuple};
-use serde::{de, Deserializer};
+use serde::{Deserializer};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use serde_with::FromInto;
 use serde_with::TryFromInto;
@@ -24,10 +24,10 @@ use zcash_client_backend::{
     wallet::NoteId,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::merkle_tree::HashSer;
+
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{
-    self, BlockHeight, MainNetwork, TestNetwork, MAIN_NETWORK, TEST_NETWORK,
+    BlockHeight, MainNetwork,
 };
 
 use zcash_protocol::memo::Memo;
@@ -1528,7 +1528,7 @@ impl<'de, T: ToFromBytes> DeserializeAs<'de, T> for ToFromBytesWrapper<T> {
         D: serde::Deserializer<'de>,
     {
         T::from_bytes(<Vec<u8>>::deserialize(deserializer)?.as_slice())
-            .map_err(|e| serde::de::Error::custom(e))
+            .map_err(serde::de::Error::custom)
     }
 }
 impl<T: ToFromBytes> Serialize for ToFromBytesWrapper<T> {

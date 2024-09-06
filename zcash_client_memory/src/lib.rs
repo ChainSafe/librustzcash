@@ -11,13 +11,13 @@ use shardtree::{
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     num::NonZeroU32,
-    ops::{Deref, DerefMut, RangeInclusive},
+    ops::{RangeInclusive},
 };
-use zcash_address::Network;
-use zcash_protocol::consensus::{self, MainNetwork, TestNetwork};
+
+use zcash_protocol::consensus::{self};
 use zip32::fingerprint::SeedFingerprint;
 
-use zcash_primitives::{consensus::BlockHeight, consensus::NetworkType, transaction::TxId};
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
