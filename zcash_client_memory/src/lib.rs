@@ -11,12 +11,13 @@ use shardtree::{
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     num::NonZeroU32,
-    ops::RangeInclusive,
+    ops::{Deref, DerefMut, RangeInclusive},
 };
-use zcash_protocol::consensus;
+use zcash_address::Network;
+use zcash_protocol::consensus::{self, MainNetwork, TestNetwork};
 use zip32::fingerprint::SeedFingerprint;
 
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::{consensus::BlockHeight, consensus::NetworkType, transaction::TxId};
 
 use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
@@ -51,7 +52,6 @@ use types::serialization::*;
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
-    // #[serde_as(as = "ConsensusParamsWrapper")]
     #[serde(skip)]
     params: P,
     accounts: Accounts,
