@@ -1,15 +1,12 @@
 use incrementalmerkletree::frontier::{self, Frontier, NonEmptyFrontier};
 use incrementalmerkletree::Position;
 use serde::ser::SerializeStruct;
-use serde::ser::{SerializeSeq, SerializeTuple};
-use serde::Deserializer;
 
 use serde_with::{de::DeserializeAs, de::DeserializeAsWrap, ser::SerializeAsWrap};
 use serde_with::{FromInto, SerializeAs};
 
 use crate::{ToFromBytes, ToFromBytesWrapper};
 
-// use crate::types::serialization::*;
 pub struct FrontierWrapper<T: ToFromBytes + Clone> {
     pub frontier: Option<NonEmptyFrontier<T>>,
 }

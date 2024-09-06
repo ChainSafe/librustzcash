@@ -1,7 +1,6 @@
 mod frontier;
 mod tree;
 pub use frontier::*;
-
 pub use tree::*;
 
 use std::io;
