@@ -1,18 +1,254 @@
+use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::fmt::Display;
+use std::io;
+use std::ops::Deref;
+use std::sync::Arc;
+
+use incrementalmerkletree::frontier::{self, FrontierError};
+use serde::ser::{SerializeSeq, SerializeTuple};
 use serde::Deserializer;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use serde_with::FromInto;
 use serde_with::TryFromInto;
 use serde_with::{ser::SerializeAsWrap, serde_as};
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::store::Checkpoint;
+use shardtree::RetentionFlags;
+use shardtree::{store::ShardStore, LocatedPrunableTree, Node as TreeNode, PrunableTree};
+use zcash_client_backend::data_api::scanning::ScanPriority;
 use zcash_client_backend::{
     data_api::{AccountPurpose, AccountSource},
     wallet::NoteId,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_primitives::merkle_tree::HashSer;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{BlockHeight, MainNetwork};
 use zcash_protocol::memo::Memo;
 use zcash_protocol::{memo::MemoBytes, ShieldedProtocol};
 use zip32::fingerprint::SeedFingerprint;
+
+const SER_V1: u8 = 1;
+
+const NIL_TAG: u8 = 0;
+const LEAF_TAG: u8 = 1;
+const PARENT_TAG: u8 = 2;
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+struct Test {
+    #[serde_as(as = "MemoryShardStoreWrapper")]
+    pub x: MemoryShardStore<sapling::Node, BlockHeight>,
+}
+
+pub struct PrunableTreeWrapper;
+// This is copied from zcash_client_backend/src/serialization/shardtree.rs
+impl<H: ToFromBytes> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
+    fn serialize_as<S>(value: &PrunableTree<H>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        fn serialize_inner<H: ToFromBytes, S>(
+            tree: &PrunableTree<H>,
+            state: &mut S::SerializeSeq,
+        ) -> Result<(), S::Error>
+        where
+            S: Serializer,
+        {
+            match tree.deref() {
+                TreeNode::Parent { ann, left, right } => {
+                    state.serialize_element(&PARENT_TAG)?;
+                    state.serialize_element(&SerializeAsWrap::<
+                        _,
+                        Option<ToFromBytesWrapper<Arc<H>>>,
+                    >::new(&ann.as_ref()))?;
+                    serialize_inner::<H, S>(left, state)?;
+                    serialize_inner::<H, S>(right, state)?;
+                    Ok(())
+                }
+                TreeNode::Leaf { value } => {
+                    state.serialize_element(&LEAF_TAG)?;
+                    state.serialize_element(&SerializeAsWrap::<_, ToFromBytesWrapper<H>>::new(
+                        &value.0,
+                    ))?;
+                    state.serialize_element(&value.1.bits())?;
+                    Ok(())
+                }
+                TreeNode::Nil => {
+                    state.serialize_element(&NIL_TAG)?;
+                    Ok(())
+                }
+            }
+        }
+
+        let mut state = serializer.serialize_seq(None)?;
+        state.serialize_element(&SER_V1)?;
+        serialize_inner::<H, S>(value, &mut state)?;
+        state.end()
+    }
+}
+impl<'de, H: ToFromBytes> DeserializeAs<'de, PrunableTree<H>> for PrunableTreeWrapper {
+    fn deserialize_as<D>(deserializer: D) -> Result<PrunableTree<H>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor<H>(std::marker::PhantomData<H>);
+        impl<H> Visitor<H> {
+            fn new() -> Self {
+                Self(std::marker::PhantomData)
+            }
+        }
+        impl<'de, H: ToFromBytes> serde::de::Visitor<'de> for Visitor<H> {
+            type Value = PrunableTree<H>;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a PrunableTree")
+            }
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let version: u8 = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                if version != SER_V1 {
+                    return Err(serde::de::Error::custom("Invalid version"));
+                }
+                let tree = deserialize_inner::<H, A>(&mut seq)?;
+                Ok(tree)
+            }
+        }
+        fn deserialize_inner<'de, H: ToFromBytes, A>(
+            seq: &mut A,
+        ) -> Result<PrunableTree<H>, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            // TODO: Is this right? We explicitly serialize the nil tag which isnt technically conventional
+            let tag = seq.next_element()?.unwrap_or(NIL_TAG);
+
+            match tag {
+                PARENT_TAG => {
+                    let ann = seq.next_element::<Option::<
+                    DeserializeAsWrap<Arc<H>,ToFromBytesWrapper<Arc<H>>>>>()?
+                    .ok_or_else(|| serde::de::Error::custom("Read parent tag but failed to read node"))?
+                        .map(|ann| ann.into_inner());
+                    let left = deserialize_inner::<H, A>(seq)?;
+                    let right = deserialize_inner::<H, A>(seq)?;
+                    Ok(PrunableTree::parent(ann, left, right))
+                }
+                LEAF_TAG => {
+                    let value = seq
+                        .next_element::<DeserializeAsWrap<H, ToFromBytesWrapper<H>>>()?
+                        .ok_or_else(|| {
+                            serde::de::Error::custom("Read leaf tag but failed to read value")
+                        })?
+                        .into_inner();
+                    let flags = seq
+                        .next_element::<u8>()?
+                        .ok_or_else(|| {
+                            serde::de::Error::custom(
+                                "Read leaf tag but failed to read retention flags",
+                            )
+                        })
+                        .map(RetentionFlags::from_bits)?
+                        .ok_or_else(|| serde::de::Error::custom("Invalid retention flags"))?;
+
+                    Ok(PrunableTree::leaf((value, flags)))
+                }
+                NIL_TAG => Ok(PrunableTree::empty()),
+                _ => Err(serde::de::Error::custom("Invalid node tag")),
+            }
+        }
+        deserializer.deserialize_seq(Visitor::<H>::new())
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "LocatedPrunableTree")]
+pub struct LocatedPrunableTreeWrapper<H: ToFromBytes> {
+    #[serde_as(as = "TreeAddressWrapper")]
+    #[serde(getter = "LocatedPrunableTree::root_addr")]
+    pub root_addr: incrementalmerkletree::Address,
+    #[serde_as(as = "PrunableTreeWrapper")]
+    #[serde(getter = "LocatedPrunableTree::root")]
+    pub root: PrunableTree<H>,
+}
+impl<H: ToFromBytes> From<LocatedPrunableTreeWrapper<H>> for LocatedPrunableTree<H> {
+    fn from(def: LocatedPrunableTreeWrapper<H>) -> LocatedPrunableTree<H> {
+        LocatedPrunableTree::from_parts(def.root_addr, def.root)
+    }
+}
+impl<H: ToFromBytes> serde_with::SerializeAs<LocatedPrunableTree<H>>
+    for LocatedPrunableTreeWrapper<H>
+{
+    fn serialize_as<S>(value: &LocatedPrunableTree<H>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        LocatedPrunableTreeWrapper::serialize(value, serializer)
+    }
+}
+
+// pub struct MemoryShardStore<H, C: Ord> {
+//     shards: Vec<LocatedPrunableTree<H>>,
+//     checkpoints: BTreeMap<C, Checkpoint>,
+//     cap: PrunableTree<H>,
+// }
+
+pub struct MemoryShardStoreWrapper;
+impl<H: Clone + ToFromBytes, C: Ord + Clone, T: ShardStore<H = H, CheckpointId = C>>
+    serde_with::SerializeAs<T> for MemoryShardStoreWrapper
+{
+    fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("MemoryShardStore", 3)?;
+
+        s.serialize_field(
+            "shards",
+            &SerializeAsWrap::<_, Vec<LocatedPrunableTreeWrapper<_>>>::new(
+                &value
+                    .get_shard_roots()
+                    .map_err(serde::ser::Error::custom)?
+                    .into_iter()
+                    .map(|shard_root| {
+                        let shard = value
+                            .get_shard(shard_root)
+                            .map_err(serde::ser::Error::custom)?
+                            .ok_or_else(|| serde::ser::Error::custom("Missing shard"))?;
+                        // match *shard {}
+                        Ok(shard)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        )?;
+        // s.serialize_field("checkpoints", value)
+        s.serialize_field(
+            "cap",
+            &SerializeAsWrap::<_, PrunableTreeWrapper>::new(
+                &value
+                    .get_cap()
+                    .map_err(|_| serde::ser::Error::custom("Failed to get cap"))?,
+            ),
+        )?;
+        s.end()
+    }
+}
+impl<'de, H, C: Ord> serde_with::DeserializeAs<'de, MemoryShardStore<H, C>>
+    for MemoryShardStoreWrapper
+{
+    fn deserialize_as<D>(deserializer: D) -> Result<MemoryShardStore<H, C>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        todo!()
+        // let b = String::deserialize(deserializer)?;
+        // UnifiedFullViewingKey::decode(&MainNetwork, &b)
+        //     .map_err(|_| serde::de::Error::custom("Invalid unified full viewing key"))
+    }
+}
 
 pub struct UnifiedFullViewingKeyWrapper;
 impl serde_with::SerializeAs<UnifiedFullViewingKey> for UnifiedFullViewingKeyWrapper {
@@ -769,6 +1005,7 @@ impl From<AccountBirthdayWrapper> for zcash_client_backend::data_api::AccountBir
         )
     }
 }
+type Ll = ToFromBytesWrapper<sapling::Node>;
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -780,11 +1017,11 @@ pub struct ChainStateWrapper {
     #[serde_as(as = "BlockHashWrapper")]
     #[serde(getter = "zcash_client_backend::data_api::chain::ChainState::block_hash")]
     pub block_hash: BlockHash,
-    #[serde_as(as = "TryFromInto<SaplingFrontierWrapper>")]
+    #[serde_as(as = "FrontierWrapper<sapling::Node>")]
     #[serde(getter = "zcash_client_backend::data_api::chain::ChainState::final_sapling_tree")]
     pub final_sapling_tree: Frontier<sapling::Node, { sapling::NOTE_COMMITMENT_TREE_DEPTH }>,
     #[cfg(feature = "orchard")]
-    #[serde_as(as = "TryFromInto<OrchardFrontierWrapper>")]
+    #[serde_as(as = "FrontierWrapper<orchard::tree::MerkleHashOrchard>")]
     #[serde(getter = "zcash_client_backend::data_api::chain::ChainState::final_orchard_tree")]
     pub final_orchard_tree:
         Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
@@ -819,178 +1056,290 @@ impl From<ChainStateWrapper> for zcash_client_backend::data_api::chain::ChainSta
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct SaplingFrontierWrapper {
-    pub frontier: Option<NonEmptySaplingFrontierWrapper>,
+pub struct FrontierWrapper<T: ToFromBytes + Clone> {
+    pub frontier: Option<NonEmptyFrontier<T>>,
 }
-
-#[cfg(feature = "orchard")]
-#[derive(Serialize, Deserialize)]
-pub struct OrchardFrontierWrapper {
-    pub frontier: Option<NonEmptyOrchardFrontierWrapper>,
-}
-
-type NonEmptyFrontierSapling = NonEmptyFrontier<sapling::Node>;
-#[cfg(feature = "orchard")]
-type NonEmptyFrontierOrchard = NonEmptyFrontier<orchard::tree::MerkleHashOrchard>;
-
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-pub struct NonEmptySaplingFrontierWrapper {
-    #[serde_as(as = "FromInto<u64>")]
-    pub position: Position,
-    #[serde_as(as = "SaplingNodeWrapper")]
-    pub leaf: sapling::Node,
-    #[serde_as(as = "Vec<SaplingNodeWrapper>")]
-    pub ommers: Vec<sapling::Node>,
-}
-
-impl From<Frontier<sapling::Node, { sapling::NOTE_COMMITMENT_TREE_DEPTH }>>
-    for SaplingFrontierWrapper
+impl<T: ToFromBytes + Clone, const DEPTH: u8> SerializeAs<Frontier<T, DEPTH>>
+    for FrontierWrapper<T>
 {
-    fn from(frontier: Frontier<sapling::Node, { sapling::NOTE_COMMITMENT_TREE_DEPTH }>) -> Self {
-        match frontier.take().map(|f| f.into_parts()) {
-            Some((position, leaf, ommers)) => SaplingFrontierWrapper {
-                frontier: Some(NonEmptySaplingFrontierWrapper {
-                    position,
-                    leaf,
-                    ommers,
-                }),
-            },
-            None => SaplingFrontierWrapper { frontier: None },
-        }
-    }
-}
-
-impl TryInto<Frontier<sapling::Node, { sapling::NOTE_COMMITMENT_TREE_DEPTH }>>
-    for SaplingFrontierWrapper
-{
-    type Error = String;
-    fn try_into(
-        self,
-    ) -> Result<Frontier<sapling::Node, { sapling::NOTE_COMMITMENT_TREE_DEPTH }>, Self::Error> {
-        match self.frontier {
-            Some(n) => {
-                let NonEmptySaplingFrontierWrapper {
-                    position,
-                    leaf,
-                    ommers,
-                } = n;
-                Frontier::from_parts(position, leaf, ommers).map_err(|e| format!("{:?}", e))
-            }
-            None => Ok(Frontier::empty()),
-        }
-    }
-}
-#[cfg(feature = "orchard")]
-impl From<Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
-    for OrchardFrontierWrapper
-{
-    fn from(
-        frontier: Frontier<
-            orchard::tree::MerkleHashOrchard,
-            { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
-        >,
-    ) -> Self {
-        match frontier.take().map(|f| f.into_parts()) {
-            Some((position, leaf, ommers)) => OrchardFrontierWrapper {
-                frontier: Some(NonEmptyOrchardFrontierWrapper {
-                    position,
-                    leaf,
-                    ommers,
-                }),
-            },
-            None => OrchardFrontierWrapper { frontier: None },
-        }
-    }
-}
-#[cfg(feature = "orchard")]
-impl
-    TryInto<
-        Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
-    > for OrchardFrontierWrapper
-{
-    type Error = String;
-    fn try_into(
-        self,
-    ) -> Result<
-        Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
-        Self::Error,
-    > {
-        match self.frontier {
-            Some(n) => {
-                let NonEmptyOrchardFrontierWrapper {
-                    position,
-                    leaf,
-                    ommers,
-                } = n;
-                Frontier::from_parts(position, leaf, ommers).map_err(|e| format!("{:?}", e))
-            }
-            None => Ok(Frontier::empty()),
-        }
-    }
-}
-
-pub(crate) struct SaplingNodeWrapper;
-impl SerializeAs<sapling::Node> for SaplingNodeWrapper {
-    fn serialize_as<S>(source: &sapling::Node, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize_as<S>(value: &Frontier<T, DEPTH>, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
-        source.to_bytes().serialize(serializer)
+        let mut s = serializer.serialize_struct("Frontier", 1)?;
+        s.serialize_field(
+            "frontier",
+            &SerializeAsWrap::<_, Option<NonEmptyFrontierWrapper<T>>>::new(&value.value().cloned()),
+        )?;
+        s.end()
     }
 }
-impl<'de> DeserializeAs<'de, sapling::Node> for SaplingNodeWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<sapling::Node, D::Error>
+impl<'de, T: ToFromBytes + Clone, const DEPTH: u8> DeserializeAs<'de, Frontier<T, DEPTH>>
+    for FrontierWrapper<T>
+{
+    fn deserialize_as<D>(deserializer: D) -> Result<Frontier<T, DEPTH>, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let bytes = <[u8; 32]>::deserialize(deserializer)?;
-        sapling::Node::from_bytes(bytes)
-            .into_option()
-            .ok_or_else(|| serde::de::Error::custom("Invalid sapling node "))
+        struct Visitor<T, const DEPTH: u8>(std::marker::PhantomData<T>);
+        impl<T, const DEPTH: u8> Visitor<T, DEPTH> {
+            fn new() -> Self {
+                Self(std::marker::PhantomData)
+            }
+        }
+        impl<'de, T: ToFromBytes + Clone, const DEPTH: u8> serde::de::Visitor<'de> for Visitor<T, DEPTH> {
+            type Value = Frontier<T, DEPTH>;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("struct Frontier")
+            }
+            fn visit_map<A>(self, mut map: A) -> Result<Frontier<T, DEPTH>, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut frontier = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "frontier" => {
+                            frontier = map
+                                .next_value::<Option<
+                                    DeserializeAsWrap<
+                                        NonEmptyFrontier<T>,
+                                        NonEmptyFrontierWrapper<T>,
+                                    >,
+                                >>()?
+                                .map(|f| f.into_inner());
+                        }
+                        _ => {
+                            return Err(serde::de::Error::unknown_field(key, &["frontier"]));
+                        }
+                    }
+                }
+                frontier
+                    .map(NonEmptyFrontier::into_parts)
+                    .map(|(p, l, o)| {
+                        frontier::Frontier::from_parts(p, l, o).map_err(|_e| {
+                            serde::de::Error::custom("failed to construct frontier from parts")
+                        })
+                    })
+                    .transpose()?
+                    .ok_or_else(|| serde::de::Error::missing_field("frontier"))
+            }
+        }
+        deserializer.deserialize_struct("Frontier", &["frontier"], Visitor::<T, DEPTH>::new())
     }
 }
 
-#[cfg(feature = "orchard")]
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-pub struct NonEmptyOrchardFrontierWrapper {
-    #[serde_as(as = "FromInto<u64>")]
+pub struct NonEmptyFrontierWrapper<T: ToFromBytes> {
     pub position: Position,
-    #[serde_as(as = "OrchardNodeWrapper")]
-    pub leaf: orchard::tree::MerkleHashOrchard,
-    #[serde_as(as = "Vec<OrchardNodeWrapper>")]
-    pub ommers: Vec<orchard::tree::MerkleHashOrchard>,
+    pub leaf: T,
+    pub ommers: Vec<T>,
 }
 
-#[cfg(feature = "orchard")]
-pub(crate) struct OrchardNodeWrapper;
-#[cfg(feature = "orchard")]
-impl SerializeAs<orchard::tree::MerkleHashOrchard> for OrchardNodeWrapper {
-    fn serialize_as<S>(
-        source: &orchard::tree::MerkleHashOrchard,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+impl<T: ToFromBytes> SerializeAs<NonEmptyFrontier<T>> for NonEmptyFrontierWrapper<T> {
+    fn serialize_as<S>(value: &NonEmptyFrontier<T>, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
-        source.to_bytes().serialize(serializer)
+        let ommers = value
+            .ommers()
+            .iter()
+            .map(|o| SerializeAsWrap::<_, ToFromBytesWrapper<T>>::new(o))
+            .collect::<Vec<_>>();
+        let mut s = serializer.serialize_struct("NonEmptyFrontier", 3)?;
+        s.serialize_field(
+            "position",
+            &SerializeAsWrap::<_, FromInto<u64>>::new(&value.position()),
+        )?;
+        s.serialize_field(
+            "leaf",
+            &SerializeAsWrap::<_, ToFromBytesWrapper<T>>::new(&value.leaf()),
+        )?;
+        s.serialize_field("ommers", &ommers)?;
+        s.end()
     }
 }
-#[cfg(feature = "orchard")]
-impl<'de> DeserializeAs<'de, orchard::tree::MerkleHashOrchard> for OrchardNodeWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<orchard::tree::MerkleHashOrchard, D::Error>
+
+impl<'de, T: ToFromBytes> DeserializeAs<'de, NonEmptyFrontier<T>> for NonEmptyFrontierWrapper<T> {
+    fn deserialize_as<D>(deserializer: D) -> Result<NonEmptyFrontier<T>, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let bytes = <[u8; 32]>::deserialize(deserializer)?;
-        orchard::tree::MerkleHashOrchard::from_bytes(&bytes)
-            .into_option()
-            .ok_or_else(|| serde::de::Error::custom("Invalid orchard node "))
+        struct Visitor<T>(std::marker::PhantomData<T>);
+        impl<T> Visitor<T> {
+            fn new() -> Self {
+                Self(std::marker::PhantomData)
+            }
+        }
+        impl<'de, T: ToFromBytes> serde::de::Visitor<'de> for Visitor<T> {
+            type Value = NonEmptyFrontier<T>;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("struct OrchardNote")
+            }
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut position = None;
+                let mut leaf = None;
+                let mut ommers = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "position" => {
+                            position = Some(
+                                map.next_value::<DeserializeAsWrap<Position, FromInto<u64>>>()?,
+                            );
+                        }
+                        "leaf" => {
+                            leaf = Some(
+                                map.next_value::<DeserializeAsWrap<T, ToFromBytesWrapper<T>>>()?,
+                            );
+                        }
+                        "ommers" => {
+                            ommers = Some(
+                                map.next_value::<Vec<DeserializeAsWrap<T, ToFromBytesWrapper<T>>>>(
+                                )?,
+                            );
+                        }
+                        _ => {
+                            return Err(serde::de::Error::unknown_field(
+                                key,
+                                &["recipient", "value", "rho", "rseed"],
+                            ));
+                        }
+                    }
+                }
+                let position = position
+                    .ok_or_else(|| serde::de::Error::missing_field("position"))?
+                    .into_inner();
+                let leaf = leaf
+                    .ok_or_else(|| serde::de::Error::missing_field("leaf"))?
+                    .into_inner();
+                let ommers = ommers
+                    .ok_or_else(|| serde::de::Error::missing_field("ommers"))?
+                    .into_iter()
+                    .map(|o| o.into_inner())
+                    .collect();
+
+                NonEmptyFrontier::from_parts(position, leaf, ommers).map_err(|_e| {
+                    serde::de::Error::custom("Failed to deserialize non-empty frontier")
+                })
+            }
+        }
+        deserializer.deserialize_struct(
+            "NonEmptyFrontier",
+            &["position", "leaf", "ommers"],
+            Visitor::<T>::new(),
+        )
     }
 }
 
+pub trait ToFromBytes {
+    /// Serializes this node into a byte vector.
+    fn to_bytes(&self) -> Vec<u8>;
+
+    /// Parses a node from a byte vector.
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self>
+    where
+        Self: Sized;
+}
+
+impl<T: ToFromBytes> ToFromBytes for Arc<T> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_ref().to_bytes()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        T::from_bytes(bytes).map(Arc::new)
+    }
+}
+
+#[serde_as]
+pub struct ToFromBytesWrapper<T: ToFromBytes>(T);
+
+impl<T: ToFromBytes> SerializeAs<T> for ToFromBytesWrapper<T> {
+    fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        value.to_bytes().serialize(serializer)
+    }
+}
+impl<T: ToFromBytes> SerializeAs<&T> for ToFromBytesWrapper<T> {
+    fn serialize_as<S>(value: &&T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        value.to_bytes().serialize(serializer)
+    }
+}
+impl<'de, T: ToFromBytes> DeserializeAs<'de, T> for ToFromBytesWrapper<T> {
+    fn deserialize_as<D>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        T::from_bytes(<Vec<u8>>::deserialize(deserializer)?.as_slice())
+            .map_err(|e| serde::de::Error::custom(e))
+    }
+}
+impl<T: ToFromBytes> Serialize for ToFromBytesWrapper<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        ToFromBytesWrapper::<T>::serialize_as(&self.0, serializer)
+    }
+}
+impl<'de, T: ToFromBytes> Deserialize<'de> for ToFromBytesWrapper<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        ToFromBytesWrapper::<T>::deserialize_as(deserializer).map(ToFromBytesWrapper)
+    }
+}
+
+impl ToFromBytes for sapling::Node {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_bytes().to_vec()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        let repr: [u8; 32] = bytes.try_into().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid length for Jubjub base field value.",
+            )
+        })?;
+        Option::from(Self::from_bytes(repr)).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Non-canonical encoding of Jubjub base field value.",
+            )
+        })
+    }
+}
+
+#[cfg(feature = "orchard")]
+impl ToFromBytes for orchard::tree::MerkleHashOrchard {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_bytes().to_vec()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        let repr: [u8; 32] = bytes.try_into().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid length for Pallas base field value.",
+            )
+        })?;
+        <Option<_>>::from(Self::from_bytes(&repr)).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Non-canonical encoding of Pallas base field value.",
+            )
+        })
+    }
+}
 /// --- nullifier.rs ---
 #[cfg(feature = "orchard")]
 pub(crate) struct OrchardNullifierWrapper;
@@ -1054,32 +1403,22 @@ pub enum ScanPriorityWrapper {
     /// main chain, has highest priority.
     Verify,
 }
-impl serde_with::SerializeAs<zcash_client_backend::data_api::scanning::ScanPriority>
-    for ScanPriorityWrapper
-{
-    fn serialize_as<S>(
-        source: &zcash_client_backend::data_api::scanning::ScanPriority,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+impl SerializeAs<ScanPriority> for ScanPriorityWrapper {
+    fn serialize_as<S>(value: &ScanPriority, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
-        ScanPriorityWrapper::serialize(source, serializer)
+        ScanPriorityWrapper::serialize(value, serializer)
     }
 }
-impl<'de> serde_with::DeserializeAs<'de, zcash_client_backend::data_api::scanning::ScanPriority>
-    for ScanPriorityWrapper
-{
-    fn deserialize_as<D>(
-        deserializer: D,
-    ) -> Result<zcash_client_backend::data_api::scanning::ScanPriority, D::Error>
+impl<'de> DeserializeAs<'de, ScanPriority> for ScanPriorityWrapper {
+    fn deserialize_as<D>(deserializer: D) -> Result<ScanPriority, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
-        ScanPriorityWrapper::deserialize(deserializer)
+        ScanPriorityWrapper::deserialize(deserializer).map(Into::into)
     }
 }
-
 /// --- transaction.rs ---
 #[serde_as]
 #[derive(Serialize, Deserialize)]

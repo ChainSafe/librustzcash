@@ -2,7 +2,7 @@
 use incrementalmerkletree::Address;
 use scanning::ScanQueue;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},

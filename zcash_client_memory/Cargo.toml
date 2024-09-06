@@ -33,7 +33,7 @@ nonempty.workspace = true
 prost.workspace = true
 group.workspace = true
 jubjub.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["rc"] }
 
 # - Secret management
 secrecy.workspace = true
