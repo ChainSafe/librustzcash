@@ -31,8 +31,10 @@ impl NullifierMap {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub(crate) enum Nullifier {
     #[cfg(feature = "orchard")]
-    Orchard(#[serde_as(as = "OrchardNullifierWrapper")] orchard::note::Nullifier),
-    Sapling(#[serde_as(as = "SaplingNullifierWrapper")] sapling::Nullifier),
+    Orchard(
+        #[serde_as(as = "ToFromBytesWrapper<orchard::note::Nullifier>")] orchard::note::Nullifier,
+    ),
+    Sapling(#[serde_as(as = "ToFromBytesWrapper<sapling::Nullifier>")] sapling::Nullifier),
 }
 
 impl Nullifier {

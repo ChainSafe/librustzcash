@@ -1313,47 +1313,35 @@ impl ToFromBytes for orchard::tree::MerkleHashOrchard {
     }
 }
 /// --- nullifier.rs ---
-#[cfg(feature = "orchard")]
-pub(crate) struct OrchardNullifierWrapper;
-#[cfg(feature = "orchard")]
-impl serde_with::SerializeAs<orchard::note::Nullifier> for OrchardNullifierWrapper {
-    fn serialize_as<S>(value: &orchard::note::Nullifier, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value.to_bytes().serialize(serializer)
+
+impl ToFromBytes for sapling::Nullifier {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.0.to_vec()
     }
-}
-#[cfg(feature = "orchard")]
-impl<'de> serde_with::DeserializeAs<'de, orchard::note::Nullifier> for OrchardNullifierWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<orchard::note::Nullifier, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        orchard::note::Nullifier::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
-            .into_option()
-            .ok_or_else(|| serde::de::Error::custom("Invalid nullifier"))
+
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        Ok(sapling::Nullifier(bytes.try_into().map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidData, format!("{}", e))
+        })?))
     }
 }
 
-pub(crate) struct SaplingNullifierWrapper;
-impl serde_with::SerializeAs<sapling::Nullifier> for SaplingNullifierWrapper {
-    fn serialize_as<S>(value: &sapling::Nullifier, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value.0.serialize(serializer)
+#[cfg(feature = "orchard")]
+impl ToFromBytes for orchard::note::Nullifier {
+    fn to_bytes(&self) -> Vec<u8> {
+        (*self).to_bytes().to_vec()
     }
-}
-impl<'de> serde_with::DeserializeAs<'de, sapling::Nullifier> for SaplingNullifierWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<sapling::Nullifier, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(sapling::Nullifier(<[u8; 32]>::deserialize(deserializer)?))
-    }
-}
 
+    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        orchard::note::Nullifier::from_bytes(
+            bytes
+                .try_into()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}", e)))?,
+        )
+        .into_option()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid sapling nullifier"))
+    }
+}
 /// --- scanning.rs ---
 #[serde_as]
 #[derive(Serialize, Deserialize)]
