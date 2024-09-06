@@ -14,6 +14,8 @@ use zcash_protocol::{
     ShieldedProtocol::Sapling,
 };
 
+#[cfg(feature = "orchard")]
+use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
@@ -25,8 +27,6 @@ use zcash_client_backend::{
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     wallet::{NoteId, Recipient, WalletTransparentOutput},
 };
-#[cfg(feature = "orchard")]
-use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
 
 use zcash_client_backend::data_api::{
     AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, WalletRead, WalletWrite,
@@ -475,6 +475,46 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                         }
                     }
 
+                    Ok(())
+                })?;
+            }
+
+            // Update the Orchard note commitment tree with all newly read note commitments
+            #[cfg(feature = "orchard")]
+            {
+                let mut orchard_subtrees = orchard_subtrees.into_iter();
+                self.with_orchard_tree_mut::<_, _, Self::Error>(|orchard_tree| {
+                    orchard_tree.insert_frontier(
+                        from_state.final_orchard_tree().clone(),
+                        Retention::Checkpoint {
+                            id: from_state.block_height(),
+                            marking: Marking::Reference,
+                        },
+                    )?;
+
+                    for (tree, checkpoints) in &mut orchard_subtrees {
+                        orchard_tree.insert_tree(tree, checkpoints)?;
+                    }
+
+                    // Ensure we have an Orchard checkpoint for each checkpointed Sapling block height.
+                    // We skip all checkpoints below the minimum retained checkpoint in the
+                    // Orchard tree, because branches below this height may be pruned.
+                    {
+                        let min_checkpoint_height = orchard_tree
+                            .store()
+                            .min_checkpoint_id()
+                            .map_err(ShardTreeError::Storage)?
+                            .expect("At least one checkpoint was inserted (by insert_frontier)");
+
+                        for (height, checkpoint) in &missing_orchard_checkpoints {
+                            if *height > min_checkpoint_height {
+                                orchard_tree
+                                    .store_mut()
+                                    .add_checkpoint(*height, checkpoint.clone())
+                                    .map_err(ShardTreeError::Storage)?;
+                            }
+                        }
+                    }
                     Ok(())
                 })?;
             }
