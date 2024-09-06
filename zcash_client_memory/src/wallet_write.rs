@@ -657,8 +657,11 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     }
 }
 
-use incrementalmerkletree::frontier::Frontier;
-use shardtree::store::Checkpoint;
+#[cfg(feature = "orchard")]
+use {
+    incrementalmerkletree::frontier::Frontier,
+    shardtree::store::Checkpoint,
+};
 
 #[cfg(feature = "orchard")]
 fn ensure_checkpoints<'a, H, I: Iterator<Item = &'a BlockHeight>, const DEPTH: u8>(
