@@ -61,15 +61,17 @@ impl Accounts {
         purpose: AccountPurpose,
     ) -> Result<(AccountId, Account), Error> {
         let account_id = AccountId(self.nonce);
+
         let mut acc = Account {
             account_id,
             kind,
             viewing_key,
             birthday,
             _purpose: purpose,
-            addresses: BTreeMap::new(),
+            diversifier_index: DiversifierIndex::default(),
             _notes: HashSet::new(),
         };
+
         let ua_request = acc
             .viewing_key
             .to_unified_incoming_viewing_key()
@@ -79,11 +81,11 @@ impl Accounts {
                 Error::AddressGeneration(AddressGenerationError::ShieldedReceiverRequired)
             })?;
 
-        let (addr, diversifier_index) = acc.default_address(ua_request)?;
-        acc.addresses.insert(diversifier_index, addr);
-
-        self.accounts.insert(account_id, acc.clone());
+        let (_, diversifier_index) = acc.default_address(ua_request)?;
+        acc.diversifier_index = diversifier_index;
         self.nonce += 1;
+        self.accounts.insert(account_id, acc.clone());
+
         Ok((account_id, acc))
     }
 
@@ -132,7 +134,8 @@ pub struct Account {
     viewing_key: UnifiedFullViewingKey,
     birthday: AccountBirthday,
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
-    addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
+    /// The current diversifier index for this Account
+    diversifier_index: DiversifierIndex,
     _notes: HashSet<NoteId>,
 }
 
@@ -153,15 +156,18 @@ impl Account {
         &self.birthday
     }
 
-    pub(crate) fn _addresses(&self) -> &BTreeMap<DiversifierIndex, UnifiedAddress> {
-        &self.addresses
+    pub(crate) fn current_address(&self) -> Result<(UnifiedAddress, DiversifierIndex), Error> {
+        let request = self
+            .viewing_key
+            .to_unified_incoming_viewing_key()
+            .to_address_request()
+            .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
+            .ok_or_else(|| AddressGenerationError::ShieldedReceiverRequired)?;
+        self.uivk()
+            .find_address(self.diversifier_index, request)
+            .map_err(Error::from)
     }
 
-    pub(crate) fn current_address(&self) -> Option<(DiversifierIndex, UnifiedAddress)> {
-        self.addresses
-            .last_key_value()
-            .map(|(diversifier_index, address)| (*diversifier_index, address.clone()))
-    }
     pub(crate) fn kind(&self) -> &AccountSource {
         &self.kind
     }
@@ -172,17 +178,19 @@ impl Account {
     ) -> Result<Option<UnifiedAddress>, Error> {
         match self.ufvk() {
             Some(ufvk) => {
-                let search_from = match self.current_address() {
-                    Some((mut last_diversifier_index, _)) => {
-                        last_diversifier_index
-                            .increment()
-                            .map_err(|_| AddressGenerationError::DiversifierSpaceExhausted)?;
-                        last_diversifier_index
-                    }
-                    None => DiversifierIndex::default(),
-                };
+                let search_from = self
+                    .current_address()
+                    .map(|(_, mut diversifier_index)| {
+                        diversifier_index.increment().map_err(|_| {
+                            Error::AddressGeneration(
+                                AddressGenerationError::DiversifierSpaceExhausted,
+                            )
+                        })?;
+                        Ok::<_, Error>(diversifier_index)
+                    })
+                    .unwrap_or(Ok(DiversifierIndex::default()))?;
                 let (addr, diversifier_index) = ufvk.find_address(search_from, request)?;
-                self.addresses.insert(diversifier_index, addr.clone());
+                self.diversifier_index = diversifier_index;
                 Ok(Some(addr))
             }
             None => Ok(None),
