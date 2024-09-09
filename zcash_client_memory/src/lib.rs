@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use incrementalmerkletree::Address;
+use incrementalmerkletree::{Address, Position};
 use scanning::ScanQueue;
 
 use shardtree::{
@@ -9,9 +9,9 @@ use shardtree::{
 use std::{
     collections::{hash_map::Entry, BTreeMap},
     num::NonZeroU32,
-    ops::RangeInclusive,
+    ops::{Range, RangeInclusive},
 };
-use zcash_protocol::consensus;
+use zcash_protocol::{consensus, ShieldedProtocol};
 use zip32::fingerprint::SeedFingerprint;
 
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -390,5 +390,9 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             }
         }
         Ok(None)
+    }
+
+    pub(crate) fn scan_complete(&mut self, range: Range<BlockHeight>, wallet_note_positions: &[(ShieldedProtocol, Position)]) {
+        todo!()
     }
 }

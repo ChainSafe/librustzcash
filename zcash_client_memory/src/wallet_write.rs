@@ -376,7 +376,9 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             sapling_commitments.extend(block_commitments.sapling.into_iter().map(Some));
         }
 
-        if let Some(sapling_start_leaf_position) = sapling_start_leaf_position {
+        if let Some((start_positions, last_scanned_height)) =
+            start_positions.zip(last_scanned_height)
+        {
             // Create subtrees from the note commitments in parallel.
             const CHUNK_SIZE: usize = 1024;
             let sapling_subtrees = sapling_commitments
@@ -414,11 +416,17 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                     Ok(())
                 })?;
             }
+
+            self.scan_complete(
+                Range {
+                    start: start_positions.height,
+                    end: last_scanned_height + 1,
+                },
+                &note_positions,
+            );
         }
         // We can do some pruning of the tx_locator_map here
 
-        // TODO: See: scan_complete() in sqlite.
-        // Related to missing subtrees
         Ok(())
     }
 
