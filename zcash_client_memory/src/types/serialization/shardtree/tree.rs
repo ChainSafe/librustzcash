@@ -4,22 +4,19 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use incrementalmerkletree::{Hashable, Position};
-use serde::ser::{SerializeSeq, SerializeTuple};
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::ser::SerializeSeq;
+use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
-use serde_with::de::DeserializeAsWrap;
+use serde_with::serde_as;
 use serde_with::DeserializeAs;
-use serde_with::{ser::SerializeAsWrap, serde_as};
 use serde_with::{FromInto, SerializeAs};
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, TreeState};
 use shardtree::RetentionFlags;
 use shardtree::{store::ShardStore, LocatedPrunableTree, Node as TreeNode, PrunableTree};
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
-use crate::{ToArray, ToFromBytesWrapper, TryFromArray};
-
-use crate::ToFromBytes;
+use crate::{ToArray, TryFromArray};
 
 const SER_V1: u8 = 1;
 
@@ -271,10 +268,6 @@ impl<H: ToArray<u8, 32>> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
             match tree.deref() {
                 TreeNode::Parent { ann, left, right } => {
                     state.serialize_element(&PARENT_TAG)?;
-                    // state.serialize_element(&SerializeAsWrap::<
-                    //     _,
-                    //     Option<ToFromBytesWrapper<Arc<H>>>,
-                    // >::new(&ann.as_ref()))?;
                     state.serialize_element(&ann.as_deref().map(ToArray::to_arr))?;
                     serialize_inner::<H, S>(left, state)?;
                     serialize_inner::<H, S>(right, state)?;
@@ -282,9 +275,6 @@ impl<H: ToArray<u8, 32>> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
                 }
                 TreeNode::Leaf { value } => {
                     state.serialize_element(&LEAF_TAG)?;
-                    // state.serialize_element(&SerializeAsWrap::<_, ToFromBytesWrapper<H>>::new(
-                    //     &value.0,
-                    // ))?;
                     state.serialize_element(&value.0.to_arr())?;
                     state.serialize_element(&value.1.bits())?;
                     Ok(())
@@ -343,10 +333,6 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
 
             match tag {
                 PARENT_TAG => {
-                    // let ann = seq.next_element::<Option::<
-                    // DeserializeAsWrap<Arc<H>,ToFromBytesWrapper<Arc<H>>>>>()?
-                    // .ok_or_else(|| serde::de::Error::custom("Read parent tag but failed to read node"))?
-                    //     .map(|ann| ann.into_inner());
                     let ann = seq
                         .next_element::<Option<[u8; 32]>>()?
                         .ok_or_else(|| {
@@ -361,12 +347,6 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
                     Ok(PrunableTree::parent(ann, left, right))
                 }
                 LEAF_TAG => {
-                    // let value = seq
-                    //     .next_element::<DeserializeAsWrap<H, ToFromBytesWrapper<H>>>()?
-                    //     .ok_or_else(|| {
-                    //         serde::de::Error::custom("Read leaf tag but failed to read value")
-                    //     })?
-                    //     .into_inner();
                     let value = H::from_arr(seq.next_element::<[u8; 32]>()?.ok_or_else(|| {
                         serde::de::Error::custom("Read leaf tag but failed to read value")
                     })?)
