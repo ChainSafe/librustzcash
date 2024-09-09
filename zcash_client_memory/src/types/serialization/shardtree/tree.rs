@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -15,9 +15,9 @@ use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, TreeState};
 use shardtree::RetentionFlags;
 use shardtree::{store::ShardStore, LocatedPrunableTree, Node as TreeNode, PrunableTree};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
-use crate::ToFromBytesWrapper;
+use crate::{ToArray, ToFromBytesWrapper, TryFromArray};
 
 use crate::ToFromBytes;
 
@@ -65,7 +65,7 @@ impl<'de> serde_with::DeserializeAs<'de, incrementalmerkletree::Address> for Tre
 #[serde_as]
 pub struct MemoryShardStoreWrapper;
 impl<
-        H: Clone + ToFromBytes,
+        H: Clone + ToArray<u8, 32> + TryFromArray<u8, 32>,
         C: Ord + Clone + From<u32> + Into<u32>, // Most Cases this will be height
         T: ShardStore<H = H, CheckpointId = C>,
     > serde_with::SerializeAs<T> for MemoryShardStoreWrapper
@@ -74,29 +74,38 @@ impl<
     where
         S: serde::Serializer,
     {
-        let mut s = serializer.serialize_struct("MemoryShardStore", 3)?;
+        #[serde_as]
+        #[derive(Serialize)]
+        struct ShardStoreSer<
+            'a,
+            H: Clone + ToArray<u8, 32> + TryFromArray<u8, 32>,
+            C: Ord + Clone + From<u32> + Into<u32>,
+        > {
+            #[serde_as(as = "&'a [LocatedPrunableTreeWrapper<H>]")]
+            shards: &'a [LocatedPrunableTree<H>],
+            #[serde_as(as = "BTreeMap<FromInto<u32>, CheckpointWrapper>")]
+            checkpoints: BTreeMap<C, Checkpoint>,
+            #[serde_as(as = "&'a PrunableTreeWrapper")]
+            cap: &'a PrunableTree<H>,
+        }
 
-        s.serialize_field(
-            "shards",
-            &SerializeAsWrap::<_, Vec<LocatedPrunableTreeWrapper<_>>>::new(
-                &value
-                    .get_shard_roots()
+        let shards = value
+            .get_shard_roots()
+            .map_err(serde::ser::Error::custom)?
+            .into_iter()
+            .map(|shard_root| {
+                let shard = value
+                    .get_shard(shard_root)
                     .map_err(serde::ser::Error::custom)?
-                    .into_iter()
-                    .map(|shard_root| {
-                        let shard = value
-                            .get_shard(shard_root)
-                            .map_err(serde::ser::Error::custom)?
-                            .ok_or_else(|| serde::ser::Error::custom("Missing shard"))?;
-                        Ok(shard)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-        )?;
+                    .ok_or_else(|| serde::ser::Error::custom("Missing shard"))?;
+                Ok(shard)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut checkpoints = BTreeMap::default();
+
         let checkpoint_count = value
             .checkpoint_count()
             .map_err(|_| serde::ser::Error::custom("Failed to get checkpoint count"))?;
-        let mut checkpoints: Vec<(C, Checkpoint)> = Vec::with_capacity(checkpoint_count);
         let min_checkpoint: u32 = value
             .max_checkpoint_id()
             .map_err(|_| serde::ser::Error::custom("Failed to get max checkpoint id"))?
@@ -108,12 +117,14 @@ impl<
             .unwrap()
             .into();
 
+        // The idea way would be to use with_checkpoints but that requires a mutable reference
+        // TODO: Make a PR into incrementalmerkletree to add this functionality
         for checkpoint_id in min_checkpoint..=max_checkpoint {
             let checkpoint = value
                 .get_checkpoint(&checkpoint_id.into())
                 .map_err(|_| serde::ser::Error::custom("Failed to get checkpoint"))?
                 .ok_or_else(|| serde::ser::Error::custom("Missing checkpoint"))?; // TODO: I think we can skip this and just do a length check at the end
-            checkpoints.push((checkpoint_id.into(), checkpoint));
+            checkpoints.insert(checkpoint_id, checkpoint);
         }
         if checkpoints.len() != checkpoint_count {
             return Err(serde::ser::Error::custom(format!(
@@ -122,114 +133,60 @@ impl<
                 checkpoints.len()
             )));
         }
-        s.serialize_field(
-            "checkpoints",
-            &SerializeAsWrap::<_, Vec<(FromInto<u32>, CheckpointWrapper)>>::new(&checkpoints),
-        )?;
-        s.serialize_field(
-            "cap",
-            &SerializeAsWrap::<_, PrunableTreeWrapper>::new(
-                &value
-                    .get_cap()
-                    .map_err(|_| serde::ser::Error::custom("Failed to get cap"))?,
-            ),
-        )?;
-        s.end()
+        ShardStoreSer {
+            shards: &shards,
+            checkpoints: checkpoints,
+            cap: &value
+                .get_cap()
+                .map_err(|_| serde::ser::Error::custom("Failed to get cap"))?,
+        }
+        .serialize(serializer)
     }
 }
 
-impl<'de, H: Clone + ToFromBytes, C: Clone + Ord + From<u32> + Into<u32>>
-    serde_with::DeserializeAs<'de, MemoryShardStore<H, C>> for MemoryShardStoreWrapper
+impl<
+        'de,
+        H: Clone + ToArray<u8, 32> + TryFromArray<u8, 32>,
+        C: Clone + Ord + From<u32> + Into<u32>,
+    > serde_with::DeserializeAs<'de, MemoryShardStore<H, C>> for MemoryShardStoreWrapper
 {
     fn deserialize_as<D>(deserializer: D) -> Result<MemoryShardStore<H, C>, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        struct Visitor<H, C>(std::marker::PhantomData<(H, C)>);
-        impl<H, C> Visitor<H, C> {
-            fn new() -> Self {
-                Self(std::marker::PhantomData)
-            }
+        #[serde_as]
+        #[derive(Deserialize)]
+        struct MemoryShardStoreDe<
+            H: Clone + ToArray<u8, 32> + TryFromArray<u8, 32>,
+            C: Ord + Clone + From<u32> + Into<u32>,
+        > {
+            #[serde_as(as = "Vec<LocatedPrunableTreeWrapper<H>>")]
+            shards: Vec<LocatedPrunableTree<H>>,
+            #[serde_as(as = "BTreeMap<FromInto<u32>, CheckpointWrapper>")]
+            checkpoints: BTreeMap<C, Checkpoint>,
+            #[serde_as(as = "PrunableTreeWrapper")]
+            cap: PrunableTree<H>,
         }
-        impl<'de, H, C> serde::de::Visitor<'de> for Visitor<H, C>
-        where
-            H: Clone + ToFromBytes,
-            C: Ord + Clone + From<u32> + Into<u32>, // Most Cases this will be height
-        {
-            type Value = MemoryShardStore<H, C>;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a MemoryShardStore")
-            }
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: serde::de::MapAccess<'de>,
-            {
-                let mut shards = None;
-                let mut checkpoints = None;
-                let mut cap = None;
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "shards" => {
-                            shards = Some (
-                                map.next_value::<DeserializeAsWrap<
-                                _,
-                                Vec<LocatedPrunableTreeWrapper<_>>>>()?
-                             );
-                        }
-                        "checkpoints" => {
-                            checkpoints =
-                                Some(map.next_value::<DeserializeAsWrap<
-                                    _,
-                                    Vec<(FromInto<u32>, CheckpointWrapper)>,
-                                >>()?);
-                        }
-                        "cap" => {
-                            cap = Some(
-                                map.next_value::<DeserializeAsWrap<_, PrunableTreeWrapper>>()?,
-                            );
-                        }
-                        _ => {
-                            return Err(serde::de::Error::custom(format!(
-                                "Unexpected key: {}",
-                                key
-                            )));
-                        }
-                    }
-                }
-                let shards = shards
-                    .ok_or_else(|| serde::de::Error::missing_field("shards"))?
-                    .into_inner();
-                let checkpoints: Vec<(C, Checkpoint)> = checkpoints
-                    .ok_or_else(|| serde::de::Error::missing_field("checkpoints"))?
-                    .into_inner();
-                let cap = cap
-                    .ok_or_else(|| serde::de::Error::missing_field("cap"))?
-                    .into_inner();
-
-                let mut store = MemoryShardStore::empty();
-                for shard in shards {
-                    store
-                        .put_shard(shard)
-                        .map_err(|_e| serde::de::Error::custom("Failed to put shard into store"))?;
-                }
+        let de_store = MemoryShardStoreDe::<H, C>::deserialize(deserializer)?;
+        let mut store = MemoryShardStore::empty();
+        de_store.shards.into_iter().try_for_each(|shard| {
+            store
+                .put_shard(shard)
+                .map_err(|_e| serde::de::Error::custom("Failed to put shard into store"))
+        })?;
+        store
+            .put_cap(de_store.cap)
+            .map_err(|_e| serde::de::Error::custom("Failed to put cap into store"))?;
+        de_store
+            .checkpoints
+            .into_iter()
+            .try_for_each(|(checkpoint_id, checkpoint)| {
                 store
-                    .put_cap(cap)
-                    .map_err(|_e| serde::de::Error::custom("Failed to put cap into store"))?;
-                for (checkpoint_id, checkpoint) in checkpoints {
-                    store
-                        .add_checkpoint(checkpoint_id, checkpoint)
-                        .map_err(|_e| {
-                            serde::de::Error::custom("Failed to add checkpoint to store")
-                        })?;
-                }
-                Ok(store)
-            }
-        }
-        deserializer.deserialize_struct(
-            "MemoryShardStore",
-            &["shards", "checkpoints", "cap"],
-            Visitor::<H, C>::new(),
-        )
+                    .add_checkpoint(checkpoint_id, checkpoint)
+                    .map_err(|_e| serde::de::Error::custom("Failed to add checkpoint to store"))
+            })?;
+
+        Ok(store)
     }
 }
 
@@ -238,7 +195,7 @@ impl<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
     SerializeAs<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
     for MemoryShardTreeWrapper
 where
-    H: Clone + Hashable + PartialEq + ToFromBytes,
+    H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
     C: Ord + Clone + Debug + From<u32> + Into<u32>,
 {
     fn serialize_as<S>(
@@ -248,14 +205,22 @@ where
     where
         S: serde::Serializer,
     {
-        let mut s = serializer.serialize_struct("MemoryShardTree", 2)?;
-
-        s.serialize_field(
-            "store",
-            &SerializeAsWrap::<_, MemoryShardStoreWrapper>::new(value.store()),
-        )?;
-        s.serialize_field("max_checkpoints", &value.max_checkpoints())?;
-        s.end()
+        #[serde_as]
+        #[derive(Serialize)]
+        struct ShardTreeSer<
+            'a,
+            H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
+            C: Ord + Clone + Debug + From<u32> + Into<u32>,
+        > {
+            #[serde_as(as = "&'a MemoryShardStoreWrapper")]
+            store: &'a MemoryShardStore<H, C>,
+            max_checkpoints: usize,
+        }
+        ShardTreeSer {
+            store: value.store(),
+            max_checkpoints: value.max_checkpoints(),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -263,7 +228,7 @@ impl<'de, H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
     DeserializeAs<'de, shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
     for MemoryShardTreeWrapper
 where
-    H: Clone + Hashable + PartialEq + ToFromBytes,
+    H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
     C: Ord + Clone + Debug + From<u32> + Into<u32>,
 {
     fn deserialize_as<D>(
@@ -272,73 +237,31 @@ where
     where
         D: Deserializer<'de>,
     {
-        struct Visitor<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>(
-            std::marker::PhantomData<(H, C)>,
-        );
-        impl<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8> Visitor<H, C, DEPTH, SHARD_HEIGHT> {
-            fn new() -> Self {
-                Self(std::marker::PhantomData)
-            }
+        #[serde_as]
+        #[derive(Deserialize)]
+        struct ShardTreeDe<
+            H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
+            C: Ord + Clone + Debug + From<u32> + Into<u32>,
+        > {
+            #[serde_as(as = "MemoryShardStoreWrapper")]
+            store: MemoryShardStore<H, C>,
+            max_checkpoints: usize,
         }
-        impl<
-                'de,
-                H: Clone + Hashable + PartialEq + ToFromBytes,
-                C: Ord + Clone + Debug + From<u32> + Into<u32>,
-                const DEPTH: u8,
-                const SHARD_HEIGHT: u8,
-            > serde::de::Visitor<'de> for Visitor<H, C, DEPTH, SHARD_HEIGHT>
-        {
-            type Value = shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a ShardTree")
-            }
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: serde::de::MapAccess<'de>,
-            {
-                let mut store = None;
-                let mut max_checkpoints = None;
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "store" => {
-                            store = Some(
-                                map.next_value::<DeserializeAsWrap<_, MemoryShardStoreWrapper>>()?,
-                            );
-                        }
-                        "max_checkpoints" => {
-                            max_checkpoints = Some(map.next_value::<usize>()?);
-                        }
-                        _ => {
-                            return Err(serde::de::Error::custom(format!(
-                                "Unexpected key: {}",
-                                key
-                            )));
-                        }
-                    }
-                }
-                let store = store
-                    .ok_or_else(|| serde::de::Error::missing_field("store"))?
-                    .into_inner();
-                let max_checkpoints = max_checkpoints
-                    .ok_or_else(|| serde::de::Error::missing_field("max_checkpoints"))?;
-                Ok(shardtree::ShardTree::new(store, max_checkpoints))
-            }
-        }
-        deserializer.deserialize_struct(
-            "MemoryShardTree",
-            &["store", "max_checkpoints"],
-            Visitor::<H, C, DEPTH, SHARD_HEIGHT>::new(),
-        )
+        let ShardTreeDe {
+            store,
+            max_checkpoints,
+        } = ShardTreeDe::<H, C>::deserialize(deserializer)?;
+        Ok(shardtree::ShardTree::new(store, max_checkpoints))
     }
 }
 pub struct PrunableTreeWrapper;
 // This is copied from zcash_client_backend/src/serialization/shardtree.rs
-impl<H: ToFromBytes> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
+impl<H: ToArray<u8, 32>> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
     fn serialize_as<S>(value: &PrunableTree<H>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        fn serialize_inner<H: ToFromBytes, S>(
+        fn serialize_inner<H: ToArray<u8, 32>, S>(
             tree: &PrunableTree<H>,
             state: &mut S::SerializeSeq,
         ) -> Result<(), S::Error>
@@ -348,19 +271,21 @@ impl<H: ToFromBytes> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
             match tree.deref() {
                 TreeNode::Parent { ann, left, right } => {
                     state.serialize_element(&PARENT_TAG)?;
-                    state.serialize_element(&SerializeAsWrap::<
-                        _,
-                        Option<ToFromBytesWrapper<Arc<H>>>,
-                    >::new(&ann.as_ref()))?;
+                    // state.serialize_element(&SerializeAsWrap::<
+                    //     _,
+                    //     Option<ToFromBytesWrapper<Arc<H>>>,
+                    // >::new(&ann.as_ref()))?;
+                    state.serialize_element(&ann.as_deref().map(ToArray::to_arr))?;
                     serialize_inner::<H, S>(left, state)?;
                     serialize_inner::<H, S>(right, state)?;
                     Ok(())
                 }
                 TreeNode::Leaf { value } => {
                     state.serialize_element(&LEAF_TAG)?;
-                    state.serialize_element(&SerializeAsWrap::<_, ToFromBytesWrapper<H>>::new(
-                        &value.0,
-                    ))?;
+                    // state.serialize_element(&SerializeAsWrap::<_, ToFromBytesWrapper<H>>::new(
+                    //     &value.0,
+                    // ))?;
+                    state.serialize_element(&value.0.to_arr())?;
                     state.serialize_element(&value.1.bits())?;
                     Ok(())
                 }
@@ -377,7 +302,7 @@ impl<H: ToFromBytes> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
         state.end()
     }
 }
-impl<'de, H: ToFromBytes> DeserializeAs<'de, PrunableTree<H>> for PrunableTreeWrapper {
+impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for PrunableTreeWrapper {
     fn deserialize_as<D>(deserializer: D) -> Result<PrunableTree<H>, D::Error>
     where
         D: Deserializer<'de>,
@@ -388,7 +313,7 @@ impl<'de, H: ToFromBytes> DeserializeAs<'de, PrunableTree<H>> for PrunableTreeWr
                 Self(std::marker::PhantomData)
             }
         }
-        impl<'de, H: ToFromBytes> serde::de::Visitor<'de> for Visitor<H> {
+        impl<'de, H: TryFromArray<u8, 32>> serde::de::Visitor<'de> for Visitor<H> {
             type Value = PrunableTree<H>;
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("a PrunableTree")
@@ -407,7 +332,7 @@ impl<'de, H: ToFromBytes> DeserializeAs<'de, PrunableTree<H>> for PrunableTreeWr
                 Ok(tree)
             }
         }
-        fn deserialize_inner<'de, H: ToFromBytes, A>(
+        fn deserialize_inner<'de, H: TryFromArray<u8, 32>, A>(
             seq: &mut A,
         ) -> Result<PrunableTree<H>, A::Error>
         where
@@ -418,21 +343,35 @@ impl<'de, H: ToFromBytes> DeserializeAs<'de, PrunableTree<H>> for PrunableTreeWr
 
             match tag {
                 PARENT_TAG => {
-                    let ann = seq.next_element::<Option::<
-                    DeserializeAsWrap<Arc<H>,ToFromBytesWrapper<Arc<H>>>>>()?
-                    .ok_or_else(|| serde::de::Error::custom("Read parent tag but failed to read node"))?
-                        .map(|ann| ann.into_inner());
+                    // let ann = seq.next_element::<Option::<
+                    // DeserializeAsWrap<Arc<H>,ToFromBytesWrapper<Arc<H>>>>>()?
+                    // .ok_or_else(|| serde::de::Error::custom("Read parent tag but failed to read node"))?
+                    //     .map(|ann| ann.into_inner());
+                    let ann = seq
+                        .next_element::<Option<[u8; 32]>>()?
+                        .ok_or_else(|| {
+                            serde::de::Error::custom("Read parent tag but failed to read node")
+                        })?
+                        .map(|x| H::from_arr(x).map(Arc::new))
+                        .transpose()
+                        .map_err(serde::de::Error::custom)?;
+
                     let left = deserialize_inner::<H, A>(seq)?;
                     let right = deserialize_inner::<H, A>(seq)?;
                     Ok(PrunableTree::parent(ann, left, right))
                 }
                 LEAF_TAG => {
-                    let value = seq
-                        .next_element::<DeserializeAsWrap<H, ToFromBytesWrapper<H>>>()?
-                        .ok_or_else(|| {
-                            serde::de::Error::custom("Read leaf tag but failed to read value")
-                        })?
-                        .into_inner();
+                    // let value = seq
+                    //     .next_element::<DeserializeAsWrap<H, ToFromBytesWrapper<H>>>()?
+                    //     .ok_or_else(|| {
+                    //         serde::de::Error::custom("Read leaf tag but failed to read value")
+                    //     })?
+                    //     .into_inner();
+                    let value = H::from_arr(seq.next_element::<[u8; 32]>()?.ok_or_else(|| {
+                        serde::de::Error::custom("Read leaf tag but failed to read value")
+                    })?)
+                    .map_err(serde::de::Error::custom)?;
+
                     let flags = seq
                         .next_element::<u8>()?
                         .ok_or_else(|| {
@@ -456,7 +395,7 @@ impl<'de, H: ToFromBytes> DeserializeAs<'de, PrunableTree<H>> for PrunableTreeWr
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "LocatedPrunableTree")]
-pub struct LocatedPrunableTreeWrapper<H: ToFromBytes> {
+pub struct LocatedPrunableTreeWrapper<H: ToArray<u8, 32> + TryFromArray<u8, 32>> {
     #[serde_as(as = "TreeAddressWrapper")]
     #[serde(getter = "LocatedPrunableTree::root_addr")]
     pub root_addr: incrementalmerkletree::Address,
@@ -464,12 +403,14 @@ pub struct LocatedPrunableTreeWrapper<H: ToFromBytes> {
     #[serde(getter = "LocatedPrunableTree::root")]
     pub root: PrunableTree<H>,
 }
-impl<H: ToFromBytes> From<LocatedPrunableTreeWrapper<H>> for LocatedPrunableTree<H> {
+impl<H: ToArray<u8, 32> + TryFromArray<u8, 32>> From<LocatedPrunableTreeWrapper<H>>
+    for LocatedPrunableTree<H>
+{
     fn from(def: LocatedPrunableTreeWrapper<H>) -> LocatedPrunableTree<H> {
         LocatedPrunableTree::from_parts(def.root_addr, def.root)
     }
 }
-impl<H: ToFromBytes> serde_with::SerializeAs<LocatedPrunableTree<H>>
+impl<H: ToArray<u8, 32> + TryFromArray<u8, 32>> serde_with::SerializeAs<LocatedPrunableTree<H>>
     for LocatedPrunableTreeWrapper<H>
 {
     fn serialize_as<S>(value: &LocatedPrunableTree<H>, serializer: S) -> Result<S::Ok, S::Error>
@@ -479,8 +420,8 @@ impl<H: ToFromBytes> serde_with::SerializeAs<LocatedPrunableTree<H>>
         LocatedPrunableTreeWrapper::serialize(value, serializer)
     }
 }
-impl<'de, H: ToFromBytes> serde_with::DeserializeAs<'de, LocatedPrunableTree<H>>
-    for LocatedPrunableTreeWrapper<H>
+impl<'de, H: ToArray<u8, 32> + TryFromArray<u8, 32>>
+    serde_with::DeserializeAs<'de, LocatedPrunableTree<H>> for LocatedPrunableTreeWrapper<H>
 {
     fn deserialize_as<D>(deserializer: D) -> Result<LocatedPrunableTree<H>, D::Error>
     where
