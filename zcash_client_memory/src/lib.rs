@@ -35,6 +35,9 @@ pub mod wallet_read;
 pub mod wallet_write;
 pub(crate) use types::*;
 
+#[cfg(test)]
+pub mod testing;
+
 /// The maximum number of blocks the wallet is allowed to rewind. This is
 /// consistent with the bound in zcashd, and allows block data deeper than
 /// this delta from the chain tip to be pruned.
