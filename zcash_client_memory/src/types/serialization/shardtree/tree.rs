@@ -338,7 +338,7 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
                         .ok_or_else(|| {
                             serde::de::Error::custom("Read parent tag but failed to read node")
                         })?
-                        .map(|x| H::from_array(x).map(Arc::new))
+                        .map(|x| H::try_from_array(x).map(Arc::new))
                         .transpose()
                         .map_err(serde::de::Error::custom)?;
 
@@ -348,7 +348,7 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
                 }
                 LEAF_TAG => {
                     let value =
-                        H::from_array(seq.next_element::<[u8; 32]>()?.ok_or_else(|| {
+                        H::try_from_array(seq.next_element::<[u8; 32]>()?.ok_or_else(|| {
                             serde::de::Error::custom("Read leaf tag but failed to read value")
                         })?)
                         .map_err(serde::de::Error::custom)?;

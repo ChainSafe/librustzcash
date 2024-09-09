@@ -47,11 +47,11 @@ impl<'de, H: TryFromArray<u8, 32, Error = E>, E: Display, const DEPTH: u8>
             .frontier
             .map(|f| {
                 let p = Position::from(f.position);
-                let l = H::from_array(f.leaf).map_err(serde::de::Error::custom)?;
+                let l = H::try_from_array(f.leaf).map_err(serde::de::Error::custom)?;
                 let o = f
                     .ommers
                     .into_iter()
-                    .map(|o| H::from_array(o).map_err(serde::de::Error::custom))
+                    .map(|o| H::try_from_array(o).map_err(serde::de::Error::custom))
                     .collect::<Result<Vec<_>, _>>()?;
                 frontier::Frontier::from_parts(p, l, o).map_err(|_e| {
                     serde::de::Error::custom("failed to construct frontier from parts")
@@ -111,11 +111,11 @@ impl<'de, T: TryFromArray<u8, 32, Error = E>, E: Display> DeserializeAs<'de, Non
         let frontier = NonEmptyFrontierDe::deserialize(deserializer)?;
         NonEmptyFrontier::from_parts(
             frontier.position.into(),
-            T::from_array(frontier.leaf).map_err(serde::de::Error::custom)?,
+            T::try_from_array(frontier.leaf).map_err(serde::de::Error::custom)?,
             frontier
                 .ommers
                 .into_iter()
-                .map(|o| T::from_array(o).map_err(serde::de::Error::custom))
+                .map(|o| T::try_from_array(o).map_err(serde::de::Error::custom))
                 .collect::<Result<Vec<_>, _>>()?,
         )
         .map_err(|_| serde::de::Error::custom("Failed to construct frontier from parts"))

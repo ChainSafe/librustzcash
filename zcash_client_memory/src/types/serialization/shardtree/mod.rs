@@ -38,7 +38,7 @@ impl ToArray<u8, 32> for sapling::Node {
 }
 impl TryFromArray<u8, 32> for sapling::Node {
     type Error = io::Error;
-    fn from_array(arr: [u8; 32]) -> Result<Self, Self::Error> {
+    fn try_from_array(arr: [u8; 32]) -> Result<Self, Self::Error> {
         Self::from_bytes(arr).into_option().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -56,7 +56,7 @@ impl ToArray<u8, 32> for orchard::tree::MerkleHashOrchard {
 #[cfg(feature = "orchard")]
 impl TryFromArray<u8, 32> for orchard::tree::MerkleHashOrchard {
     type Error = io::Error;
-    fn from_array(arr: [u8; 32]) -> Result<Self, Self::Error> {
+    fn try_from_array(arr: [u8; 32]) -> Result<Self, Self::Error> {
         Self::from_bytes(&arr).into_option().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,

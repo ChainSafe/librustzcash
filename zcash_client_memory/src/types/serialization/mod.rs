@@ -67,8 +67,8 @@ impl<T: ToArray<U, N>, U, const N: usize> ToArray<U, N> for Arc<T> {
 }
 impl<T: TryFromArray<U, N>, U, const N: usize> TryFromArray<U, N> for Arc<T> {
     type Error = T::Error;
-    fn from_array(arr: [U; N]) -> Result<Self, Self::Error> {
-        Ok(Arc::new(T::from_array(arr)?))
+    fn try_from_array(arr: [U; N]) -> Result<Self, Self::Error> {
+        Ok(Arc::new(T::try_from_array(arr)?))
     }
 }
 
@@ -77,7 +77,7 @@ where
     Self: Sized,
 {
     type Error: Display;
-    fn from_array(arr: [T; N]) -> Result<Self, Self::Error>;
+    fn try_from_array(arr: [T; N]) -> Result<Self, Self::Error>;
 }
 pub use bytes::*;
 
