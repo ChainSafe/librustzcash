@@ -25,7 +25,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_client_backend::data_api::scanning::{spanning_tree::SpanningTree, ScanPriority};
 
 use crate::error::Error;
-use crate::types::serialization::ScanPriorityWrapper;
+use crate::types::serialization::ScanPriorityDef;
 use serde_with::FromInto;
 use zcash_client_backend::data_api::scanning::ScanRange;
 
@@ -34,7 +34,7 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ScanQueue(
-    #[serde_as(as = "Vec<(FromInto<u32>, FromInto<u32>, ScanPriorityWrapper)>")]
+    #[serde_as(as = "Vec<(FromInto<u32>, FromInto<u32>, ScanPriorityDef)>")]
     Vec<(BlockHeight, BlockHeight, ScanPriority)>,
 );
 

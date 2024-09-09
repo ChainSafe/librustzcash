@@ -24,7 +24,7 @@ impl FromArray<u8, 32> for TxId {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "zcash_client_backend::data_api::TransactionStatus")]
-pub enum TransactionStatusWrapper {
+pub enum TransactionStatusDef {
     /// The requested transaction ID was not recognized by the node.
     TxidNotRecognized,
     /// The requested transaction ID corresponds to a transaction that is recognized by the node,

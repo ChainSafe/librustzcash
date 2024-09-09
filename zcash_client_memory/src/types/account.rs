@@ -134,18 +134,18 @@ impl DerefMut for Accounts {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     account_id: AccountId,
-    #[serde_as(as = "AccountSourceWrapper")]
+    #[serde_as(as = "AccountSourceDef")]
     kind: AccountSource,
-    #[serde_as(as = "ToFromBytesWrapper<UnifiedFullViewingKey>")]
+    #[serde_as(as = "BytesVec<UnifiedFullViewingKey>")]
     viewing_key: UnifiedFullViewingKey,
-    #[serde_as(as = "AccountBirthdayWrapper")]
+    #[serde_as(as = "AccountBirthdayDef")]
     birthday: AccountBirthday,
-    #[serde_as(as = "AccountPurposeWrapper")]
+    #[serde_as(as = "AccountPurposeDef")]
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
     /// The current diversifier index for this Account
     #[serde_as(as = "TryFromInto<u128>")]
     diversifier_index: DiversifierIndex,
-    #[serde_as(as = "BTreeSet<NoteIdWrapper>")]
+    #[serde_as(as = "BTreeSet<NoteIdDef>")]
     _notes: BTreeSet<NoteId>,
 }
 

@@ -29,7 +29,7 @@ pub(crate) struct TxLocatorMap(
 pub(crate) struct TransactionEntry {
     // created: String,
     /// Combines block height and mined_height into a txn status
-    #[serde(with = "TransactionStatusWrapper")]
+    #[serde(with = "TransactionStatusDef")]
     tx_status: TransactionStatus,
     tx_index: Option<u32>,
     #[serde_as(as = "Option<FromInto<u32>>")]

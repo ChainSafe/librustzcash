@@ -7,7 +7,7 @@ use zcash_client_backend::data_api::scanning::ScanPriority;
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "zcash_client_backend::data_api::scanning::ScanPriority")]
-pub enum ScanPriorityWrapper {
+pub enum ScanPriorityDef {
     /// Block ranges that are ignored have lowest priority.
     Ignored,
     /// Block ranges that have already been scanned will not be re-scanned.
@@ -24,19 +24,19 @@ pub enum ScanPriorityWrapper {
     /// main chain, has highest priority.
     Verify,
 }
-impl SerializeAs<ScanPriority> for ScanPriorityWrapper {
+impl SerializeAs<ScanPriority> for ScanPriorityDef {
     fn serialize_as<S>(value: &ScanPriority, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        ScanPriorityWrapper::serialize(value, serializer)
+        ScanPriorityDef::serialize(value, serializer)
     }
 }
-impl<'de> DeserializeAs<'de, ScanPriority> for ScanPriorityWrapper {
+impl<'de> DeserializeAs<'de, ScanPriority> for ScanPriorityDef {
     fn deserialize_as<D>(deserializer: D) -> Result<ScanPriority, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        ScanPriorityWrapper::deserialize(deserializer).map(Into::into)
+        ScanPriorityDef::deserialize(deserializer).map(Into::into)
     }
 }

@@ -122,8 +122,10 @@ mod array {
         where
             D: serde::Deserializer<'de>,
         {
-            T::try_from_array(ByteArray::<N>::deserialize(deserializer)?.0)
-                    .map_err(serde::de::Error::custom)
+            Ok(
+                T::try_from_array(ByteArray::<N>::deserialize(deserializer)?.0)
+                    .map_err(serde::de::Error::custom)?,
+            )
         }
     }
 }
@@ -141,9 +143,9 @@ mod bytes {
         where
             Self: Sized;
     }
-    pub struct ToFromBytesWrapper<T: ToFromBytes>(T);
+    pub struct BytesVec<T: ToFromBytes>(T);
 
-    impl<T: ToFromBytes> SerializeAs<T> for ToFromBytesWrapper<T> {
+    impl<T: ToFromBytes> SerializeAs<T> for BytesVec<T> {
         fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
@@ -152,7 +154,7 @@ mod bytes {
         }
     }
 
-    impl<'de, T: ToFromBytes> DeserializeAs<'de, T> for ToFromBytesWrapper<T> {
+    impl<'de, T: ToFromBytes> DeserializeAs<'de, T> for BytesVec<T> {
         fn deserialize_as<D>(deserializer: D) -> Result<T, D::Error>
         where
             D: serde::Deserializer<'de>,

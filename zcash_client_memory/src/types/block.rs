@@ -25,7 +25,7 @@ pub(crate) struct MemoryWalletBlock {
     // Just the transactions that involve an account in this wallet
     #[serde_as(as = "SetPreventDuplicates<ByteArray<32>>")]
     pub(crate) _transactions: HashSet<TxId>,
-    #[serde_as(as = "Seq<(NoteIdWrapper, MemoBytesWrapper)>")]
+    #[serde_as(as = "Seq<(NoteIdDef, MemoBytesDef)>")]
     pub(crate) _memos: HashMap<NoteId, MemoBytes>,
     pub(crate) sapling_commitment_tree_size: Option<u32>,
     pub(crate) _sapling_output_count: Option<u32>,

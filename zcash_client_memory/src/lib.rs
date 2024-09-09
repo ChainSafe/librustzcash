@@ -63,18 +63,18 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     nullifiers: NullifierMap,
     tx_locator: TxLocatorMap,
     scan_queue: ScanQueue,
-    #[serde_as(as = "MemoryShardTreeWrapper")]
+    #[serde_as(as = "MemoryShardTreeDef")]
     sapling_tree: ShardTree<
         MemoryShardStore<sapling::Node, BlockHeight>,
         { SAPLING_SHARD_HEIGHT * 2 },
         SAPLING_SHARD_HEIGHT,
     >,
     /// Stores the block height corresponding to the last note commitment in a shard
-    #[serde_as(as = "BTreeMap<TreeAddressWrapper, FromInto<u32>>")]
+    #[serde_as(as = "BTreeMap<TreeAddressDef, FromInto<u32>>")]
     sapling_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 
     #[cfg(feature = "orchard")]
-    #[serde_as(as = "MemoryShardTreeWrapper")]
+    #[serde_as(as = "MemoryShardTreeDef")]
     orchard_tree: ShardTree<
         MemoryShardStore<orchard::tree::MerkleHashOrchard, BlockHeight>,
         { ORCHARD_SHARD_HEIGHT * 2 },
@@ -82,7 +82,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     >,
     #[cfg(feature = "orchard")]
     /// Stores the block height corresponding to the last note commitment in a shard
-    #[serde_as(as = "BTreeMap<TreeAddressWrapper, FromInto<u32>>")]
+    #[serde_as(as = "BTreeMap<TreeAddressDef, FromInto<u32>>")]
     orchard_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 }
 

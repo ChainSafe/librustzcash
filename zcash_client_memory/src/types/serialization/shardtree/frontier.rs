@@ -9,11 +9,9 @@ use serde_with::{de::DeserializeAs, serde_as};
 
 use crate::{ToArray, TryFromArray};
 
-pub struct FrontierWrapper;
+pub struct FrontierDef;
 
-impl<H: ToArray<u8, 32> + Clone, const DEPTH: u8> SerializeAs<Frontier<H, DEPTH>>
-    for FrontierWrapper
-{
+impl<H: ToArray<u8, 32> + Clone, const DEPTH: u8> SerializeAs<Frontier<H, DEPTH>> for FrontierDef {
     fn serialize_as<S>(value: &Frontier<H, DEPTH>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -21,7 +19,7 @@ impl<H: ToArray<u8, 32> + Clone, const DEPTH: u8> SerializeAs<Frontier<H, DEPTH>
         #[serde_as]
         #[derive(Serialize)]
         struct FrontierSer<'a, H: ToArray<u8, 32>> {
-            #[serde_as(as = "Option<&'a NonEmptyFrontierWrapper>")]
+            #[serde_as(as = "Option<&'a NonEmptyFrontierDef>")]
             frontier: &'a Option<&'a NonEmptyFrontier<H>>,
         }
 
@@ -32,7 +30,7 @@ impl<H: ToArray<u8, 32> + Clone, const DEPTH: u8> SerializeAs<Frontier<H, DEPTH>
     }
 }
 impl<'de, H: TryFromArray<u8, 32, Error = E>, E: Display, const DEPTH: u8>
-    DeserializeAs<'de, Frontier<H, DEPTH>> for FrontierWrapper
+    DeserializeAs<'de, Frontier<H, DEPTH>> for FrontierDef
 {
     fn deserialize_as<D>(deserializer: D) -> Result<Frontier<H, DEPTH>, D::Error>
     where
@@ -62,9 +60,9 @@ impl<'de, H: TryFromArray<u8, 32, Error = E>, E: Display, const DEPTH: u8>
     }
 }
 
-pub struct NonEmptyFrontierWrapper;
+struct NonEmptyFrontierDef;
 
-impl<T> SerializeAs<NonEmptyFrontier<T>> for NonEmptyFrontierWrapper
+impl<T> SerializeAs<NonEmptyFrontier<T>> for NonEmptyFrontierDef
 where
     T: ToArray<u8, 32>,
 {
@@ -102,7 +100,7 @@ struct NonEmptyFrontierDe {
 }
 
 impl<'de, T: TryFromArray<u8, 32, Error = E>, E: Display> DeserializeAs<'de, NonEmptyFrontier<T>>
-    for NonEmptyFrontierWrapper
+    for NonEmptyFrontierDef
 {
     fn deserialize_as<D>(deserializer: D) -> Result<NonEmptyFrontier<T>, D::Error>
     where

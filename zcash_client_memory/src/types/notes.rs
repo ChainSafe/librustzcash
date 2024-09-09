@@ -30,7 +30,7 @@ use crate::{error::Error, Nullifier};
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ReceievdNoteSpends(
-    #[serde_as(as = "BTreeMap<NoteIdWrapper, ByteArray<32>>")] BTreeMap<NoteId, TxId>,
+    #[serde_as(as = "BTreeMap<NoteIdDef, ByteArray<32>>")] BTreeMap<NoteId, TxId>,
 );
 
 impl ReceievdNoteSpends {
@@ -54,7 +54,7 @@ pub(crate) struct ReceivedNoteTable(pub Vec<ReceivedNote>);
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ReceivedNote {
     // Uniquely identifies this note
-    #[serde_as(as = "NoteIdWrapper")]
+    #[serde_as(as = "NoteIdDef")]
     pub(crate) note_id: NoteId,
     #[serde_as(as = "ByteArray<32>")]
     pub(crate) txid: TxId,
@@ -62,15 +62,15 @@ pub(crate) struct ReceivedNote {
     pub(crate) output_index: u32,
     pub(crate) account_id: AccountId,
     //sapling: (diversifier, value, rcm) orchard: (diversifier, value, rho, rseed)
-    #[serde_as(as = "NoteWrapper")]
+    #[serde_as(as = "NoteDef")]
     pub(crate) note: Note,
     pub(crate) nf: Option<Nullifier>,
     pub(crate) _is_change: bool,
-    #[serde_as(as = "MemoBytesWrapper")]
+    #[serde_as(as = "MemoBytesDef")]
     pub(crate) memo: Memo,
     #[serde_as(as = "Option<FromInto<u64>>")]
     pub(crate) commitment_tree_position: Option<Position>,
-    #[serde_as(as = "Option<ScopeWrapper>")]
+    #[serde_as(as = "Option<ScopeDef>")]
     pub(crate) recipient_key_scope: Option<Scope>,
 }
 impl ReceivedNote {

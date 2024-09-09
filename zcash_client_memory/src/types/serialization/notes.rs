@@ -22,123 +22,82 @@ use super::{ToArray, TryFromArray};
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Note")]
-pub enum NoteWrapper {
-    Sapling(#[serde_as(as = "SaplingNoteWrapper")] sapling::Note),
+pub enum NoteDef {
+    Sapling(#[serde_as(as = "SaplingNoteDef")] sapling::Note),
     #[cfg(feature = "orchard")]
-    Orchard(#[serde_as(as = "OrchardNoteWrapper")] orchard::Note),
-}
-
-impl From<NoteWrapper> for Note {
-    fn from(note: NoteWrapper) -> Self {
-        match note {
-            NoteWrapper::Sapling(inner) => Note::Sapling(inner),
-            #[cfg(feature = "orchard")]
-            NoteWrapper::Orchard(inner) => Note::Orchard(inner),
-        }
-    }
-}
-
-impl SerializeAs<Note> for NoteWrapper {
-    fn serialize_as<S>(value: &Note, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        NoteWrapper::serialize(value, serializer)
-    }
-}
-impl<'de> DeserializeAs<'de, Note> for NoteWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<Note, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        NoteWrapper::deserialize(deserializer).map(Into::into)
-    }
+    Orchard(#[serde_as(as = "OrchardNoteDef")] orchard::Note),
 }
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "sapling::Note")]
-pub struct SaplingNoteWrapper {
+pub struct SaplingNoteDef {
     /// The recipient of the funds.
     #[serde_as(as = "TryByteArray<43>")]
     #[serde(getter = "sapling::Note::recipient")]
     recipient: PaymentAddress,
     /// The value of this note.
-    #[serde_as(as = "NoteValueWrapper")]
+    #[serde_as(as = "NoteValueDef")]
     #[serde(getter = "sapling::Note::value")]
     value: NoteValue,
     /// The seed randomness for various note components.
     #[serde(getter = "sapling::Note::rseed")]
-    #[serde_as(as = "RseedWrapper")]
+    #[serde_as(as = "RseedDef")]
     rseed: Rseed,
 }
-impl From<SaplingNoteWrapper> for sapling::Note {
-    fn from(note: SaplingNoteWrapper) -> Self {
-        sapling::Note::from_parts(note.recipient, note.value, note.rseed)
-    }
-}
-impl serde_with::SerializeAs<sapling::Note> for SaplingNoteWrapper {
-    fn serialize_as<S>(value: &sapling::Note, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        SaplingNoteWrapper::serialize(value, serializer)
-    }
-}
-impl<'de> serde_with::DeserializeAs<'de, sapling::Note> for SaplingNoteWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<sapling::Note, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        SaplingNoteWrapper::deserialize(deserializer).map(Into::into)
-    }
-}
-
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "NoteId")]
-pub(crate) struct NoteIdWrapper {
+pub(crate) struct NoteIdDef {
     #[serde(getter = "NoteId::txid")]
     #[serde_as(as = "ByteArray<32>")]
     txid: TxId,
     #[serde(getter = "NoteId::protocol")]
-    #[serde_as(as = "ShieldedProtocolWrapper")]
+    #[serde_as(as = "ShieldedProtocolDef")]
     protocol: ShieldedProtocol,
     #[serde(getter = "NoteId::output_index")]
     output_index: u16,
 }
-
-impl From<NoteIdWrapper> for NoteId {
-    fn from(def: NoteIdWrapper) -> NoteId {
-        NoteId::new(def.txid, def.protocol, def.output_index)
-    }
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "ShieldedProtocol")]
+pub enum ShieldedProtocolDef {
+    Sapling,
+    Orchard,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "Scope")]
+pub enum ScopeDef {
+    External,
+    Internal,
 }
 
-impl serde_with::SerializeAs<NoteId> for NoteIdWrapper {
-    fn serialize_as<S>(value: &NoteId, serializer: S) -> Result<S::Ok, S::Error>
+pub struct NoteValueDef;
+impl serde_with::SerializeAs<sapling::value::NoteValue> for NoteValueDef {
+    fn serialize_as<S>(value: &sapling::value::NoteValue, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        NoteIdWrapper::serialize(value, serializer)
+        value.inner().serialize(serializer)
     }
 }
-
-impl<'de> serde_with::DeserializeAs<'de, NoteId> for NoteIdWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<NoteId, D::Error>
+impl<'de> serde_with::DeserializeAs<'de, sapling::value::NoteValue> for NoteValueDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<sapling::value::NoteValue, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        NoteIdWrapper::deserialize(deserializer).map(Into::into)
+        Ok(sapling::value::NoteValue::from_raw(u64::deserialize(
+            deserializer,
+        )?))
     }
 }
 
-pub struct RseedWrapper;
+pub struct RseedDef;
 #[derive(Serialize, Deserialize)]
 enum RseedSerDe {
     BeforeZip212([u8; 32]),
     AfterZip212([u8; 32]),
 }
-impl serde_with::SerializeAs<Rseed> for RseedWrapper {
+impl serde_with::SerializeAs<Rseed> for RseedDef {
     fn serialize_as<S>(value: &Rseed, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -152,7 +111,7 @@ impl serde_with::SerializeAs<Rseed> for RseedWrapper {
     }
 }
 
-impl<'de> serde_with::DeserializeAs<'de, Rseed> for RseedWrapper {
+impl<'de> serde_with::DeserializeAs<'de, Rseed> for RseedDef {
     fn deserialize_as<D>(deserializer: D) -> Result<Rseed, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -168,71 +127,40 @@ impl<'de> serde_with::DeserializeAs<'de, Rseed> for RseedWrapper {
     }
 }
 
-pub struct NoteValueWrapper;
-impl serde_with::SerializeAs<sapling::value::NoteValue> for NoteValueWrapper {
-    fn serialize_as<S>(value: &sapling::value::NoteValue, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value.inner().serialize(serializer)
-    }
-}
-impl<'de> serde_with::DeserializeAs<'de, sapling::value::NoteValue> for NoteValueWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<sapling::value::NoteValue, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(sapling::value::NoteValue::from_raw(u64::deserialize(
-            deserializer,
-        )?))
-    }
-}
+// BOILERPLATE: Trivial conversions between types and the trivial implementations of SerializeAs and DeserializeAs
 
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "ShieldedProtocol")]
-pub enum ShieldedProtocolWrapper {
-    Sapling,
-    Orchard,
-}
-
-impl serde_with::SerializeAs<ShieldedProtocol> for ShieldedProtocolWrapper {
+impl serde_with::SerializeAs<ShieldedProtocol> for ShieldedProtocolDef {
     fn serialize_as<S>(value: &ShieldedProtocol, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        ShieldedProtocolWrapper::serialize(value, serializer)
+        ShieldedProtocolDef::serialize(value, serializer)
     }
 }
 
-impl<'de> serde_with::DeserializeAs<'de, ShieldedProtocol> for ShieldedProtocolWrapper {
+impl<'de> serde_with::DeserializeAs<'de, ShieldedProtocol> for ShieldedProtocolDef {
     fn deserialize_as<D>(deserializer: D) -> Result<ShieldedProtocol, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        ShieldedProtocolWrapper::deserialize(deserializer).map(Into::into)
+        ShieldedProtocolDef::deserialize(deserializer).map(Into::into)
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "Scope")]
-pub enum ScopeWrapper {
-    External,
-    Internal,
-}
-impl serde_with::SerializeAs<Scope> for ScopeWrapper {
+impl serde_with::SerializeAs<Scope> for ScopeDef {
     fn serialize_as<S>(value: &Scope, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        ScopeWrapper::serialize(value, serializer)
+        ScopeDef::serialize(value, serializer)
     }
 }
-impl<'de> serde_with::DeserializeAs<'de, Scope> for ScopeWrapper {
+impl<'de> serde_with::DeserializeAs<'de, Scope> for ScopeDef {
     fn deserialize_as<D>(deserializer: D) -> Result<Scope, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        ScopeWrapper::deserialize(deserializer).map(Into::into)
+        ScopeDef::deserialize(deserializer).map(Into::into)
     }
 }
 
@@ -249,6 +177,77 @@ impl TryFromArray<u8, 43> for sapling::PaymentAddress {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid payment address"))
     }
 }
+impl From<NoteIdDef> for NoteId {
+    fn from(def: NoteIdDef) -> NoteId {
+        NoteId::new(def.txid, def.protocol, def.output_index)
+    }
+}
+
+impl serde_with::SerializeAs<NoteId> for NoteIdDef {
+    fn serialize_as<S>(value: &NoteId, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        NoteIdDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> serde_with::DeserializeAs<'de, NoteId> for NoteIdDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<NoteId, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        NoteIdDef::deserialize(deserializer).map(Into::into)
+    }
+}
+
+impl From<SaplingNoteDef> for sapling::Note {
+    fn from(note: SaplingNoteDef) -> Self {
+        sapling::Note::from_parts(note.recipient, note.value, note.rseed)
+    }
+}
+impl serde_with::SerializeAs<sapling::Note> for SaplingNoteDef {
+    fn serialize_as<S>(value: &sapling::Note, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SaplingNoteDef::serialize(value, serializer)
+    }
+}
+impl<'de> serde_with::DeserializeAs<'de, sapling::Note> for SaplingNoteDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<sapling::Note, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        SaplingNoteDef::deserialize(deserializer).map(Into::into)
+    }
+}
+impl From<NoteDef> for Note {
+    fn from(note: NoteDef) -> Self {
+        match note {
+            NoteDef::Sapling(inner) => Note::Sapling(inner),
+            #[cfg(feature = "orchard")]
+            NoteDef::Orchard(inner) => Note::Orchard(inner),
+        }
+    }
+}
+
+impl SerializeAs<Note> for NoteDef {
+    fn serialize_as<S>(value: &Note, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        NoteDef::serialize(value, serializer)
+    }
+}
+impl<'de> DeserializeAs<'de, Note> for NoteDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<Note, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        NoteDef::deserialize(deserializer).map(Into::into)
+    }
+}
 
 #[cfg(feature = "orchard")]
 pub use _orchard::*;
@@ -258,8 +257,8 @@ mod _orchard {
 
     use super::*;
 
-    pub struct OrchardNoteWrapper;
-    impl serde_with::SerializeAs<orchard::note::Note> for OrchardNoteWrapper {
+    pub struct OrchardNoteDef;
+    impl serde_with::SerializeAs<orchard::note::Note> for OrchardNoteDef {
         fn serialize_as<S>(value: &orchard::note::Note, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
@@ -269,7 +268,7 @@ mod _orchard {
             struct OrchardNoteSer<'a> {
                 #[serde_as(as = "TryByteArray<43>")]
                 recipient: orchard::Address,
-                #[serde_as(as = "NoteValueWrapper")]
+                #[serde_as(as = "NoteValueDef")]
                 value: orchard::value::NoteValue,
                 #[serde_as(as = "TryByteArray<32>")]
                 rho: orchard::note::Rho,
@@ -285,7 +284,7 @@ mod _orchard {
         }
     }
 
-    impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWrapper {
+    impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteDef {
         fn deserialize_as<D>(deserializer: D) -> Result<orchard::note::Note, D::Error>
         where
             D: serde::Deserializer<'de>,
@@ -295,7 +294,7 @@ mod _orchard {
             struct OrchardNoteDe {
                 #[serde_as(as = "TryByteArray<43>")]
                 recipient: orchard::Address,
-                #[serde_as(as = "NoteValueWrapper")]
+                #[serde_as(as = "NoteValueDef")]
                 value: orchard::value::NoteValue,
                 #[serde_as(as = "TryByteArray<32>")]
                 rho: orchard::note::Rho,
@@ -320,7 +319,7 @@ mod _orchard {
         }
     }
 
-    impl serde_with::SerializeAs<orchard::value::NoteValue> for NoteValueWrapper {
+    impl serde_with::SerializeAs<orchard::value::NoteValue> for NoteValueDef {
         fn serialize_as<S>(
             value: &orchard::value::NoteValue,
             serializer: S,
@@ -331,7 +330,7 @@ mod _orchard {
             value.inner().serialize(serializer)
         }
     }
-    impl<'de> serde_with::DeserializeAs<'de, orchard::value::NoteValue> for NoteValueWrapper {
+    impl<'de> serde_with::DeserializeAs<'de, orchard::value::NoteValue> for NoteValueDef {
         fn deserialize_as<D>(deserializer: D) -> Result<orchard::value::NoteValue, D::Error>
         where
             D: serde::Deserializer<'de>,
