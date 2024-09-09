@@ -60,6 +60,7 @@ impl<'de> Deserialize<'de> for Nullifier {
             NullifierSerDe::Orchard(n) => Nullifier::Orchard(
                 orchard::note::Nullifier::try_from_array(n).map_err(serde::de::Error::custom)?,
             ),
+            #[cfg(not(feature = "orchard"))]
             _ => return Err(serde::de::Error::custom("Invalid nullifier")),
         })
     }

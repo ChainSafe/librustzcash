@@ -30,7 +30,7 @@ use crate::{error::Error, Nullifier};
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ReceievdNoteSpends(
-    #[serde_as(as = "BTreeMap<NoteIdWrapper, TxIdWrapper>")] BTreeMap<NoteId, TxId>,
+    #[serde_as(as = "BTreeMap<NoteIdWrapper, ByteArray<32>>")] BTreeMap<NoteId, TxId>,
 );
 
 impl ReceievdNoteSpends {
@@ -56,7 +56,7 @@ pub(crate) struct ReceivedNote {
     // Uniquely identifies this note
     #[serde_as(as = "NoteIdWrapper")]
     pub(crate) note_id: NoteId,
-    #[serde_as(as = "TxIdWrapper")]
+    #[serde_as(as = "ByteArray<32>")]
     pub(crate) txid: TxId,
     // output_index: sapling, action_index: orchard
     pub(crate) output_index: u32,

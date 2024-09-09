@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 use zcash_primitives::block::BlockHash;
 
 mod shardtree;

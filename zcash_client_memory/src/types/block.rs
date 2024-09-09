@@ -23,7 +23,7 @@ pub(crate) struct MemoryWalletBlock {
     pub(crate) hash: BlockHash,
     pub(crate) block_time: u32,
     // Just the transactions that involve an account in this wallet
-    #[serde_as(as = "SetPreventDuplicates<TxIdWrapper>")]
+    #[serde_as(as = "SetPreventDuplicates<ByteArray<32>>")]
     pub(crate) _transactions: HashSet<TxId>,
     #[serde_as(as = "Seq<(NoteIdWrapper, MemoBytesWrapper)>")]
     pub(crate) _memos: HashMap<NoteId, MemoBytes>,

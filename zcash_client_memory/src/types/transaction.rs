@@ -19,7 +19,7 @@ use serde_with::{FromInto, TryFromInto};
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub(crate) struct TxLocatorMap(
-    #[serde_as(as = "BTreeMap<(FromInto<u32>, _), TxIdWrapper>")]
+    #[serde_as(as = "BTreeMap<(FromInto<u32>, _), ByteArray<32>>")]
     BTreeMap<(BlockHeight, u32), TxId>,
 );
 
@@ -77,7 +77,7 @@ impl TransactionEntry {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub(crate) struct TransactionTable(
-    #[serde_as(as = "BTreeMap<TxIdWrapper, _>")] BTreeMap<TxId, TransactionEntry>,
+    #[serde_as(as = "BTreeMap<ByteArray<32>, _>")] BTreeMap<TxId, TransactionEntry>,
 );
 
 impl TransactionTable {

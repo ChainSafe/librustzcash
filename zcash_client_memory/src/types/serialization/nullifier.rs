@@ -1,6 +1,4 @@
-use std::convert::Infallible;
-
-use super::{FromArray, ToArray, TryFromArray};
+use super::{FromArray, ToArray};
 
 impl FromArray<u8, 32> for sapling::Nullifier {
     fn from_array(arr: [u8; 32]) -> Self {
@@ -16,7 +14,7 @@ impl ToArray<u8, 32> for sapling::Nullifier {
 
 #[cfg(feature = "orchard")]
 mod _orchard {
-    use super::*;
+    use crate::{ToArray, TryFromArray};
     use std::io;
     impl TryFromArray<u8, 32> for orchard::note::Nullifier {
         type Error = io::Error;
