@@ -68,6 +68,7 @@ mod array {
 }
 
 mod bytes {
+    use serde::{Deserialize, Serialize};
     use serde_with::{DeserializeAs, SerializeAs};
     use std::io;
     pub trait ToFromBytes {
