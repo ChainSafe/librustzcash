@@ -1,15 +1,21 @@
 use incrementalmerkletree::{Marking, Position, Retention};
 
 use secrecy::SecretVec;
+use shardtree::{error::ShardTreeError, store::ShardStore};
 
-use std::{collections::HashMap, ops::Range};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::Range,
+};
 
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
-    ShieldedProtocol::Sapling,
+    ShieldedProtocol::{self, Sapling},
 };
 
+#[cfg(feature = "orchard")]
+use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
@@ -260,14 +266,29 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         // - Add a check to make sure the blocks are not already in the data store.
         // let _start_height = blocks.first().map(|b| b.height());
         let mut last_scanned_height = None;
-        let sapling_start_leaf_position = blocks.first().map(|block| {
-            Position::from(
+        struct BlockPositions {
+            height: BlockHeight,
+            sapling_start_position: Position,
+            #[cfg(feature = "orchard")]
+            orchard_start_position: Position,
+        }
+        let start_positions = blocks.first().map(|block| BlockPositions {
+            height: block.height(),
+            sapling_start_position: Position::from(
                 u64::from(block.sapling().final_tree_size())
                     - u64::try_from(block.sapling().commitments().len()).unwrap(),
-            )
+            ),
+            #[cfg(feature = "orchard")]
+            orchard_start_position: Position::from(
+                u64::from(block.orchard().final_tree_size())
+                    - u64::try_from(block.orchard().commitments().len()).unwrap(),
+            ),
         });
 
         let mut sapling_commitments = vec![];
+        #[cfg(feature = "orchard")]
+        let mut orchard_commitments = vec![];
+        let mut note_positions = vec![];
         for block in blocks.into_iter() {
             let mut transactions = HashMap::new();
             let mut memos = HashMap::new();
@@ -344,6 +365,23 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             self.insert_sapling_nullifier_map(block.height(), block.sapling().nullifier_map())?;
             #[cfg(feature = "orchard")]
             self.insert_orchard_nullifier_map(block.height(), block.orchard().nullifier_map())?;
+            note_positions.extend(block.transactions().iter().flat_map(|wtx| {
+                let iter = wtx.sapling_outputs().iter().map(|out| {
+                    (
+                        ShieldedProtocol::Sapling,
+                        out.note_commitment_tree_position(),
+                    )
+                });
+                #[cfg(feature = "orchard")]
+                let iter = iter.chain(wtx.orchard_outputs().iter().map(|out| {
+                    (
+                        ShieldedProtocol::Orchard,
+                        out.note_commitment_tree_position(),
+                    )
+                }));
+
+                iter
+            }));
 
             let memory_block = MemoryWalletBlock {
                 height: block.height(),
@@ -374,7 +412,11 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
 
             let block_commitments = block.into_commitments();
             sapling_commitments.extend(block_commitments.sapling.into_iter().map(Some));
+            #[cfg(feature = "orchard")]
+            orchard_commitments.extend(block_commitments.orchard.into_iter().map(Some));
         }
+
+        // TODO: Prune the nullifier map of entries we no longer need.
 
         if let Some((start_positions, last_scanned_height)) =
             start_positions.zip(last_scanned_height)
@@ -385,7 +427,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 .par_chunks_mut(CHUNK_SIZE)
                 .enumerate()
                 .filter_map(|(i, chunk)| {
-                    let start = sapling_start_leaf_position + (i * CHUNK_SIZE) as u64;
+                    let start = start_positions.sapling_start_position + (i * CHUNK_SIZE) as u64;
                     let end = start + chunk.len() as u64;
 
                     shardtree::LocatedTree::from_iter(
@@ -396,6 +438,52 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 })
                 .map(|res| (res.subtree, res.checkpoints))
                 .collect::<Vec<_>>();
+
+            #[cfg(feature = "orchard")]
+            let orchard_subtrees = orchard_commitments
+                .par_chunks_mut(CHUNK_SIZE)
+                .enumerate()
+                .filter_map(|(i, chunk)| {
+                    let start = start_positions.orchard_start_position + (i * CHUNK_SIZE) as u64;
+                    let end = start + chunk.len() as u64;
+
+                    shardtree::LocatedTree::from_iter(
+                        start..end,
+                        ORCHARD_SHARD_HEIGHT.into(),
+                        chunk.iter_mut().map(|n| n.take().expect("always Some")),
+                    )
+                })
+                .map(|res| (res.subtree, res.checkpoints))
+                .collect::<Vec<_>>();
+
+            // Collect the complete set of Sapling checkpoints
+            #[cfg(feature = "orchard")]
+            let sapling_checkpoint_positions: BTreeMap<BlockHeight, Position> = sapling_subtrees
+                .iter()
+                .flat_map(|(_, checkpoints)| checkpoints.iter())
+                .map(|(k, v)| (*k, *v))
+                .collect();
+
+            #[cfg(feature = "orchard")]
+            let orchard_checkpoint_positions: BTreeMap<BlockHeight, Position> = orchard_subtrees
+                .iter()
+                .flat_map(|(_, checkpoints)| checkpoints.iter())
+                .map(|(k, v)| (*k, *v))
+                .collect();
+
+            #[cfg(feature = "orchard")]
+            let (missing_sapling_checkpoints, missing_orchard_checkpoints) = (
+                ensure_checkpoints(
+                    orchard_checkpoint_positions.keys(),
+                    &sapling_checkpoint_positions,
+                    from_state.final_sapling_tree(),
+                ),
+                ensure_checkpoints(
+                    sapling_checkpoint_positions.keys(),
+                    &orchard_checkpoint_positions,
+                    from_state.final_orchard_tree(),
+                ),
+            );
 
             // Update the Sapling note commitment tree with all newly read note commitments
             {
@@ -413,6 +501,67 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                         sapling_tree.insert_tree(tree, checkpoints)?;
                     }
 
+                    // Ensure we have a Sapling checkpoint for each checkpointed Orchard block height.
+                    // We skip all checkpoints below the minimum retained checkpoint in the
+                    // Sapling tree, because branches below this height may be pruned.
+                    #[cfg(feature = "orchard")]
+                    {
+                        let min_checkpoint_height = sapling_tree
+                            .store()
+                            .min_checkpoint_id()
+                            .map_err(ShardTreeError::Storage)?
+                            .expect("At least one checkpoint was inserted (by insert_frontier)");
+
+                        for (height, checkpoint) in &missing_sapling_checkpoints {
+                            if *height > min_checkpoint_height {
+                                sapling_tree
+                                    .store_mut()
+                                    .add_checkpoint(*height, checkpoint.clone())
+                                    .map_err(ShardTreeError::Storage)?;
+                            }
+                        }
+                    }
+
+                    Ok(())
+                })?;
+            }
+
+            // Update the Orchard note commitment tree with all newly read note commitments
+            #[cfg(feature = "orchard")]
+            {
+                let mut orchard_subtrees = orchard_subtrees.into_iter();
+                self.with_orchard_tree_mut::<_, _, Self::Error>(|orchard_tree| {
+                    orchard_tree.insert_frontier(
+                        from_state.final_orchard_tree().clone(),
+                        Retention::Checkpoint {
+                            id: from_state.block_height(),
+                            marking: Marking::Reference,
+                        },
+                    )?;
+
+                    for (tree, checkpoints) in &mut orchard_subtrees {
+                        orchard_tree.insert_tree(tree, checkpoints)?;
+                    }
+
+                    // Ensure we have an Orchard checkpoint for each checkpointed Sapling block height.
+                    // We skip all checkpoints below the minimum retained checkpoint in the
+                    // Orchard tree, because branches below this height may be pruned.
+                    {
+                        let min_checkpoint_height = orchard_tree
+                            .store()
+                            .min_checkpoint_id()
+                            .map_err(ShardTreeError::Storage)?
+                            .expect("At least one checkpoint was inserted (by insert_frontier)");
+
+                        for (height, checkpoint) in &missing_orchard_checkpoints {
+                            if *height > min_checkpoint_height {
+                                orchard_tree
+                                    .store_mut()
+                                    .add_checkpoint(*height, checkpoint.clone())
+                                    .map_err(ShardTreeError::Storage)?;
+                            }
+                        }
+                    }
                     Ok(())
                 })?;
             }
@@ -423,8 +572,9 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                     end: last_scanned_height + 1,
                 },
                 &note_positions,
-            );
+            )?;
         }
+
         // We can do some pruning of the tx_locator_map here
 
         Ok(())
@@ -558,4 +708,50 @@ Instead derive the ufvk in the calling code and import it using `import_account_
         tracing::debug!("set_transaction_status");
         self.tx_table.set_transaction_status(&txid, status)
     }
+}
+
+#[cfg(feature = "orchard")]
+use {incrementalmerkletree::frontier::Frontier, shardtree::store::Checkpoint};
+
+#[cfg(feature = "orchard")]
+fn ensure_checkpoints<'a, H, I: Iterator<Item = &'a BlockHeight>, const DEPTH: u8>(
+    // An iterator of checkpoints heights for which we wish to ensure that
+    // checkpoints exists.
+    ensure_heights: I,
+    // The map of checkpoint positions from which we will draw note commitment tree
+    // position information for the newly created checkpoints.
+    existing_checkpoint_positions: &BTreeMap<BlockHeight, Position>,
+    // The frontier whose position will be used for an inserted checkpoint when
+    // there is no preceding checkpoint in existing_checkpoint_positions.
+    state_final_tree: &Frontier<H, DEPTH>,
+) -> Vec<(BlockHeight, Checkpoint)> {
+    ensure_heights
+        .flat_map(|ensure_height| {
+            existing_checkpoint_positions
+                .range::<BlockHeight, _>(..=*ensure_height)
+                .last()
+                .map_or_else(
+                    || {
+                        Some((
+                            *ensure_height,
+                            state_final_tree
+                                .value()
+                                .map_or_else(Checkpoint::tree_empty, |t| {
+                                    Checkpoint::at_position(t.position())
+                                }),
+                        ))
+                    },
+                    |(existing_checkpoint_height, position)| {
+                        if *existing_checkpoint_height < *ensure_height {
+                            Some((*ensure_height, Checkpoint::at_position(*position)))
+                        } else {
+                            // The checkpoint already exists, so we don't need to
+                            // do anything.
+                            None
+                        }
+                    },
+                )
+                .into_iter()
+        })
+        .collect::<Vec<_>>()
 }

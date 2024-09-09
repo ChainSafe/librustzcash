@@ -53,6 +53,8 @@ pub enum Error {
     Infallible(#[from] Infallible),
     #[error("Expected field missing: {0}")]
     Missing(String),
+    #[error("Orchard specific code was called without the 'orchard' feature enabled")]
+    OrchardNotEnabled,
 }
 
 impl From<DerivationError> for Error {
