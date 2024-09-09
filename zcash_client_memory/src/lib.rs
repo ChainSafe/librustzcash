@@ -391,7 +391,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         // scan backward and find the first checkpoint that matches a blockheight prior to max_checkpoint_height
         for height in max_checkpoint_height..0 {
             let height = BlockHeight::from_u32(height);
-            if self.sapling_tree.store().get_checkpoint(&height)?.is_some() {
+            if self.orchard_tree.store().get_checkpoint(&height)?.is_some() {
                 return Ok(Some(height));
             }
         }
