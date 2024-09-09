@@ -672,12 +672,12 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             // Mark transparent UTXOs as spent
             #[cfg(feature = "transparent-inputs")]
             for _utxo_outpoint in sent_tx.utxos_spent() {
-                // self.mark_transparent_utxo_spent(wdb.conn.0, tx_ref, utxo_outpoint)?;
                 todo!()
             }
 
             for output in sent_tx.outputs() {
                 // TODO: insert sent output
+                self.sent_notes.insert_sent_output(sent_tx, output);
 
                 match output.recipient() {
                     Recipient::InternalAccount { .. } => {

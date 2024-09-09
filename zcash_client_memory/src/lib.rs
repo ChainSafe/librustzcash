@@ -22,7 +22,8 @@ use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_client_backend::{
     data_api::{
         scanning::{ScanPriority, ScanRange},
-        Account as _, AccountSource, InputSource, TransactionStatus, WalletRead,
+        Account as _, AccountSource, InputSource, SentTransaction, SentTransactionOutput,
+        TransactionStatus, WalletRead,
     },
     wallet::{NoteId, WalletSaplingOutput},
 };
@@ -63,6 +64,9 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     received_note_spends: ReceievdNoteSpends,
     nullifiers: NullifierMap,
 
+    /// Stores the outputs of transactions created by the wallet.
+    sent_notes: SentNoteTable,
+
     tx_locator: TxLocatorMap,
 
     scan_queue: ScanQueue,
@@ -100,6 +104,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             orchard_tree_shard_end_heights: BTreeMap::new(),
             tx_table: TransactionTable::new(),
             received_notes: ReceivedNoteTable::new(),
+            sent_notes: SentNoteTable::new(),
             nullifiers: NullifierMap::new(),
             tx_locator: TxLocatorMap::new(),
             received_note_spends: ReceievdNoteSpends::new(),
@@ -480,7 +485,8 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             .chain(extended_before)
             .chain(extended_after);
 
-        self.scan_queue.replace_queue_entries(&query_range, replacement, false)
+        self.scan_queue
+            .replace_queue_entries(&query_range, replacement, false)
     }
 
     // Given a range of block heights, extend the range to include the subtrees containing the
@@ -505,12 +511,17 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                     .sapling_tree_shard_end_heights
                     .get(&Address::from_parts(0.into(), index))
                     .cloned()),
-                #[cfg(feature = "orchard")]
-                ShieldedProtocol::Orchard => Ok(self
-                    .orchard_tree_shard_end_heights
-                    .get(&Address::from_parts(0.into(), index))
-                    .cloned()),
-                _ => panic!("Unsupported pool"),
+                ShieldedProtocol::Orchard => {
+                    #[cfg(feature = "orchard")]
+                    {
+                        Ok(self
+                            .orchard_tree_shard_end_heights
+                            .get(&Address::from_parts(0.into(), index))
+                            .cloned())
+                    }
+                    #[cfg(not(feature = "orchard"))]
+                    panic!("Unsupported pool")
+                }
             }
         };
 
@@ -542,5 +553,9 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 })
             })
             .transpose()
+    }
+
+    fn get_sent_notes(&self) -> &SentNoteTable {
+        &self.sent_notes
     }
 }
