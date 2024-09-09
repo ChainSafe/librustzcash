@@ -1,14 +1,4 @@
-use std::fmt::Display;
-use std::io;
-
-use std::marker::PhantomData;
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
-
-use serde_with::serde_as;
-use serde_with::DeserializeAs;
-use serde_with::SerializeAs;
 
 use zcash_primitives::block::BlockHash;
 
@@ -26,6 +16,9 @@ mod nullifier;
 
 mod memo;
 pub use memo::*;
+
+pub use array::*;
+pub use bytes::*;
 
 pub(crate) struct BlockHashWrapper;
 impl serde_with::SerializeAs<BlockHash> for BlockHashWrapper {
@@ -45,44 +38,47 @@ impl<'de> serde_with::DeserializeAs<'de, BlockHash> for BlockHashWrapper {
     }
 }
 
-pub trait ToFromBytes {
-    /// Serializes this node into a byte vector.
-    fn to_bytes(&self) -> Vec<u8>;
+mod array {
+    use std::{fmt::Display, sync::Arc};
+    pub trait ToArray<T, const N: usize> {
+        fn to_array(&self) -> [T; N];
+    }
+    impl<T: ToArray<U, N>, U, const N: usize> ToArray<U, N> for Arc<T> {
+        fn to_array(&self) -> [U; N] {
+            self.as_ref().to_array()
+        }
+    }
+    impl<T: TryFromArray<U, N>, U, const N: usize> TryFromArray<U, N> for Arc<T> {
+        type Error = T::Error;
+        fn try_from_array(arr: [U; N]) -> Result<Self, Self::Error> {
+            Ok(Arc::new(T::try_from_array(arr)?))
+        }
+    }
+    pub trait FromArray<T, const N: usize> {
+        fn from_array(arr: [T; N]) -> Self;
+    }
 
-    /// Parses a node from a byte vector.
-    fn from_bytes(bytes: &[u8]) -> io::Result<Self>
+    pub trait TryFromArray<T, const N: usize>
     where
-        Self: Sized;
-}
-
-pub trait TryFromToArray<T, U, const N: usize>: ToArray<U, N> + TryFromArray<U, N> {}
-
-pub trait ToArray<T, const N: usize> {
-    fn to_array(&self) -> [T; N];
-}
-impl<T: ToArray<U, N>, U, const N: usize> ToArray<U, N> for Arc<T> {
-    fn to_array(&self) -> [U; N] {
-        self.as_ref().to_array()
+        Self: Sized,
+    {
+        type Error: Display;
+        fn try_from_array(arr: [T; N]) -> Result<Self, Self::Error>;
     }
 }
-impl<T: TryFromArray<U, N>, U, const N: usize> TryFromArray<U, N> for Arc<T> {
-    type Error = T::Error;
-    fn try_from_array(arr: [U; N]) -> Result<Self, Self::Error> {
-        Ok(Arc::new(T::try_from_array(arr)?))
-    }
-}
-
-pub trait TryFromArray<T, const N: usize>
-where
-    Self: Sized,
-{
-    type Error: Display;
-    fn try_from_array(arr: [T; N]) -> Result<Self, Self::Error>;
-}
-pub use bytes::*;
 
 mod bytes {
-    use super::*;
+    use serde_with::{DeserializeAs, SerializeAs};
+    use std::io;
+    pub trait ToFromBytes {
+        /// Serializes this node into a byte vector.
+        fn to_bytes(&self) -> Vec<u8>;
+
+        /// Parses a node from a byte vector.
+        fn from_bytes(bytes: &[u8]) -> io::Result<Self>
+        where
+            Self: Sized;
+    }
     pub struct ToFromBytesWrapper<T: ToFromBytes>(T);
 
     impl<T: ToFromBytes> SerializeAs<T> for ToFromBytesWrapper<T> {

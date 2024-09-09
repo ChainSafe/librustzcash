@@ -45,15 +45,15 @@ impl<'de, H: TryFromArray<u8, 32, Error = E>, E: Display, const DEPTH: u8>
         let frontier = FrontierDe::deserialize(deserializer)?;
         frontier
             .frontier
-            .map(|f| {
-                let p = Position::from(f.position);
-                let l = H::try_from_array(f.leaf).map_err(serde::de::Error::custom)?;
-                let o = f
+            .map(|frontier_de| {
+                let position = Position::from(frontier_de.position);
+                let leaf = H::try_from_array(frontier_de.leaf).map_err(serde::de::Error::custom)?;
+                let ommers = frontier_de
                     .ommers
                     .into_iter()
                     .map(|o| H::try_from_array(o).map_err(serde::de::Error::custom))
                     .collect::<Result<Vec<_>, _>>()?;
-                frontier::Frontier::from_parts(p, l, o).map_err(|_e| {
+                frontier::Frontier::from_parts(position, leaf, ommers).map_err(|_e| {
                     serde::de::Error::custom("failed to construct frontier from parts")
                 })
             })

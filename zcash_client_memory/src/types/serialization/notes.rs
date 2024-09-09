@@ -1,17 +1,14 @@
 use sapling::{value::NoteValue, PaymentAddress, Rseed};
-use serde::de::VariantAccess;
-use serde_with::{de::DeserializeAsWrap, DeserializeAs, SerializeAs};
+use serde_with::{DeserializeAs, SerializeAs};
 
 use zcash_client_backend::wallet::Note;
 use zip32::Scope;
 
 use std::io;
 
-use serde::ser::{SerializeSeq, SerializeTuple};
-use serde::Deserializer;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
-use serde_with::{ser::SerializeAsWrap, serde_as};
+use serde_with::serde_as;
 
 use zcash_client_backend::wallet::NoteId;
 
@@ -22,6 +19,9 @@ use crate::ToFromBytesWrapper;
 use crate::TxIdWrapper;
 
 use zcash_protocol::ShieldedProtocol;
+
+use super::FromArray;
+use super::{ToArray, TryFromArray};
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "ShieldedProtocol")]
@@ -90,25 +90,18 @@ impl ToFromBytes for sapling::PaymentAddress {
         })
     }
 }
-#[cfg(feature = "orchard")]
-impl ToFromBytes for orchard::Address {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.to_raw_address_bytes().to_vec()
-    }
 
-    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
-        orchard::Address::from_raw_address_bytes(
-            bytes
-                .try_into()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}", e)))?,
-        )
-        .into_option()
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid sapling payment address",
-            )
-        })
+impl ToArray<u8, 43> for sapling::PaymentAddress {
+    fn to_array(&self) -> [u8; 43] {
+        self.to_bytes()
+    }
+}
+
+impl TryFromArray<u8, 43> for sapling::PaymentAddress {
+    type Error = io::Error;
+    fn try_from_array(arr: [u8; 43]) -> Result<Self, Self::Error> {
+        sapling::PaymentAddress::from_bytes(&arr)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid payment address"))
     }
 }
 
@@ -150,17 +143,11 @@ impl<'de> serde_with::DeserializeAs<'de, NoteId> for NoteIdWrapper {
     }
 }
 
-pub enum RseedWrapper {
-    BeforeZip212(jubjub::Fr),
+pub struct RseedWrapper;
+#[derive(Serialize, Deserialize)]
+enum RseedSerDe {
+    BeforeZip212([u8; 32]),
     AfterZip212([u8; 32]),
-}
-impl From<RseedWrapper> for Rseed {
-    fn from(def: RseedWrapper) -> Rseed {
-        match def {
-            RseedWrapper::BeforeZip212(rcm) => Rseed::BeforeZip212(rcm),
-            RseedWrapper::AfterZip212(rseed) => Rseed::AfterZip212(rseed),
-        }
-    }
 }
 impl serde_with::SerializeAs<Rseed> for RseedWrapper {
     fn serialize_as<S>(value: &Rseed, serializer: S) -> Result<S::Ok, S::Error>
@@ -169,11 +156,9 @@ impl serde_with::SerializeAs<Rseed> for RseedWrapper {
     {
         match value {
             Rseed::BeforeZip212(rcm) => {
-                serializer.serialize_newtype_variant("Rseed", 0, "BeforeZip212", &rcm.to_bytes())
+                RseedSerDe::BeforeZip212(rcm.to_bytes()).serialize(serializer)
             }
-            Rseed::AfterZip212(rseed) => {
-                serializer.serialize_newtype_variant("Rseed", 1, "AfterZip212", rseed)
-            }
+            Rseed::AfterZip212(rseed) => RseedSerDe::AfterZip212(*rseed).serialize(serializer),
         }
     }
 }
@@ -183,35 +168,14 @@ impl<'de> serde_with::DeserializeAs<'de, Rseed> for RseedWrapper {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        enum RseedDiscriminant {
-            BeforeZip212,
-            AfterZip212,
+        let rseed_de = RseedSerDe::deserialize(deserializer)?;
+        match rseed_de {
+            RseedSerDe::BeforeZip212(rcm) => jubjub::Fr::from_bytes(&rcm)
+                .into_option()
+                .ok_or_else(|| serde::de::Error::custom("Invalid Rseed"))
+                .map(Rseed::BeforeZip212),
+            RseedSerDe::AfterZip212(rseed) => Ok(Rseed::AfterZip212(rseed)),
         }
-        struct Visitor;
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = Rseed;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("enum Rseed")
-            }
-            fn visit_enum<A>(self, data: A) -> Result<Rseed, A::Error>
-            where
-                A: serde::de::EnumAccess<'de>,
-            {
-                match data.variant()? {
-                    (RseedDiscriminant::BeforeZip212, v) => Ok(RseedWrapper::BeforeZip212(
-                        jubjub::Fr::from_bytes(&v.newtype_variant::<[u8; 32]>()?)
-                            .into_option()
-                            .ok_or_else(|| serde::de::Error::custom("Invalid Rseed"))?,
-                    )
-                    .into()),
-                    (RseedDiscriminant::AfterZip212, v) => {
-                        Ok(RseedWrapper::AfterZip212(v.newtype_variant::<[u8; 32]>()?).into())
-                    }
-                }
-            }
-        }
-        deserializer.deserialize_enum("Rseed", &["BeforeZip212", "AfterZip212"], Visitor)
     }
 }
 
@@ -232,49 +196,6 @@ impl<'de> serde_with::DeserializeAs<'de, sapling::value::NoteValue> for NoteValu
         Ok(sapling::value::NoteValue::from_raw(u64::deserialize(
             deserializer,
         )?))
-    }
-}
-#[cfg(feature = "orchard")]
-impl serde_with::SerializeAs<orchard::value::NoteValue> for NoteValueWrapper {
-    fn serialize_as<S>(value: &orchard::value::NoteValue, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value.inner().serialize(serializer)
-    }
-}
-#[cfg(feature = "orchard")]
-impl<'de> serde_with::DeserializeAs<'de, orchard::value::NoteValue> for NoteValueWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<orchard::value::NoteValue, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(orchard::value::NoteValue::from_raw(u64::deserialize(
-            deserializer,
-        )?))
-    }
-}
-
-#[cfg(feature = "orchard")]
-pub struct RhoWrapper;
-#[cfg(feature = "orchard")]
-impl serde_with::SerializeAs<orchard::note::Rho> for RhoWrapper {
-    fn serialize_as<S>(value: &orchard::note::Rho, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value.to_bytes().serialize(serializer)
-    }
-}
-#[cfg(feature = "orchard")]
-impl<'de> serde_with::DeserializeAs<'de, orchard::note::Rho> for RhoWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<orchard::note::Rho, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        orchard::note::Rho::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
-            .into_option()
-            .ok_or_else(|| serde::de::Error::custom("Invalid rho"))
     }
 }
 
@@ -317,114 +238,6 @@ impl<'de> serde_with::DeserializeAs<'de, sapling::Note> for SaplingNoteWrapper {
     }
 }
 
-#[cfg(feature = "orchard")]
-#[serde_as]
-pub struct OrchardNoteWrapper {
-    // #[serde_as(as = "PaymentAddressWrapper")]
-    recipient: orchard::Address,
-    // #[serde_as(as = "NoteValueWrapper")]
-    value: orchard::value::NoteValue,
-    // #[serde_as(as = "RhoWrapper")]
-    rho: orchard::note::Rho,
-    // #[serde_as(as = "RseedWrapper")]
-    rseed: orchard::note::RandomSeed,
-}
-
-#[cfg(feature = "orchard")]
-impl serde_with::SerializeAs<orchard::note::Note> for OrchardNoteWrapper {
-    fn serialize_as<S>(value: &orchard::note::Note, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("OrchardNote", 4)?;
-        s.serialize_field(
-            "recipient",
-            &SerializeAsWrap::<_, ToFromBytesWrapper<orchard::Address>>::new(&value.recipient()),
-        )?;
-        s.serialize_field(
-            "value",
-            &SerializeAsWrap::<_, NoteValueWrapper>::new(&value.value()),
-        )?;
-        s.serialize_field("rho", &SerializeAsWrap::<_, RhoWrapper>::new(&value.rho()))?;
-        s.serialize_field("rseed", value.rseed().as_bytes())?;
-        s.end()
-    }
-}
-#[cfg(feature = "orchard")]
-impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWrapper {
-    fn deserialize_as<D>(deserializer: D) -> Result<orchard::note::Note, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct Visitor;
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = orchard::note::Note;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("struct OrchardNote")
-            }
-            fn visit_map<A>(self, mut map: A) -> Result<orchard::note::Note, A::Error>
-            where
-                A: serde::de::MapAccess<'de>,
-            {
-                let mut recipient = None;
-                let mut value = None;
-                let mut rho = None;
-                let mut rseed = None;
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        "recipient" => {
-                            recipient = Some(map.next_value::<DeserializeAsWrap<
-                                orchard::Address,
-                                ToFromBytesWrapper<orchard::Address>,
-                            >>()?);
-                        }
-                        "value" => {
-                            value =
-                                Some(map.next_value::<DeserializeAsWrap<
-                                    orchard::value::NoteValue,
-                                    NoteValueWrapper,
-                                >>()?);
-                        }
-                        "rho" => {
-                            rho = Some(map.next_value::<DeserializeAsWrap<orchard::note::Rho, RhoWrapper>>()?);
-                        }
-                        "rseed" => {
-                            rseed = Some(map.next_value::<[u8; 32]>()?);
-                        }
-                        _ => {
-                            return Err(serde::de::Error::unknown_field(
-                                key,
-                                &["recipient", "value", "rho", "rseed"],
-                            ));
-                        }
-                    }
-                }
-                let recipient = recipient
-                    .ok_or_else(|| serde::de::Error::missing_field("recipient"))?
-                    .into_inner();
-                let value = value
-                    .ok_or_else(|| serde::de::Error::missing_field("value"))?
-                    .into_inner();
-                let rho = rho
-                    .ok_or_else(|| serde::de::Error::missing_field("rho"))?
-                    .into_inner();
-                let rseed = rseed.ok_or_else(|| serde::de::Error::missing_field("rseed"))?;
-                let rseed = orchard::note::RandomSeed::from_bytes(rseed, &rho)
-                    .into_option()
-                    .ok_or_else(|| serde::de::Error::custom("Invalid rseed"))?;
-                orchard::note::Note::from_parts(recipient, value, rho, rseed)
-                    .into_option()
-                    .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
-            }
-        }
-        deserializer.deserialize_struct(
-            "OrchardNote",
-            &["recipient", "value", "rho", "rseed"],
-            Visitor,
-        )
-    }
-}
-
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Note")]
@@ -458,5 +271,135 @@ impl<'de> DeserializeAs<'de, Note> for NoteWrapper {
         D: serde::Deserializer<'de>,
     {
         NoteWrapper::deserialize(deserializer).map(Into::into)
+    }
+}
+#[cfg(feature = "orchard")]
+pub use _orchard::*;
+#[cfg(feature = "orchard")]
+mod _orchard {
+    use super::*;
+    impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteWrapper {
+        fn deserialize_as<D>(deserializer: D) -> Result<orchard::note::Note, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            #[serde_as]
+            #[derive(Deserialize)]
+            struct OrchardNoteDe {
+                #[serde_as(as = "ToFromBytesWrapper<orchard::Address>")]
+                recipient: orchard::Address,
+                #[serde_as(as = "NoteValueWrapper")]
+                value: orchard::value::NoteValue,
+                #[serde_as(as = "RhoWrapper")]
+                rho: orchard::note::Rho,
+                rseed: [u8; 32],
+            }
+            let OrchardNoteDe {
+                recipient,
+                value,
+                rho,
+                rseed,
+            } = OrchardNoteDe::deserialize(deserializer)?;
+            Ok(orchard::note::Note::from_parts(
+                recipient,
+                value,
+                rho,
+                orchard::note::RandomSeed::from_bytes(rseed, &rho)
+                    .into_option()
+                    .ok_or_else(|| serde::de::Error::custom("Invalid rseed"))?,
+            )
+            .into_option()
+            .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))?)
+        }
+    }
+    #[serde_as]
+    pub struct OrchardNoteWrapper;
+
+    impl serde_with::SerializeAs<orchard::note::Note> for OrchardNoteWrapper {
+        fn serialize_as<S>(value: &orchard::note::Note, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            #[serde_as]
+            #[derive(Serialize)]
+            struct OrchardNoteSer<'a> {
+                #[serde_as(as = "ToFromBytesWrapper<orchard::Address>")]
+                recipient: orchard::Address,
+                #[serde_as(as = "NoteValueWrapper")]
+                value: orchard::value::NoteValue,
+                #[serde_as(as = "RhoWrapper")]
+                rho: orchard::note::Rho,
+                rseed: &'a [u8; 32],
+            }
+            OrchardNoteSer {
+                recipient: value.recipient(),
+                value: value.value(),
+                rho: value.rho(),
+                rseed: value.rseed().as_bytes(),
+            }
+            .serialize(serializer)
+        }
+    }
+
+    pub struct RhoWrapper;
+    impl serde_with::SerializeAs<orchard::note::Rho> for RhoWrapper {
+        fn serialize_as<S>(value: &orchard::note::Rho, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            value.to_bytes().serialize(serializer)
+        }
+    }
+    impl<'de> serde_with::DeserializeAs<'de, orchard::note::Rho> for RhoWrapper {
+        fn deserialize_as<D>(deserializer: D) -> Result<orchard::note::Rho, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            orchard::note::Rho::from_bytes(&<[u8; 32]>::deserialize(deserializer)?)
+                .into_option()
+                .ok_or_else(|| serde::de::Error::custom("Invalid rho"))
+        }
+    }
+
+    impl serde_with::SerializeAs<orchard::value::NoteValue> for NoteValueWrapper {
+        fn serialize_as<S>(
+            value: &orchard::value::NoteValue,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            value.inner().serialize(serializer)
+        }
+    }
+    impl<'de> serde_with::DeserializeAs<'de, orchard::value::NoteValue> for NoteValueWrapper {
+        fn deserialize_as<D>(deserializer: D) -> Result<orchard::value::NoteValue, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            Ok(orchard::value::NoteValue::from_raw(u64::deserialize(
+                deserializer,
+            )?))
+        }
+    }
+    impl ToFromBytes for orchard::Address {
+        fn to_bytes(&self) -> Vec<u8> {
+            self.to_raw_address_bytes().to_vec()
+        }
+
+        fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+            orchard::Address::from_raw_address_bytes(
+                bytes
+                    .try_into()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}", e)))?,
+            )
+            .into_option()
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid sapling payment address",
+                )
+            })
+        }
     }
 }
