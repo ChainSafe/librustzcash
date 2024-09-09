@@ -85,8 +85,9 @@ mod array {
 
     #[serde_as]
     #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
     /// A wrapper for serializing and deserializing arrays as fixed byte sequences.
-    pub struct ByteArray<const N: usize>(#[serde_as(as = "Bytes")] [u8; N]);
+    pub struct ByteArray<const N: usize>(#[serde_as(as = "Bytes")] pub [u8; N]);
     impl<T: ToArray<u8, N>, const N: usize> SerializeAs<T> for ByteArray<N> {
         fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -107,7 +108,7 @@ mod array {
     #[serde_as]
     #[derive(Serialize, Deserialize)]
     /// A wrapper for serializing and deserializing arrays as fixed byte sequences that can fail.
-    pub struct TryByteArray<const N: usize>(#[serde_as(as = "Bytes")] [u8; N]);
+    pub struct TryByteArray<const N: usize>(#[serde_as(as = "Bytes")] pub [u8; N]);
     impl<T: TryToArray<u8, N>, const N: usize> SerializeAs<T> for TryByteArray<N> {
         fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -123,7 +124,7 @@ mod array {
             D: serde::Deserializer<'de>,
         {
             T::try_from_array(ByteArray::<N>::deserialize(deserializer)?.0)
-                    .map_err(serde::de::Error::custom)
+                .map_err(serde::de::Error::custom)
         }
     }
 }

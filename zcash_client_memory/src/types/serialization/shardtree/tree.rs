@@ -16,7 +16,7 @@ use shardtree::RetentionFlags;
 use shardtree::{store::ShardStore, LocatedPrunableTree, Node as TreeNode, PrunableTree};
 use std::fmt::Debug;
 
-use crate::{ToArray, TryFromArray};
+use crate::{ByteArray, ToArray, TryByteArray, TryFromArray};
 
 const SER_V1: u8 = 1;
 
@@ -92,7 +92,7 @@ impl<
             shards: &'a [LocatedPrunableTree<H>],
             #[serde_as(as = "BTreeMap<FromInto<u32>, CheckpointDef>")]
             checkpoints: BTreeMap<C, Checkpoint>,
-            #[serde_as(as = "&'a PrunableTreeDef")]
+            #[serde_as(as = "&'a PrunableTreeDef<32>")]
             cap: &'a PrunableTree<H>,
         }
 
@@ -171,7 +171,7 @@ impl<
             shards: Vec<LocatedPrunableTree<H>>,
             #[serde_as(as = "BTreeMap<FromInto<u32>, CheckpointDef>")]
             checkpoints: BTreeMap<C, Checkpoint>,
-            #[serde_as(as = "PrunableTreeDef")]
+            #[serde_as(as = "PrunableTreeDef<32>")]
             cap: PrunableTree<H>,
         }
         let de_store = MemoryShardStoreDe::<H, C>::deserialize(deserializer)?;
@@ -227,14 +227,14 @@ where
         Ok(shardtree::ShardTree::new(store, max_checkpoints))
     }
 }
-struct PrunableTreeDef;
+struct PrunableTreeDef<const N: usize>;
 // This is copied from zcash_client_backend/src/serialization/shardtree.rs
-impl<H: ToArray<u8, 32>> SerializeAs<PrunableTree<H>> for PrunableTreeDef {
+impl<H: ToArray<u8, N>, const N: usize> SerializeAs<PrunableTree<H>> for PrunableTreeDef<N> {
     fn serialize_as<S>(value: &PrunableTree<H>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        fn serialize_inner<H: ToArray<u8, 32>, S>(
+        fn serialize_inner<H: ToArray<u8, N>, const N: usize, S>(
             tree: &PrunableTree<H>,
             state: &mut S::SerializeSeq,
         ) -> Result<(), S::Error>
@@ -244,14 +244,18 @@ impl<H: ToArray<u8, 32>> SerializeAs<PrunableTree<H>> for PrunableTreeDef {
             match tree.deref() {
                 TreeNode::Parent { ann, left, right } => {
                     state.serialize_element(&PARENT_TAG)?;
-                    state.serialize_element(&ann.as_deref().map(ToArray::to_array))?;
-                    serialize_inner::<H, S>(left, state)?;
-                    serialize_inner::<H, S>(right, state)?;
+                    state.serialize_element(
+                        &ann.as_deref()
+                            .map(ToArray::<u8, N>::to_array)
+                            .map(ByteArray),
+                    )?;
+                    serialize_inner::<H, N, S>(left, state)?;
+                    serialize_inner::<H, N, S>(right, state)?;
                     Ok(())
                 }
                 TreeNode::Leaf { value } => {
                     state.serialize_element(&LEAF_TAG)?;
-                    state.serialize_element(&value.0.to_array())?;
+                    state.serialize_element(&ByteArray(value.0.to_array()))?;
                     state.serialize_element(&value.1.bits())?;
                     Ok(())
                 }
@@ -264,22 +268,24 @@ impl<H: ToArray<u8, 32>> SerializeAs<PrunableTree<H>> for PrunableTreeDef {
 
         let mut state = serializer.serialize_seq(None)?;
         state.serialize_element(&SER_V1)?;
-        serialize_inner::<H, S>(value, &mut state)?;
+        serialize_inner::<H, N, S>(value, &mut state)?;
         state.end()
     }
 }
-impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for PrunableTreeDef {
+impl<'de, H: TryFromArray<u8, N>, const N: usize> DeserializeAs<'de, PrunableTree<H>>
+    for PrunableTreeDef<N>
+{
     fn deserialize_as<D>(deserializer: D) -> Result<PrunableTree<H>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct Visitor<H>(std::marker::PhantomData<H>);
-        impl<H> Visitor<H> {
+        struct Visitor<H, const N: usize>(std::marker::PhantomData<H>);
+        impl<H, const N: usize> Visitor<H, N> {
             fn new() -> Self {
                 Self(std::marker::PhantomData)
             }
         }
-        impl<'de, H: TryFromArray<u8, 32>> serde::de::Visitor<'de> for Visitor<H> {
+        impl<'de, H: TryFromArray<u8, N>, const N: usize> serde::de::Visitor<'de> for Visitor<H, N> {
             type Value = PrunableTree<H>;
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("a PrunableTree")
@@ -294,11 +300,11 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
                 if version != SER_V1 {
                     return Err(serde::de::Error::custom("Invalid version"));
                 }
-                let tree = deserialize_inner::<H, A>(&mut seq)?;
+                let tree = deserialize_inner::<H, N, A>(&mut seq)?;
                 Ok(tree)
             }
         }
-        fn deserialize_inner<'de, H: TryFromArray<u8, 32>, A>(
+        fn deserialize_inner<'de, H: TryFromArray<u8, N>, const N: usize, A>(
             seq: &mut A,
         ) -> Result<PrunableTree<H>, A::Error>
         where
@@ -310,24 +316,27 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
             match tag {
                 PARENT_TAG => {
                     let ann = seq
-                        .next_element::<Option<[u8; 32]>>()?
+                        .next_element::<Option<TryByteArray<N>>>()?
                         .ok_or_else(|| {
                             serde::de::Error::custom("Read parent tag but failed to read node")
                         })?
-                        .map(|x| H::try_from_array(x).map(Arc::new))
+                        .map(|x| H::try_from_array(x.0).map(Arc::new))
                         .transpose()
                         .map_err(serde::de::Error::custom)?;
 
-                    let left = deserialize_inner::<H, A>(seq)?;
-                    let right = deserialize_inner::<H, A>(seq)?;
+                    let left = deserialize_inner::<H, N, A>(seq)?;
+                    let right = deserialize_inner::<H, N, A>(seq)?;
                     Ok(PrunableTree::parent(ann, left, right))
                 }
                 LEAF_TAG => {
-                    let value =
-                        H::try_from_array(seq.next_element::<[u8; 32]>()?.ok_or_else(|| {
-                            serde::de::Error::custom("Read leaf tag but failed to read value")
-                        })?)
-                        .map_err(serde::de::Error::custom)?;
+                    let value = H::try_from_array(
+                        seq.next_element::<ByteArray<N>>()?
+                            .ok_or_else(|| {
+                                serde::de::Error::custom("Read leaf tag but failed to read value")
+                            })?
+                            .0,
+                    )
+                    .map_err(serde::de::Error::custom)?;
 
                     let flags = seq
                         .next_element::<u8>()?
@@ -345,7 +354,7 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
                 _ => Err(serde::de::Error::custom("Invalid node tag")),
             }
         }
-        deserializer.deserialize_seq(Visitor::<H>::new())
+        deserializer.deserialize_seq(Visitor::<H, N>::new())
     }
 }
 
@@ -356,7 +365,7 @@ struct LocatedPrunableTreeDef<H: ToArray<u8, 32> + TryFromArray<u8, 32>> {
     #[serde_as(as = "TreeAddressDef")]
     #[serde(getter = "LocatedPrunableTree::root_addr")]
     pub root_addr: incrementalmerkletree::Address,
-    #[serde_as(as = "PrunableTreeDef")]
+    #[serde_as(as = "PrunableTreeDef<32>")]
     #[serde(getter = "LocatedPrunableTree::root")]
     pub root: PrunableTree<H>,
 }
@@ -469,5 +478,52 @@ impl<'de, H: ToArray<u8, 32> + TryFromArray<u8, 32>>
         D: serde::Deserializer<'de>,
     {
         LocatedPrunableTreeDef::deserialize(deserializer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::FromArray;
+
+    use super::*;
+    use ciborium::de::from_reader;
+    use ciborium::ser::into_writer;
+    use incrementalmerkletree::frontier::testing::{arb_test_node, TestNode};
+    use proptest::prelude::*;
+    use serde::{Deserialize, Serialize};
+    use serde_with::serde_as;
+    use shardtree::testing::arb_prunable_tree;
+    use std::io::Cursor;
+
+    #[serde_as]
+    #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Debug)]
+    struct PropPrunableTreeWrapper<H: Clone + ToArray<u8, 8> + TryFromArray<u8, 8>> {
+        #[serde_as(as = "PrunableTreeDef<8>")]
+        pub tree: PrunableTree<H>,
+    }
+
+    impl ToArray<u8, 8> for TestNode {
+        fn to_array(&self) -> [u8; 8] {
+            self.0.to_le_bytes()
+        }
+    }
+    impl FromArray<u8, 8> for TestNode {
+        fn from_array(bytes: [u8; 8]) -> Self {
+            TestNode(u64::from_le_bytes(bytes))
+        }
+    }
+    proptest! {
+        #[test]
+        fn check_shard_roundtrip(
+            tree in arb_prunable_tree(arb_test_node(), 8, 32)
+        ) {
+            let mut tree_data = vec![];
+            let tree = PropPrunableTreeWrapper { tree };
+            into_writer(&tree, &mut tree_data).unwrap();
+
+            let cursor = Cursor::new(tree_data);
+            let tree_result = from_reader(cursor).unwrap();
+            assert_eq!(tree, tree_result);
+        }
     }
 }
