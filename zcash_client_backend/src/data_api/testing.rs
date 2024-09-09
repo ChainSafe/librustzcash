@@ -1999,7 +1999,7 @@ pub trait TestCache {
     fn block_source(&self) -> &Self::BlockSource;
 
     /// Inserts a CompactBlock into the cache DB.
-    fn insert(&self, cb: &CompactBlock) -> Self::InsertResult;
+    fn insert(&mut self, cb: &CompactBlock) -> Self::InsertResult;
 }
 
 pub struct NoteCommitments {
