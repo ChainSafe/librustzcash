@@ -656,7 +656,25 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     fn get_tx_history(
         &self,
     ) -> Result<Vec<zcash_client_backend::data_api::testing::TransactionSummary<Self::AccountId>>, Self::Error> {
-        Ok(vec![])
+        // TODO: This is only looking at sent notes, we need to look at received notes as well
+        // TODO: Need to actually implement a bunch of these fields
+        Ok(self.sent_notes.iter().map(|(note_id, note)| {
+            zcash_client_backend::data_api::testing::TransactionSummary::new(
+                note.from_account_id, // account_id
+                *note_id.txid(), // txid
+                None, // expiry_height
+                None, // mined_height
+                0.try_into().unwrap(),    // account_value_delta
+                None, // fee_paid
+                0, // spent_note_count
+                false, // has_change
+                0, // sent_note_count
+                0, // received_note_count
+                0, // memo_count
+                false, // expired_unmined
+                false, // is_shielding
+            )
+        }).collect::<Vec<_>>())
     }
 }
 
