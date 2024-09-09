@@ -30,6 +30,8 @@ use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
 use crate::{Accounts, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
 use maybe_rayon::prelude::*;
 
+use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
+
 #[cfg(feature = "orchard")]
 use zcash_protocol::ShieldedProtocol::Orchard;
 
@@ -38,13 +40,41 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
 
     fn create_account(
         &mut self,
-        _seed: &SecretVec<u8>,
-        _birthday: &AccountBirthday,
+        seed: &SecretVec<u8>,
+        birthday: &AccountBirthday,
     ) -> Result<(Self::AccountId, UnifiedSpendingKey), Self::Error> {
-        unimplemented!(
-            "Memwallet does not support adding accounts from seed phrases. 
-Instead derive the ufvk in the calling code and import it using `import_account_ufvk`"
-        )
+        if cfg!(not(test)) {
+            unimplemented!(
+                "Memwallet does not support adding accounts from seed phrases. 
+    Instead derive the ufvk in the calling code and import it using `import_account_ufvk`"
+            )
+        } else {
+            let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+                .ok_or_else(|| Self::Error::InvalidSeedLength)?;
+            let account_index = self
+                .max_zip32_account_index(&seed_fingerprint)
+                .unwrap()
+                .map(|a| a.next().ok_or_else(|| Self::Error::AccountOutOfRange))
+                .transpose()?
+                .unwrap_or(zip32::AccountId::ZERO);
+
+            let usk =
+                UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), account_index)?;
+            let ufvk = usk.to_unified_full_viewing_key();
+
+            let (id, _account) = Accounts::new_account(
+                &mut self.accounts,
+                AccountSource::Derived {
+                    seed_fingerprint,
+                    account_index,
+                },
+                ufvk,
+                birthday.clone(),
+                AccountPurpose::Spending,
+            )?;
+
+            Ok((id, usk))
+        }
     }
 
     fn get_next_available_address(
