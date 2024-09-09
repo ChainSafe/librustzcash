@@ -268,14 +268,14 @@ impl<H: ToArray<u8, 32>> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
             match tree.deref() {
                 TreeNode::Parent { ann, left, right } => {
                     state.serialize_element(&PARENT_TAG)?;
-                    state.serialize_element(&ann.as_deref().map(ToArray::to_arr))?;
+                    state.serialize_element(&ann.as_deref().map(ToArray::to_array))?;
                     serialize_inner::<H, S>(left, state)?;
                     serialize_inner::<H, S>(right, state)?;
                     Ok(())
                 }
                 TreeNode::Leaf { value } => {
                     state.serialize_element(&LEAF_TAG)?;
-                    state.serialize_element(&value.0.to_arr())?;
+                    state.serialize_element(&value.0.to_array())?;
                     state.serialize_element(&value.1.bits())?;
                     Ok(())
                 }
@@ -338,7 +338,7 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
                         .ok_or_else(|| {
                             serde::de::Error::custom("Read parent tag but failed to read node")
                         })?
-                        .map(|x| H::from_arr(x).map(Arc::new))
+                        .map(|x| H::from_array(x).map(Arc::new))
                         .transpose()
                         .map_err(serde::de::Error::custom)?;
 
@@ -347,10 +347,11 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
                     Ok(PrunableTree::parent(ann, left, right))
                 }
                 LEAF_TAG => {
-                    let value = H::from_arr(seq.next_element::<[u8; 32]>()?.ok_or_else(|| {
-                        serde::de::Error::custom("Read leaf tag but failed to read value")
-                    })?)
-                    .map_err(serde::de::Error::custom)?;
+                    let value =
+                        H::from_array(seq.next_element::<[u8; 32]>()?.ok_or_else(|| {
+                            serde::de::Error::custom("Read leaf tag but failed to read value")
+                        })?)
+                        .map_err(serde::de::Error::custom)?;
 
                     let flags = seq
                         .next_element::<u8>()?

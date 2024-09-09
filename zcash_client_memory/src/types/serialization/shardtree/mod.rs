@@ -32,13 +32,13 @@ impl ToFromBytes for sapling::Node {
 }
 
 impl ToArray<u8, 32> for sapling::Node {
-    fn to_arr(&self) -> [u8; 32] {
+    fn to_array(&self) -> [u8; 32] {
         self.to_bytes()
     }
 }
 impl TryFromArray<u8, 32> for sapling::Node {
     type Error = io::Error;
-    fn from_arr(arr: [u8; 32]) -> Result<Self, Self::Error> {
+    fn from_array(arr: [u8; 32]) -> Result<Self, Self::Error> {
         Self::from_bytes(arr).into_option().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -49,14 +49,14 @@ impl TryFromArray<u8, 32> for sapling::Node {
 }
 #[cfg(feature = "orchard")]
 impl ToArray<u8, 32> for orchard::tree::MerkleHashOrchard {
-    fn to_arr(&self) -> [u8; 32] {
+    fn to_array(&self) -> [u8; 32] {
         self.to_bytes()
     }
 }
 #[cfg(feature = "orchard")]
 impl TryFromArray<u8, 32> for orchard::tree::MerkleHashOrchard {
     type Error = io::Error;
-    fn from_arr(arr: [u8; 32]) -> Result<Self, Self::Error> {
+    fn from_array(arr: [u8; 32]) -> Result<Self, Self::Error> {
         Self::from_bytes(&arr).into_option().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,

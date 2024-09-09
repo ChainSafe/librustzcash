@@ -23,16 +23,19 @@ use crate::TxIdWrapper;
 
 use zcash_protocol::ShieldedProtocol;
 
-pub(crate) struct ShieldedProtocolWrapper;
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "ShieldedProtocol")]
+pub enum ShieldedProtocolWrapper {
+    Sapling,
+    Orchard,
+}
+
 impl serde_with::SerializeAs<ShieldedProtocol> for ShieldedProtocolWrapper {
     fn serialize_as<S>(value: &ShieldedProtocol, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        match value {
-            ShieldedProtocol::Sapling => serializer.serialize_str("Sapling"),
-            ShieldedProtocol::Orchard => serializer.serialize_str("Orchard"),
-        }
+        ShieldedProtocolWrapper::serialize(value, serializer)
     }
 }
 
@@ -41,12 +44,7 @@ impl<'de> serde_with::DeserializeAs<'de, ShieldedProtocol> for ShieldedProtocolW
     where
         D: serde::Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        match s.as_str() {
-            "Sapling" => Ok(ShieldedProtocol::Sapling),
-            "Orchard" => Ok(ShieldedProtocol::Orchard),
-            _ => Err(serde::de::Error::custom("Invalid shielded protocol")),
-        }
+        ShieldedProtocolWrapper::deserialize(deserializer).map(Into::into)
     }
 }
 
@@ -55,14 +53,6 @@ impl<'de> serde_with::DeserializeAs<'de, ShieldedProtocol> for ShieldedProtocolW
 pub enum ScopeWrapper {
     External,
     Internal,
-}
-impl From<zip32::Scope> for ScopeWrapper {
-    fn from(value: zip32::Scope) -> Self {
-        match value {
-            zip32::Scope::External => ScopeWrapper::External,
-            zip32::Scope::Internal => ScopeWrapper::Internal,
-        }
-    }
 }
 impl serde_with::SerializeAs<Scope> for ScopeWrapper {
     fn serialize_as<S>(value: &Scope, serializer: S) -> Result<S::Ok, S::Error>

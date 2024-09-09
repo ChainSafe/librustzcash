@@ -55,18 +55,20 @@ pub trait ToFromBytes {
         Self: Sized;
 }
 
+pub trait TryFromToArray<T, U, const N: usize>: ToArray<U, N> + TryFromArray<U, N> {}
+
 pub trait ToArray<T, const N: usize> {
-    fn to_arr(&self) -> [T; N];
+    fn to_array(&self) -> [T; N];
 }
 impl<T: ToArray<U, N>, U, const N: usize> ToArray<U, N> for Arc<T> {
-    fn to_arr(&self) -> [U; N] {
-        self.as_ref().to_arr()
+    fn to_array(&self) -> [U; N] {
+        self.as_ref().to_array()
     }
 }
 impl<T: TryFromArray<U, N>, U, const N: usize> TryFromArray<U, N> for Arc<T> {
     type Error = T::Error;
-    fn from_arr(arr: [U; N]) -> Result<Self, Self::Error> {
-        Ok(Arc::new(T::from_arr(arr)?))
+    fn from_array(arr: [U; N]) -> Result<Self, Self::Error> {
+        Ok(Arc::new(T::from_array(arr)?))
     }
 }
 
@@ -75,7 +77,7 @@ where
     Self: Sized,
 {
     type Error: Display;
-    fn from_arr(arr: [T; N]) -> Result<Self, Self::Error>;
+    fn from_array(arr: [T; N]) -> Result<Self, Self::Error>;
 }
 pub use bytes::*;
 
