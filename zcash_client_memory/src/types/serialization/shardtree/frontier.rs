@@ -3,7 +3,7 @@ use std::fmt::Display;
 use incrementalmerkletree::frontier::{self, Frontier, NonEmptyFrontier};
 use incrementalmerkletree::Position;
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::SerializeAs;
 use serde_with::{de::DeserializeAs, serde_as};
 
@@ -14,7 +14,7 @@ pub struct FrontierDef;
 impl<H: ToArray<u8, 32> + Clone, const DEPTH: u8> SerializeAs<Frontier<H, DEPTH>> for FrontierDef {
     fn serialize_as<S>(value: &Frontier<H, DEPTH>, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         #[serde_as]
         #[derive(Serialize)]
@@ -68,7 +68,7 @@ where
 {
     fn serialize_as<S>(value: &NonEmptyFrontier<T>, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         #[derive(Serialize)]
         struct NonEmptyFrontierSer<'a> {
