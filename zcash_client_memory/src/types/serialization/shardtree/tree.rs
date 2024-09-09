@@ -166,7 +166,7 @@ impl<
         }
         ShardStoreSer {
             shards: &shards,
-            checkpoints: checkpoints,
+            checkpoints,
             cap: &value
                 .get_cap()
                 .map_err(|_| serde::ser::Error::custom("Failed to get cap"))?,

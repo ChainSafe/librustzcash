@@ -122,10 +122,8 @@ mod array {
         where
             D: serde::Deserializer<'de>,
         {
-            Ok(
-                T::try_from_array(ByteArray::<N>::deserialize(deserializer)?.0)
-                    .map_err(serde::de::Error::custom)?,
-            )
+            T::try_from_array(ByteArray::<N>::deserialize(deserializer)?.0)
+                    .map_err(serde::de::Error::custom)
         }
     }
 }

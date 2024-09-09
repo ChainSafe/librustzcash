@@ -307,7 +307,7 @@ mod _orchard {
                 rho,
                 rseed,
             } = OrchardNoteDe::deserialize(deserializer)?;
-            Ok(orchard::note::Note::from_parts(
+            orchard::note::Note::from_parts(
                 recipient,
                 value,
                 rho,
@@ -316,7 +316,7 @@ mod _orchard {
                     .ok_or_else(|| serde::de::Error::custom("Invalid rseed"))?,
             )
             .into_option()
-            .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))?)
+            .ok_or_else(|| serde::de::Error::custom("Invalid orchard note"))
         }
     }
 
