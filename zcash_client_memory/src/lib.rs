@@ -371,7 +371,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         let max_checkpoint_height =
             u32::from(chain_tip_height).saturating_sub(u32::from(min_confirmations) - 1);
         // scan backward and find the first checkpoint that matches a blockheight prior to max_checkpoint_height
-        for height in max_checkpoint_height..0 {
+        for height in (0..max_checkpoint_height).rev() {
             let height = BlockHeight::from_u32(height);
             if self.sapling_tree.store().get_checkpoint(&height)?.is_some() {
                 return Ok(Some(height));
@@ -389,7 +389,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         let max_checkpoint_height =
             u32::from(chain_tip_height).saturating_sub(u32::from(min_confirmations) - 1);
         // scan backward and find the first checkpoint that matches a blockheight prior to max_checkpoint_height
-        for height in max_checkpoint_height..0 {
+        for height in (0..max_checkpoint_height).rev() {
             let height = BlockHeight::from_u32(height);
             if self.orchard_tree.store().get_checkpoint(&height)?.is_some() {
                 return Ok(Some(height));
