@@ -27,7 +27,7 @@ const PARENT_TAG: u8 = 2;
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "incrementalmerkletree::Address")]
-pub struct TreeAddressWrapper {
+pub(crate) struct TreeAddressWrapper {
     #[serde_as(as = "FromInto<u8>")]
     #[serde(getter = "incrementalmerkletree::Address::level")]
     level: incrementalmerkletree::Level,
@@ -59,8 +59,42 @@ impl<'de> serde_with::DeserializeAs<'de, incrementalmerkletree::Address> for Tre
     }
 }
 
+pub struct MemoryShardTreeWrapper;
+impl<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
+    SerializeAs<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
+    for MemoryShardTreeWrapper
+where
+    H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
+    C: Ord + Clone + Debug + From<u32> + Into<u32>,
+{
+    fn serialize_as<S>(
+        value: &shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[serde_as]
+        #[derive(Serialize)]
+        struct ShardTreeSer<
+            'a,
+            H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
+            C: Ord + Clone + Debug + From<u32> + Into<u32>,
+        > {
+            #[serde_as(as = "&'a MemoryShardStoreWrapper")]
+            store: &'a MemoryShardStore<H, C>,
+            max_checkpoints: usize,
+        }
+        ShardTreeSer {
+            store: value.store(),
+            max_checkpoints: value.max_checkpoints(),
+        }
+        .serialize(serializer)
+    }
+}
+
 #[serde_as]
-pub struct MemoryShardStoreWrapper;
+struct MemoryShardStoreWrapper;
 impl<
         H: Clone + ToArray<u8, 32> + TryFromArray<u8, 32>,
         C: Ord + Clone + From<u32> + Into<u32>, // Most Cases this will be height
@@ -187,40 +221,6 @@ impl<
     }
 }
 
-pub struct MemoryShardTreeWrapper;
-impl<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
-    SerializeAs<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
-    for MemoryShardTreeWrapper
-where
-    H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
-    C: Ord + Clone + Debug + From<u32> + Into<u32>,
-{
-    fn serialize_as<S>(
-        value: &shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        #[serde_as]
-        #[derive(Serialize)]
-        struct ShardTreeSer<
-            'a,
-            H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
-            C: Ord + Clone + Debug + From<u32> + Into<u32>,
-        > {
-            #[serde_as(as = "&'a MemoryShardStoreWrapper")]
-            store: &'a MemoryShardStore<H, C>,
-            max_checkpoints: usize,
-        }
-        ShardTreeSer {
-            store: value.store(),
-            max_checkpoints: value.max_checkpoints(),
-        }
-        .serialize(serializer)
-    }
-}
-
 impl<'de, H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
     DeserializeAs<'de, shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
     for MemoryShardTreeWrapper
@@ -251,7 +251,7 @@ where
         Ok(shardtree::ShardTree::new(store, max_checkpoints))
     }
 }
-pub struct PrunableTreeWrapper;
+struct PrunableTreeWrapper;
 // This is copied from zcash_client_backend/src/serialization/shardtree.rs
 impl<H: ToArray<u8, 32>> SerializeAs<PrunableTree<H>> for PrunableTreeWrapper {
     fn serialize_as<S>(value: &PrunableTree<H>, serializer: S) -> Result<S::Ok, S::Error>
@@ -376,7 +376,7 @@ impl<'de, H: TryFromArray<u8, 32>> DeserializeAs<'de, PrunableTree<H>> for Pruna
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "LocatedPrunableTree")]
-pub struct LocatedPrunableTreeWrapper<H: ToArray<u8, 32> + TryFromArray<u8, 32>> {
+struct LocatedPrunableTreeWrapper<H: ToArray<u8, 32> + TryFromArray<u8, 32>> {
     #[serde_as(as = "TreeAddressWrapper")]
     #[serde(getter = "LocatedPrunableTree::root_addr")]
     pub root_addr: incrementalmerkletree::Address,
@@ -415,11 +415,8 @@ impl<'de, H: ToArray<u8, 32> + TryFromArray<u8, 32>>
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "shardtree::store::TreeState")]
-pub enum TreeStateWrapper {
-    /// Checkpoints of the empty tree.
+enum TreeStateWrapper {
     Empty,
-    /// Checkpoint at a (possibly pruned) leaf state corresponding to the
-    /// wrapped leaf position.
     AtPosition(#[serde_as(as = "FromInto<u64>")] Position),
 }
 impl SerializeAs<TreeState> for TreeStateWrapper {
@@ -442,7 +439,7 @@ impl<'de> DeserializeAs<'de, TreeState> for TreeStateWrapper {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "shardtree::store::Checkpoint")]
-pub struct CheckpointWrapper {
+struct CheckpointWrapper {
     #[serde_as(as = "TreeStateWrapper")]
     #[serde(getter = "shardtree::store::Checkpoint::tree_state")]
     pub tree_state: TreeState,

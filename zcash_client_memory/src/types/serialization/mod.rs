@@ -40,8 +40,19 @@ impl<'de> serde_with::DeserializeAs<'de, BlockHash> for BlockHashWrapper {
 
 mod array {
     use std::{fmt::Display, sync::Arc};
+
     pub trait ToArray<T, const N: usize> {
         fn to_array(&self) -> [T; N];
+    }
+    pub trait FromArray<T, const N: usize> {
+        fn from_array(arr: [T; N]) -> Self;
+    }
+    pub trait TryFromArray<T, const N: usize>
+    where
+        Self: Sized,
+    {
+        type Error: Display;
+        fn try_from_array(arr: [T; N]) -> Result<Self, Self::Error>;
     }
     impl<T: ToArray<U, N>, U, const N: usize> ToArray<U, N> for Arc<T> {
         fn to_array(&self) -> [U; N] {
@@ -53,17 +64,6 @@ mod array {
         fn try_from_array(arr: [U; N]) -> Result<Self, Self::Error> {
             Ok(Arc::new(T::try_from_array(arr)?))
         }
-    }
-    pub trait FromArray<T, const N: usize> {
-        fn from_array(arr: [T; N]) -> Self;
-    }
-
-    pub trait TryFromArray<T, const N: usize>
-    where
-        Self: Sized,
-    {
-        type Error: Display;
-        fn try_from_array(arr: [T; N]) -> Result<Self, Self::Error>;
     }
 }
 

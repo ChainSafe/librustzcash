@@ -20,7 +20,6 @@ use crate::TxIdWrapper;
 
 use zcash_protocol::ShieldedProtocol;
 
-use super::FromArray;
 use super::{ToArray, TryFromArray};
 
 #[derive(Serialize, Deserialize)]
@@ -88,20 +87,6 @@ impl ToFromBytes for sapling::PaymentAddress {
                 "Invalid sapling payment address",
             )
         })
-    }
-}
-
-impl ToArray<u8, 43> for sapling::PaymentAddress {
-    fn to_array(&self) -> [u8; 43] {
-        self.to_bytes()
-    }
-}
-
-impl TryFromArray<u8, 43> for sapling::PaymentAddress {
-    type Error = io::Error;
-    fn try_from_array(arr: [u8; 43]) -> Result<Self, Self::Error> {
-        sapling::PaymentAddress::from_bytes(&arr)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid payment address"))
     }
 }
 
