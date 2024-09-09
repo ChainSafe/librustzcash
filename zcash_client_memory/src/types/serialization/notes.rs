@@ -12,11 +12,9 @@ use serde_with::serde_as;
 
 use zcash_client_backend::wallet::NoteId;
 
-use zcash_primitives::transaction::TxId;
-
-use crate::ToFromBytes;
-use crate::ToFromBytesWrapper;
+use crate::TryByteArray;
 use crate::TxIdWrapper;
+use zcash_primitives::transaction::TxId;
 
 use zcash_protocol::ShieldedProtocol;
 
@@ -70,23 +68,17 @@ impl<'de> serde_with::DeserializeAs<'de, Scope> for ScopeWrapper {
     }
 }
 
-impl ToFromBytes for sapling::PaymentAddress {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.to_bytes().to_vec()
+impl ToArray<u8, 43> for sapling::PaymentAddress {
+    fn to_array(&self) -> [u8; 43] {
+        self.to_bytes()
     }
+}
 
-    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
-        sapling::PaymentAddress::from_bytes(
-            bytes
-                .try_into()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}", e)))?,
-        )
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid sapling payment address",
-            )
-        })
+impl TryFromArray<u8, 43> for sapling::PaymentAddress {
+    type Error = io::Error;
+    fn try_from_array(arr: [u8; 43]) -> Result<Self, Self::Error> {
+        sapling::PaymentAddress::from_bytes(&arr)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid payment address"))
     }
 }
 
@@ -189,7 +181,7 @@ impl<'de> serde_with::DeserializeAs<'de, sapling::value::NoteValue> for NoteValu
 #[serde(remote = "sapling::Note")]
 pub struct SaplingNoteWrapper {
     /// The recipient of the funds.
-    #[serde_as(as = "ToFromBytesWrapper<PaymentAddress>")]
+    #[serde_as(as = "TryByteArray<43>")]
     #[serde(getter = "sapling::Note::recipient")]
     recipient: PaymentAddress,
     /// The value of this note.
@@ -271,7 +263,7 @@ mod _orchard {
             #[serde_as]
             #[derive(Deserialize)]
             struct OrchardNoteDe {
-                #[serde_as(as = "ToFromBytesWrapper<orchard::Address>")]
+                #[serde_as(as = "TryByteArray<43>")]
                 recipient: orchard::Address,
                 #[serde_as(as = "NoteValueWrapper")]
                 value: orchard::value::NoteValue,
@@ -308,7 +300,7 @@ mod _orchard {
             #[serde_as]
             #[derive(Serialize)]
             struct OrchardNoteSer<'a> {
-                #[serde_as(as = "ToFromBytesWrapper<orchard::Address>")]
+                #[serde_as(as = "TryByteArray<43>")]
                 recipient: orchard::Address,
                 #[serde_as(as = "NoteValueWrapper")]
                 value: orchard::value::NoteValue,
@@ -367,24 +359,24 @@ mod _orchard {
             )?))
         }
     }
-    impl ToFromBytes for orchard::Address {
-        fn to_bytes(&self) -> Vec<u8> {
-            self.to_raw_address_bytes().to_vec()
-        }
 
-        fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
-            orchard::Address::from_raw_address_bytes(
-                bytes
-                    .try_into()
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}", e)))?,
-            )
-            .into_option()
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Invalid sapling payment address",
-                )
-            })
+    impl ToArray<u8, 43> for orchard::Address {
+        fn to_array(&self) -> [u8; 43] {
+            self.to_raw_address_bytes()
+        }
+    }
+
+    impl TryFromArray<u8, 43> for orchard::Address {
+        type Error = io::Error;
+        fn try_from_array(arr: [u8; 43]) -> Result<Self, Self::Error> {
+            orchard::Address::from_raw_address_bytes(&arr)
+                .into_option()
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Invalid orchard payment address",
+                    )
+                })
         }
     }
 }

@@ -2,14 +2,6 @@ use std::convert::Infallible;
 
 use super::{FromArray, ToArray, TryFromArray};
 
-impl TryFromArray<u8, 32> for sapling::Nullifier {
-    type Error = Infallible;
-
-    fn try_from_array(arr: [u8; 32]) -> Result<Self, Self::Error> {
-        Ok(Self::from_array(arr))
-    }
-}
-
 impl FromArray<u8, 32> for sapling::Nullifier {
     fn from_array(arr: [u8; 32]) -> Self {
         sapling::Nullifier(arr)

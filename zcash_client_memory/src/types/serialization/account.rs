@@ -18,9 +18,7 @@ use zip32::fingerprint::SeedFingerprint;
 
 use zcash_client_backend::data_api::{chain::ChainState, AccountBirthday};
 
-use super::ToFromBytes;
-use crate::BlockHashWrapper;
-use crate::FrontierWrapper;
+use crate::{ByteArray, FrontierWrapper, ToFromBytes};
 
 pub(crate) struct AccountPurposeWrapper;
 impl serde_with::SerializeAs<AccountPurpose> for AccountPurposeWrapper {
@@ -54,7 +52,7 @@ pub struct ChainStateWrapper {
     #[serde_as(as = "FromInto<u32>")]
     #[serde(getter = "zcash_client_backend::data_api::chain::ChainState::block_height")]
     pub block_height: BlockHeight,
-    #[serde_as(as = "BlockHashWrapper")]
+    #[serde_as(as = "ByteArray<32>")]
     #[serde(getter = "zcash_client_backend::data_api::chain::ChainState::block_hash")]
     pub block_hash: BlockHash,
     #[serde_as(as = "FrontierWrapper")]

@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
+use crate::serialization::ByteArray;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::FromInto;
@@ -18,7 +19,7 @@ use zcash_protocol::memo::MemoBytes;
 pub(crate) struct MemoryWalletBlock {
     #[serde_as(as = "FromInto<u32>")]
     pub(crate) height: BlockHeight,
-    #[serde_as(as = "BlockHashWrapper")]
+    #[serde_as(as = "ByteArray<32>")]
     pub(crate) hash: BlockHash,
     pub(crate) block_time: u32,
     // Just the transactions that involve an account in this wallet
