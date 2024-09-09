@@ -276,12 +276,16 @@ impl SentNoteTable {
         output: &SentTransactionOutput<AccountId>,
     ) {
         let protocol = match output.recipient() {
-            Recipient::External(_, PoolType::Shielded(protocol)) => protocol,
-            _ => &ShieldedProtocol::Sapling, // Not exactly sure what what to do here since we cant get the pool type
+            Recipient::External(_, PoolType::Shielded(protocol)) => protocol.clone(),
+            Recipient::External(_, PoolType::Transparent)
+            | Recipient::EphemeralTransparent { .. } => {
+                unimplemented!("Transparent transfers not yet supported")
+            }
+            Recipient::InternalAccount { note, .. } => note.protocol(),
         };
         let note_id = NoteId::new(
             tx.tx().txid(),
-            *protocol,
+            protocol,
             output.output_index().try_into().unwrap(),
         );
         self.0.insert(

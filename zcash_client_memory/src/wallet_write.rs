@@ -658,11 +658,18 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 }
             }
             // Mark orchard notes as spent
-            if let Some(_bundle) = sent_tx.tx().orchard_bundle() {
+            if let Some(bundle) = sent_tx.tx().orchard_bundle() {
                 #[cfg(feature = "orchard")]
                 {
-                    for action in _bundle.actions() {
-                        self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid())?;
+                    for action in bundle.actions() {
+                        match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid()) {
+                            Ok(()) => {}
+                            Err(Error::NoteNotFound) => {
+                                // This is expected as some of the actions will be new outputs we don't have notes for
+                                // The ones we do recognize will be marked as spent
+                            }
+                            Err(e) => return Err(e),
+                        }
                     }
                 }
 
@@ -676,7 +683,6 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             }
 
             for output in sent_tx.outputs() {
-                // TODO: insert sent output
                 self.sent_notes.insert_sent_output(sent_tx, output);
 
                 match output.recipient() {

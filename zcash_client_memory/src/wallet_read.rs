@@ -651,7 +651,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     ///
     /// Currently test-only, as production use could return a very large number of results; either
     /// pagination or a streaming design will be necessary to stabilize this feature for production
-    /// use.
+    /// use.⁄
     #[cfg(any(test, feature = "test-dependencies"))]
     fn get_tx_history(
         &self,

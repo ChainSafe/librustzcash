@@ -19,3 +19,13 @@ mod sapling_tests {
     }
 }
 
+#[cfg(test)]
+#[cfg(feature = "orchard")]
+mod orchard_tests {
+    use zcash_client_backend::data_api::testing::orchard::OrchardPoolTester;
+
+    #[test]
+    fn send_single_step_proposed_transfer() {
+        crate::testing::pool::send_single_step_proposed_transfer::<OrchardPoolTester>()
+    }
+}
