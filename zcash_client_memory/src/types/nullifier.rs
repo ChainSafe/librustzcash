@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::types::serialization::*;
+use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::FromInto;
@@ -50,7 +51,7 @@ impl Serialize for Nullifier {
 }
 
 impl<'de> Deserialize<'de> for Nullifier {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let n = NullifierSerDe::deserialize(deserializer)?;
         Ok(match n {
             NullifierSerDe::Sapling(n) => Nullifier::Sapling(

@@ -29,7 +29,7 @@ impl FromArray<u8, 32> for BlockHash {
     }
 }
 mod array {
-    use serde::{Deserialize, Serialize};
+    use serde::{Deserialize, Deserializer, Serialize};
     use serde_with::{serde_as, SerializeAs};
     use serde_with::{Bytes, DeserializeAs};
     use std::convert::Infallible;
@@ -99,7 +99,7 @@ mod array {
     impl<'de, T: FromArray<u8, N>, const N: usize> DeserializeAs<'de, T> for ByteArray<N> {
         fn deserialize_as<D>(deserializer: D) -> Result<T, D::Error>
         where
-            D: serde::Deserializer<'de>,
+            D: Deserializer<'de>,
         {
             Ok(T::from_array(ByteArray::<N>::deserialize(deserializer)?.0))
         }
@@ -121,7 +121,7 @@ mod array {
     impl<'de, T: TryFromArray<u8, N>, const N: usize> DeserializeAs<'de, T> for TryByteArray<N> {
         fn deserialize_as<D>(deserializer: D) -> Result<T, D::Error>
         where
-            D: serde::Deserializer<'de>,
+            D: Deserializer<'de>,
         {
             T::try_from_array(ByteArray::<N>::deserialize(deserializer)?.0)
                 .map_err(serde::de::Error::custom)
@@ -130,7 +130,7 @@ mod array {
 }
 
 mod bytes {
-    use serde::{Deserialize, Serialize};
+    use serde::{Deserialize, Deserializer, Serialize};
     use serde_with::{DeserializeAs, SerializeAs};
     use std::io;
     pub trait ToFromBytes {
@@ -156,7 +156,7 @@ mod bytes {
     impl<'de, T: ToFromBytes> DeserializeAs<'de, T> for BytesVec<T> {
         fn deserialize_as<D>(deserializer: D) -> Result<T, D::Error>
         where
-            D: serde::Deserializer<'de>,
+            D: Deserializer<'de>,
         {
             T::from_bytes(<Vec<u8>>::deserialize(deserializer)?.as_slice())
                 .map_err(serde::de::Error::custom)

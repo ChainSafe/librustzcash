@@ -3,7 +3,7 @@ use std::fmt::Display;
 use incrementalmerkletree::frontier::{self, Frontier, NonEmptyFrontier};
 use incrementalmerkletree::Position;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_with::SerializeAs;
 use serde_with::{de::DeserializeAs, serde_as};
 
@@ -34,7 +34,7 @@ impl<'de, H: TryFromArray<u8, 32, Error = E>, E: Display, const DEPTH: u8>
 {
     fn deserialize_as<D>(deserializer: D) -> Result<Frontier<H, DEPTH>, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         struct FrontierDe {
@@ -104,7 +104,7 @@ impl<'de, T: TryFromArray<u8, 32, Error = E>, E: Display> DeserializeAs<'de, Non
 {
     fn deserialize_as<D>(deserializer: D) -> Result<NonEmptyFrontier<T>, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         let frontier = NonEmptyFrontierDe::deserialize(deserializer)?;
         NonEmptyFrontier::from_parts(

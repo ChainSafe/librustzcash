@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use serde_with::DeserializeAs;
-use serde_with::SerializeAs;
+use serde_with::{DeserializeAs, SerializeAs};
 
 use zcash_client_backend::data_api::scanning::ScanPriority;
 
@@ -27,7 +26,7 @@ pub enum ScanPriorityDef {
 impl SerializeAs<ScanPriority> for ScanPriorityDef {
     fn serialize_as<S>(value: &ScanPriority, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         ScanPriorityDef::serialize(value, serializer)
     }
@@ -35,7 +34,7 @@ impl SerializeAs<ScanPriority> for ScanPriorityDef {
 impl<'de> DeserializeAs<'de, ScanPriority> for ScanPriorityDef {
     fn deserialize_as<D>(deserializer: D) -> Result<ScanPriority, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         ScanPriorityDef::deserialize(deserializer).map(Into::into)
     }

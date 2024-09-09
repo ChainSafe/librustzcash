@@ -1,11 +1,19 @@
 mod frontier;
 mod tree;
 pub use frontier::*;
+use incrementalmerkletree::Hashable;
 pub use tree::*;
 
 use std::io;
 
 use super::{ToArray, TryFromArray};
+
+pub trait TreeNode<const N: usize>:
+    Clone + Hashable + PartialEq + TryFromArray<u8, N> + ToArray<u8, N>
+{
+}
+
+impl TreeNode<32> for sapling::Node {}
 
 impl ToArray<u8, 32> for sapling::Node {
     fn to_array(&self) -> [u8; 32] {
@@ -27,6 +35,7 @@ impl TryFromArray<u8, 32> for sapling::Node {
 #[cfg(feature = "orchard")]
 mod _orchard {
     use super::*;
+    impl TreeNode<32> for orchard::tree::MerkleHashOrchard {}
     impl ToArray<u8, 32> for orchard::tree::MerkleHashOrchard {
         fn to_array(&self) -> [u8; 32] {
             self.to_bytes()

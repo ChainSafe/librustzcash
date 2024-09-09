@@ -6,7 +6,7 @@ use zip32::Scope;
 
 use std::io;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use serde_with::serde_as;
 
@@ -72,10 +72,10 @@ pub enum ScopeDef {
 }
 
 pub struct NoteValueDef;
-impl serde_with::SerializeAs<sapling::value::NoteValue> for NoteValueDef {
+impl SerializeAs<sapling::value::NoteValue> for NoteValueDef {
     fn serialize_as<S>(value: &sapling::value::NoteValue, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         value.inner().serialize(serializer)
     }
@@ -83,7 +83,7 @@ impl serde_with::SerializeAs<sapling::value::NoteValue> for NoteValueDef {
 impl<'de> serde_with::DeserializeAs<'de, sapling::value::NoteValue> for NoteValueDef {
     fn deserialize_as<D>(deserializer: D) -> Result<sapling::value::NoteValue, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         Ok(sapling::value::NoteValue::from_raw(u64::deserialize(
             deserializer,
@@ -97,10 +97,10 @@ enum RseedSerDe {
     BeforeZip212([u8; 32]),
     AfterZip212([u8; 32]),
 }
-impl serde_with::SerializeAs<Rseed> for RseedDef {
+impl SerializeAs<Rseed> for RseedDef {
     fn serialize_as<S>(value: &Rseed, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         match value {
             Rseed::BeforeZip212(rcm) => {
@@ -114,7 +114,7 @@ impl serde_with::SerializeAs<Rseed> for RseedDef {
 impl<'de> serde_with::DeserializeAs<'de, Rseed> for RseedDef {
     fn deserialize_as<D>(deserializer: D) -> Result<Rseed, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         let rseed_de = RseedSerDe::deserialize(deserializer)?;
         match rseed_de {
@@ -129,10 +129,10 @@ impl<'de> serde_with::DeserializeAs<'de, Rseed> for RseedDef {
 
 // BOILERPLATE: Trivial conversions between types and the trivial implementations of SerializeAs and DeserializeAs
 
-impl serde_with::SerializeAs<ShieldedProtocol> for ShieldedProtocolDef {
+impl SerializeAs<ShieldedProtocol> for ShieldedProtocolDef {
     fn serialize_as<S>(value: &ShieldedProtocol, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         ShieldedProtocolDef::serialize(value, serializer)
     }
@@ -141,16 +141,16 @@ impl serde_with::SerializeAs<ShieldedProtocol> for ShieldedProtocolDef {
 impl<'de> serde_with::DeserializeAs<'de, ShieldedProtocol> for ShieldedProtocolDef {
     fn deserialize_as<D>(deserializer: D) -> Result<ShieldedProtocol, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         ShieldedProtocolDef::deserialize(deserializer).map(Into::into)
     }
 }
 
-impl serde_with::SerializeAs<Scope> for ScopeDef {
+impl SerializeAs<Scope> for ScopeDef {
     fn serialize_as<S>(value: &Scope, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         ScopeDef::serialize(value, serializer)
     }
@@ -158,7 +158,7 @@ impl serde_with::SerializeAs<Scope> for ScopeDef {
 impl<'de> serde_with::DeserializeAs<'de, Scope> for ScopeDef {
     fn deserialize_as<D>(deserializer: D) -> Result<Scope, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         ScopeDef::deserialize(deserializer).map(Into::into)
     }
@@ -183,10 +183,10 @@ impl From<NoteIdDef> for NoteId {
     }
 }
 
-impl serde_with::SerializeAs<NoteId> for NoteIdDef {
+impl SerializeAs<NoteId> for NoteIdDef {
     fn serialize_as<S>(value: &NoteId, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         NoteIdDef::serialize(value, serializer)
     }
@@ -195,7 +195,7 @@ impl serde_with::SerializeAs<NoteId> for NoteIdDef {
 impl<'de> serde_with::DeserializeAs<'de, NoteId> for NoteIdDef {
     fn deserialize_as<D>(deserializer: D) -> Result<NoteId, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         NoteIdDef::deserialize(deserializer).map(Into::into)
     }
@@ -206,10 +206,10 @@ impl From<SaplingNoteDef> for sapling::Note {
         sapling::Note::from_parts(note.recipient, note.value, note.rseed)
     }
 }
-impl serde_with::SerializeAs<sapling::Note> for SaplingNoteDef {
+impl SerializeAs<sapling::Note> for SaplingNoteDef {
     fn serialize_as<S>(value: &sapling::Note, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         SaplingNoteDef::serialize(value, serializer)
     }
@@ -217,7 +217,7 @@ impl serde_with::SerializeAs<sapling::Note> for SaplingNoteDef {
 impl<'de> serde_with::DeserializeAs<'de, sapling::Note> for SaplingNoteDef {
     fn deserialize_as<D>(deserializer: D) -> Result<sapling::Note, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         SaplingNoteDef::deserialize(deserializer).map(Into::into)
     }
@@ -235,7 +235,7 @@ impl From<NoteDef> for Note {
 impl SerializeAs<Note> for NoteDef {
     fn serialize_as<S>(value: &Note, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         NoteDef::serialize(value, serializer)
     }
@@ -243,7 +243,7 @@ impl SerializeAs<Note> for NoteDef {
 impl<'de> DeserializeAs<'de, Note> for NoteDef {
     fn deserialize_as<D>(deserializer: D) -> Result<Note, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         NoteDef::deserialize(deserializer).map(Into::into)
     }
@@ -258,10 +258,10 @@ mod _orchard {
     use super::*;
 
     pub struct OrchardNoteDef;
-    impl serde_with::SerializeAs<orchard::note::Note> for OrchardNoteDef {
+    impl SerializeAs<orchard::note::Note> for OrchardNoteDef {
         fn serialize_as<S>(value: &orchard::note::Note, serializer: S) -> Result<S::Ok, S::Error>
         where
-            S: serde::Serializer,
+            S: Serializer,
         {
             #[serde_as]
             #[derive(Serialize)]
@@ -287,7 +287,7 @@ mod _orchard {
     impl<'de> serde_with::DeserializeAs<'de, orchard::note::Note> for OrchardNoteDef {
         fn deserialize_as<D>(deserializer: D) -> Result<orchard::note::Note, D::Error>
         where
-            D: serde::Deserializer<'de>,
+            D: Deserializer<'de>,
         {
             #[serde_as]
             #[derive(Deserialize)]
@@ -319,13 +319,13 @@ mod _orchard {
         }
     }
 
-    impl serde_with::SerializeAs<orchard::value::NoteValue> for NoteValueDef {
+    impl SerializeAs<orchard::value::NoteValue> for NoteValueDef {
         fn serialize_as<S>(
             value: &orchard::value::NoteValue,
             serializer: S,
         ) -> Result<S::Ok, S::Error>
         where
-            S: serde::Serializer,
+            S: Serializer,
         {
             value.inner().serialize(serializer)
         }
@@ -333,7 +333,7 @@ mod _orchard {
     impl<'de> serde_with::DeserializeAs<'de, orchard::value::NoteValue> for NoteValueDef {
         fn deserialize_as<D>(deserializer: D) -> Result<orchard::value::NoteValue, D::Error>
         where
-            D: serde::Deserializer<'de>,
+            D: Deserializer<'de>,
         {
             Ok(orchard::value::NoteValue::from_raw(u64::deserialize(
                 deserializer,

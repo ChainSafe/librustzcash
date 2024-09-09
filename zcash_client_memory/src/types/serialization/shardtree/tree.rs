@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::sync::Arc;
 
-use incrementalmerkletree::{Hashable, Position};
+use incrementalmerkletree::{Address, Level, Position};
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
@@ -12,11 +12,13 @@ use serde_with::DeserializeAs;
 use serde_with::{FromInto, SerializeAs};
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, TreeState};
-use shardtree::RetentionFlags;
-use shardtree::{store::ShardStore, LocatedPrunableTree, Node as TreeNode, PrunableTree};
+use shardtree::{store::ShardStore, LocatedPrunableTree, Node, PrunableTree};
+use shardtree::{RetentionFlags, ShardTree};
 use std::fmt::Debug;
 
 use crate::{ByteArray, ToArray, TryByteArray, TryFromArray};
+
+use super::TreeNode;
 
 const SER_V1: u8 = 1;
 
@@ -26,25 +28,24 @@ const PARENT_TAG: u8 = 2;
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
-#[serde(remote = "incrementalmerkletree::Address")]
+#[serde(remote = "Address")]
 pub(crate) struct TreeAddressDef {
     #[serde_as(as = "FromInto<u8>")]
-    #[serde(getter = "incrementalmerkletree::Address::level")]
-    level: incrementalmerkletree::Level,
-    #[serde(getter = "incrementalmerkletree::Address::index")]
+    #[serde(getter = "Address::level")]
+    level: Level,
+    #[serde(getter = "Address::index")]
     index: u64,
 }
 
 pub struct MemoryShardTreeDef;
 impl<H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
-    SerializeAs<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
-    for MemoryShardTreeDef
+    SerializeAs<ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>> for MemoryShardTreeDef
 where
-    H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
+    H: TreeNode<32>,
     C: Ord + Clone + Debug + From<u32> + Into<u32>,
 {
     fn serialize_as<S>(
-        value: &shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>,
+        value: &ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
@@ -52,11 +53,7 @@ where
     {
         #[serde_as]
         #[derive(Serialize)]
-        struct ShardTreeSer<
-            'a,
-            H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
-            C: Ord + Clone + Debug + From<u32> + Into<u32>,
-        > {
+        struct ShardTreeSer<'a, H: TreeNode<32>, C: Ord + Clone + Debug + From<u32> + Into<u32>> {
             #[serde_as(as = "&'a MemoryShardStoreDef")]
             store: &'a MemoryShardStore<H, C>,
             max_checkpoints: usize,
@@ -75,7 +72,7 @@ impl<
         H: Clone + ToArray<u8, 32> + TryFromArray<u8, 32>,
         C: Ord + Clone + From<u32> + Into<u32>, // Most Cases this will be height
         T: ShardStore<H = H, CheckpointId = C>,
-    > serde_with::SerializeAs<T> for MemoryShardStoreDef
+    > SerializeAs<T> for MemoryShardStoreDef
 {
     fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -159,7 +156,7 @@ impl<
 {
     fn deserialize_as<D>(deserializer: D) -> Result<MemoryShardStore<H, C>, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         #[serde_as]
         #[derive(Deserialize)]
@@ -198,24 +195,21 @@ impl<
 }
 
 impl<'de, H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>
-    DeserializeAs<'de, shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
+    DeserializeAs<'de, ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
     for MemoryShardTreeDef
 where
-    H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
+    H: TreeNode<32>,
     C: Ord + Clone + Debug + From<u32> + Into<u32>,
 {
     fn deserialize_as<D>(
         deserializer: D,
-    ) -> Result<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>, D::Error>
+    ) -> Result<ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[serde_as]
         #[derive(Deserialize)]
-        struct ShardTreeDe<
-            H: Clone + Hashable + PartialEq + TryFromArray<u8, 32> + ToArray<u8, 32>,
-            C: Ord + Clone + Debug + From<u32> + Into<u32>,
-        > {
+        struct ShardTreeDe<H: TreeNode<32>, C: Ord + Clone + Debug + From<u32> + Into<u32>> {
             #[serde_as(as = "MemoryShardStoreDef")]
             store: MemoryShardStore<H, C>,
             max_checkpoints: usize,
@@ -224,7 +218,7 @@ where
             store,
             max_checkpoints,
         } = ShardTreeDe::<H, C>::deserialize(deserializer)?;
-        Ok(shardtree::ShardTree::new(store, max_checkpoints))
+        Ok(ShardTree::new(store, max_checkpoints))
     }
 }
 struct PrunableTreeDef<const N: usize>;
@@ -242,7 +236,7 @@ impl<H: ToArray<u8, N>, const N: usize> SerializeAs<PrunableTree<H>> for Prunabl
             S: Serializer,
         {
             match tree.deref() {
-                TreeNode::Parent { ann, left, right } => {
+                Node::Parent { ann, left, right } => {
                     state.serialize_element(&PARENT_TAG)?;
                     state.serialize_element(
                         &ann.as_deref()
@@ -253,13 +247,13 @@ impl<H: ToArray<u8, N>, const N: usize> SerializeAs<PrunableTree<H>> for Prunabl
                     serialize_inner::<H, N, S>(right, state)?;
                     Ok(())
                 }
-                TreeNode::Leaf { value } => {
+                Node::Leaf { value } => {
                     state.serialize_element(&LEAF_TAG)?;
                     state.serialize_element(&ByteArray(value.0.to_array()))?;
                     state.serialize_element(&value.1.bits())?;
                     Ok(())
                 }
-                TreeNode::Nil => {
+                Node::Nil => {
                     state.serialize_element(&NIL_TAG)?;
                     Ok(())
                 }
@@ -397,7 +391,7 @@ impl From<CheckpointDef> for Checkpoint {
         Checkpoint::from_parts(def.tree_state, def.marks_removed)
     }
 }
-impl serde_with::SerializeAs<Checkpoint> for CheckpointDef {
+impl SerializeAs<Checkpoint> for CheckpointDef {
     fn serialize_as<S>(value: &Checkpoint, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -408,7 +402,7 @@ impl serde_with::SerializeAs<Checkpoint> for CheckpointDef {
 impl<'de> serde_with::DeserializeAs<'de, Checkpoint> for CheckpointDef {
     fn deserialize_as<D>(deserializer: D) -> Result<Checkpoint, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         CheckpointDef::deserialize(deserializer)
     }
@@ -418,7 +412,7 @@ impl From<TreeAddressDef> for incrementalmerkletree::Address {
         incrementalmerkletree::Address::from_parts(def.level, def.index)
     }
 }
-impl serde_with::SerializeAs<incrementalmerkletree::Address> for TreeAddressDef {
+impl SerializeAs<incrementalmerkletree::Address> for TreeAddressDef {
     fn serialize_as<S>(
         value: &incrementalmerkletree::Address,
         serializer: S,
@@ -432,7 +426,7 @@ impl serde_with::SerializeAs<incrementalmerkletree::Address> for TreeAddressDef 
 impl<'de> serde_with::DeserializeAs<'de, incrementalmerkletree::Address> for TreeAddressDef {
     fn deserialize_as<D>(deserializer: D) -> Result<incrementalmerkletree::Address, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         TreeAddressDef::deserialize(deserializer)
     }
@@ -448,7 +442,7 @@ impl SerializeAs<TreeState> for TreeStateDef {
 impl<'de> DeserializeAs<'de, TreeState> for TreeStateDef {
     fn deserialize_as<D>(deserializer: D) -> Result<TreeState, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         TreeStateDef::deserialize(deserializer)
     }
@@ -460,7 +454,7 @@ impl<H: ToArray<u8, 32> + TryFromArray<u8, 32>> From<LocatedPrunableTreeDef<H>>
         LocatedPrunableTree::from_parts(def.root_addr, def.root)
     }
 }
-impl<H: ToArray<u8, 32> + TryFromArray<u8, 32>> serde_with::SerializeAs<LocatedPrunableTree<H>>
+impl<H: ToArray<u8, 32> + TryFromArray<u8, 32>> SerializeAs<LocatedPrunableTree<H>>
     for LocatedPrunableTreeDef<H>
 {
     fn serialize_as<S>(value: &LocatedPrunableTree<H>, serializer: S) -> Result<S::Ok, S::Error>
@@ -475,7 +469,7 @@ impl<'de, H: ToArray<u8, 32> + TryFromArray<u8, 32>>
 {
     fn deserialize_as<D>(deserializer: D) -> Result<LocatedPrunableTree<H>, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         LocatedPrunableTreeDef::deserialize(deserializer)
     }

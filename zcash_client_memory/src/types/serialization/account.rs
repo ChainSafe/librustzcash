@@ -1,6 +1,6 @@
 use std::io;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use serde_with::{DeserializeAs, TryFromInto};
 use serde_with::{FromInto, SerializeAs};
@@ -12,7 +12,6 @@ use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, MainNetwork};
 
 use incrementalmerkletree::frontier::Frontier;
-use serde::Serializer;
 
 use zip32::fingerprint::SeedFingerprint;
 
@@ -118,7 +117,7 @@ impl SerializeAs<ChainState> for ChainStateDef {
 impl<'de> DeserializeAs<'de, ChainState> for ChainStateDef {
     fn deserialize_as<D>(deserializer: D) -> Result<ChainState, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         ChainStateDef::deserialize(deserializer)
     }
@@ -173,16 +172,16 @@ impl SerializeAs<AccountBirthday> for AccountBirthdayDef {
 impl<'de> DeserializeAs<'de, AccountBirthday> for AccountBirthdayDef {
     fn deserialize_as<D>(deserializer: D) -> Result<AccountBirthday, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         AccountBirthdayDef::deserialize(deserializer)
     }
 }
 
-impl serde_with::SerializeAs<AccountSource> for AccountSourceDef {
+impl SerializeAs<AccountSource> for AccountSourceDef {
     fn serialize_as<S>(value: &AccountSource, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         AccountSourceDef::serialize(value, serializer)
     }
@@ -191,16 +190,16 @@ impl serde_with::SerializeAs<AccountSource> for AccountSourceDef {
 impl<'de> serde_with::DeserializeAs<'de, AccountSource> for AccountSourceDef {
     fn deserialize_as<D>(deserializer: D) -> Result<AccountSource, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         AccountSourceDef::deserialize(deserializer).map(Into::into)
     }
 }
 
-impl serde_with::SerializeAs<AccountPurpose> for AccountPurposeDef {
+impl SerializeAs<AccountPurpose> for AccountPurposeDef {
     fn serialize_as<S>(value: &AccountPurpose, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         AccountPurposeDef::serialize(value, serializer)
     }
@@ -208,7 +207,7 @@ impl serde_with::SerializeAs<AccountPurpose> for AccountPurposeDef {
 impl<'de> serde_with::DeserializeAs<'de, AccountPurpose> for AccountPurposeDef {
     fn deserialize_as<D>(deserializer: D) -> Result<AccountPurpose, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         AccountPurposeDef::deserialize(deserializer)
     }
