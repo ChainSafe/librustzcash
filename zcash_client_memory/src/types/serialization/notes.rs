@@ -155,32 +155,6 @@ pub struct OutPointDef {
     pub n: u32,
 }
 
-/// Concrete conversion implementation of commonly used Recipient typ
-// #[serde_as]
-// #[derive(Serialize)]
-// pub enum RecipientDef {
-//     External(
-//         #[serde_as(as = "ZcashAddressDef")] ZcashAddress,
-//         #[serde_as(as = "PoolTypeDef")] PoolType,
-//     ),
-//     EphemeralTransparent {
-//         receiving_account: crate::AccountId,
-//         #[serde_as(as = "TransparentAddressDef")]
-//         ephemeral_address: TransparentAddress,
-//         #[serde_as(as = "OutPointDef")]
-//         outpoint_metadata: OutPoint,
-//     },
-//     InternalAccount {
-//         receiving_account: crate::AccountId,
-//         #[serde_as(as = "Option<ZcashAddressDef>")]
-//         external_address: Option<ZcashAddress>,
-//         // #[serde(bound(
-//         //     serialize = "NoteDef: Into<NoteDef>, NoteDef: SerializeAs<N>",
-//         // ))]
-//         #[serde_as(as = "NoteDef")]
-//         note: Note,
-//     },
-// }
 pub struct RecipientDef<AccountId, Note, OutPoint>(
     std::marker::PhantomData<(AccountId, Note, OutPoint)>,
 );
