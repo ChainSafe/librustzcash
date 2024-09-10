@@ -1,6 +1,6 @@
 use zcash_client_backend::data_api::testing::pool::ShieldedPoolTester;
 
-use crate::testing::{TestMemDbFactory, MemBlockCache};
+use crate::testing::{MemBlockCache, TestMemDbFactory};
 
 pub(crate) fn send_single_step_proposed_transfer<T: ShieldedPoolTester>() {
     zcash_client_backend::data_api::testing::pool::send_single_step_proposed_transfer::<T>(

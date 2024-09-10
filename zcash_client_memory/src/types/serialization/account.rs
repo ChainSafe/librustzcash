@@ -5,7 +5,6 @@ use serde_with::serde_as;
 use serde_with::{DeserializeAs, TryFromInto};
 use serde_with::{FromInto, SerializeAs};
 
-
 use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::{AccountPurpose, AccountSource};
 use zcash_keys::keys::UnifiedFullViewingKey;
@@ -15,12 +14,9 @@ use zcash_protocol::consensus::{BlockHeight, MainNetwork};
 
 use incrementalmerkletree::frontier::Frontier;
 
-
 use zip32::fingerprint::SeedFingerprint;
 
-use zcash_client_backend::{
-    data_api::{chain::ChainState, AccountBirthday},
-};
+use zcash_client_backend::data_api::{chain::ChainState, AccountBirthday};
 
 use crate::{ByteArray, FrontierDef, ToFromBytes};
 

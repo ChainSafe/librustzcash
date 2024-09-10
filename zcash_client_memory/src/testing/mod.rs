@@ -85,6 +85,5 @@ impl TestCache for MemBlockCache {
 
     fn insert(&mut self, cb: &CompactBlock) -> Self::InsertResult {
         self.0.insert(cb.height().into(), cb.clone());
-        
     }
 }
