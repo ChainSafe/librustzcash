@@ -11,7 +11,7 @@ use std::{
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
-    ShieldedProtocol::Sapling,
+    ShieldedProtocol::{self, Sapling},
 };
 
 #[cfg(feature = "orchard")]
@@ -36,6 +36,8 @@ use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
 use crate::{Accounts, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
 use maybe_rayon::prelude::*;
 
+use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
+
 #[cfg(feature = "orchard")]
 use zcash_protocol::ShieldedProtocol::Orchard;
 
@@ -44,13 +46,41 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
 
     fn create_account(
         &mut self,
-        _seed: &SecretVec<u8>,
-        _birthday: &AccountBirthday,
+        seed: &SecretVec<u8>,
+        birthday: &AccountBirthday,
     ) -> Result<(Self::AccountId, UnifiedSpendingKey), Self::Error> {
-        unimplemented!(
-            "Memwallet does not support adding accounts from seed phrases. 
-Instead derive the ufvk in the calling code and import it using `import_account_ufvk`"
-        )
+        if cfg!(not(test)) {
+            unimplemented!(
+                "Memwallet does not support adding accounts from seed phrases. 
+    Instead derive the ufvk in the calling code and import it using `import_account_ufvk`"
+            )
+        } else {
+            let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+                .ok_or_else(|| Self::Error::InvalidSeedLength)?;
+            let account_index = self
+                .max_zip32_account_index(&seed_fingerprint)
+                .unwrap()
+                .map(|a| a.next().ok_or_else(|| Self::Error::AccountOutOfRange))
+                .transpose()?
+                .unwrap_or(zip32::AccountId::ZERO);
+
+            let usk =
+                UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), account_index)?;
+            let ufvk = usk.to_unified_full_viewing_key();
+
+            let (id, _account) = Accounts::new_account(
+                &mut self.accounts,
+                AccountSource::Derived {
+                    seed_fingerprint,
+                    account_index,
+                },
+                ufvk,
+                birthday.clone(),
+                AccountPurpose::Spending,
+            )?;
+
+            Ok((id, usk))
+        }
     }
 
     fn get_next_available_address(
@@ -258,7 +288,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
         let mut sapling_commitments = vec![];
         #[cfg(feature = "orchard")]
         let mut orchard_commitments = vec![];
-
+        let mut note_positions = vec![];
         for block in blocks.into_iter() {
             let mut transactions = HashMap::new();
             let mut memos = HashMap::new();
@@ -335,6 +365,23 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             self.insert_sapling_nullifier_map(block.height(), block.sapling().nullifier_map())?;
             #[cfg(feature = "orchard")]
             self.insert_orchard_nullifier_map(block.height(), block.orchard().nullifier_map())?;
+            note_positions.extend(block.transactions().iter().flat_map(|wtx| {
+                let iter = wtx.sapling_outputs().iter().map(|out| {
+                    (
+                        ShieldedProtocol::Sapling,
+                        out.note_commitment_tree_position(),
+                    )
+                });
+                #[cfg(feature = "orchard")]
+                let iter = iter.chain(wtx.orchard_outputs().iter().map(|out| {
+                    (
+                        ShieldedProtocol::Orchard,
+                        out.note_commitment_tree_position(),
+                    )
+                }));
+
+                iter
+            }));
 
             let memory_block = MemoryWalletBlock {
                 height: block.height(),
@@ -371,7 +418,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
 
         // TODO: Prune the nullifier map of entries we no longer need.
 
-        if let Some((start_positions, _last_scanned_height)) =
+        if let Some((start_positions, last_scanned_height)) =
             start_positions.zip(last_scanned_height)
         {
             // Create subtrees from the note commitments in parallel.
@@ -518,12 +565,18 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                     Ok(())
                 })?;
             }
+
+            self.scan_complete(
+                Range {
+                    start: start_positions.height,
+                    end: last_scanned_height + 1,
+                },
+                &note_positions,
+            )?;
         }
 
         // We can do some pruning of the tx_locator_map here
 
-        // TODO: See: scan_complete() in sqlite.
-        // Related to missing subtrees
         Ok(())
     }
 
@@ -605,11 +658,18 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 }
             }
             // Mark orchard notes as spent
-            if let Some(_bundle) = sent_tx.tx().orchard_bundle() {
+            if let Some(bundle) = sent_tx.tx().orchard_bundle() {
                 #[cfg(feature = "orchard")]
                 {
-                    for action in _bundle.actions() {
-                        self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid())?;
+                    for action in bundle.actions() {
+                        match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid()) {
+                            Ok(()) => {}
+                            Err(Error::NoteNotFound) => {
+                                // This is expected as some of the actions will be new outputs we don't have notes for
+                                // The ones we do recognize will be marked as spent
+                            }
+                            Err(e) => return Err(e),
+                        }
                     }
                 }
 
@@ -619,12 +679,11 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             // Mark transparent UTXOs as spent
             #[cfg(feature = "transparent-inputs")]
             for _utxo_outpoint in sent_tx.utxos_spent() {
-                // self.mark_transparent_utxo_spent(wdb.conn.0, tx_ref, utxo_outpoint)?;
                 todo!()
             }
 
             for output in sent_tx.outputs() {
-                // TODO: insert sent output
+                self.sent_notes.insert_sent_output(sent_tx, output);
 
                 match output.recipient() {
                     Recipient::InternalAccount { .. } => {
@@ -658,10 +717,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
 }
 
 #[cfg(feature = "orchard")]
-use {
-    incrementalmerkletree::frontier::Frontier,
-    shardtree::store::Checkpoint,
-};
+use {incrementalmerkletree::frontier::Frontier, shardtree::store::Checkpoint};
 
 #[cfg(feature = "orchard")]
 fn ensure_checkpoints<'a, H, I: Iterator<Item = &'a BlockHeight>, const DEPTH: u8>(

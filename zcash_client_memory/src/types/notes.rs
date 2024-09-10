@@ -4,16 +4,19 @@ use incrementalmerkletree::Position;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::FromInto;
-use std::collections::BTreeMap;
-use std::ops::{Deref, DerefMut};
+
+use std::{
+    collections::BTreeMap,
+    ops::{Deref, DerefMut},
+};
 
 use zip32::Scope;
 
-use zcash_primitives::transaction::TxId;
-use zcash_protocol::{memo::Memo, PoolType, ShieldedProtocol::Sapling};
+use zcash_primitives::transaction::{components::OutPoint, TxId};
+use zcash_protocol::{memo::Memo, value::Zatoshis, PoolType, ShieldedProtocol::Sapling};
 
 use zcash_client_backend::{
-    data_api::{SentTransactionOutput, SpendableNotes},
+    data_api::{SentTransaction, SentTransactionOutput, SpendableNotes},
     wallet::{Note, NoteId, Recipient, WalletSaplingOutput},
 };
 
@@ -272,4 +275,69 @@ pub(crate) fn to_spendable_notes(
         #[cfg(feature = "orchard")]
         orchard,
     ))
+}
+
+pub(crate) struct SentNoteTable(BTreeMap<NoteId, SentNote>);
+
+impl SentNoteTable {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    pub fn insert_sent_output(
+        &mut self,
+        tx: &SentTransaction<AccountId>,
+        output: &SentTransactionOutput<AccountId>,
+    ) {
+        let protocol = match output.recipient() {
+            Recipient::External(_, PoolType::Shielded(protocol)) => protocol.clone(),
+            Recipient::External(_, PoolType::Transparent)
+            | Recipient::EphemeralTransparent { .. } => {
+                unimplemented!("Transparent transfers not yet supported")
+            }
+            Recipient::InternalAccount { note, .. } => note.protocol(),
+        };
+        let note_id = NoteId::new(
+            tx.tx().txid(),
+            protocol,
+            output.output_index().try_into().unwrap(),
+        );
+        self.0.insert(
+            note_id,
+            SentNote {
+                from_account_id: tx.account_id().clone(),
+                to: output.recipient().clone(),
+                value: output.value(),
+                memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+            },
+        );
+    }
+
+    pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {
+        self.0.get(note_id)
+    }
+}
+
+impl IntoIterator for SentNoteTable {
+    type Item = (NoteId, SentNote);
+    type IntoIter = std::collections::btree_map::IntoIter<NoteId, SentNote>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Deref for SentNoteTable {
+    type Target = BTreeMap<NoteId, SentNote>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub(crate) struct SentNote {
+    pub(crate) from_account_id: AccountId,
+    pub(crate) to: Recipient<AccountId, Note, OutPoint>,
+    pub(crate) value: Zatoshis,
+    pub(crate) memo: Memo,
 }

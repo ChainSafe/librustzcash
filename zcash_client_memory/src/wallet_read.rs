@@ -27,7 +27,7 @@ use zcash_primitives::{
 use zcash_protocol::{
     consensus::{self, BranchId},
     memo::Memo,
-    PoolType,
+    PoolType, ShieldedProtocol,
 };
 
 use zcash_client_backend::data_api::{
@@ -481,9 +481,15 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
 
     fn get_memo(&self, id_note: NoteId) -> Result<Option<Memo>, Self::Error> {
         tracing::debug!("get_memo: {:?}", id_note);
+        // look in both the received and sent notes
         Ok(self
             .get_received_note(id_note)
-            .map(|note| note.memo.clone()))
+            .map(|note| note.memo.clone())
+            .or_else(|| {
+                self.sent_notes
+                    .get_sent_note(&id_note)
+                    .map(|note| note.memo.clone())
+            }))
     }
 
     fn get_transaction(&self, txid: TxId) -> Result<Option<Transaction>, Self::Error> {
@@ -619,6 +625,57 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
         tracing::debug!("transaction_data_requests");
         todo!()
+    }
+
+    /// Returns the note IDs for shielded notes sent by the wallet in a particular
+    /// transaction.
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_sent_note_ids(
+        &self,
+        txid: &TxId,
+        protocol: ShieldedProtocol,
+    ) -> Result<Vec<NoteId>, Self::Error> {
+        Ok(self
+            .get_sent_notes()
+            .iter()
+            .filter_map(|(id, _)| {
+                if id.txid() == txid && id.protocol() == protocol {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+
+    /// Returns a vector of transaction summaries.
+    ///
+    /// Currently test-only, as production use could return a very large number of results; either
+    /// pagination or a streaming design will be necessary to stabilize this feature for production
+    /// use.⁄
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_tx_history(
+        &self,
+    ) -> Result<Vec<zcash_client_backend::data_api::testing::TransactionSummary<Self::AccountId>>, Self::Error> {
+        // TODO: This is only looking at sent notes, we need to look at received notes as well
+        // TODO: Need to actually implement a bunch of these fields
+        Ok(self.sent_notes.iter().map(|(note_id, note)| {
+            zcash_client_backend::data_api::testing::TransactionSummary::new(
+                note.from_account_id, // account_id
+                *note_id.txid(), // txid
+                None, // expiry_height
+                None, // mined_height
+                0.try_into().unwrap(),    // account_value_delta
+                None, // fee_paid
+                0, // spent_note_count
+                false, // has_change
+                0, // sent_note_count
+                0, // received_note_count
+                0, // memo_count
+                false, // expired_unmined
+                false, // is_shielding
+            )
+        }).collect::<Vec<_>>())
     }
 }
 

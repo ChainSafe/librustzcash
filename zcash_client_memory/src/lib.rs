@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use incrementalmerkletree::Address;
+use incrementalmerkletree::{Address, Position};
 use scanning::ScanQueue;
 
 use serde::{Deserialize, Serialize};
@@ -9,19 +9,25 @@ use shardtree::{
     ShardTree,
 };
 use std::{
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet},
     num::NonZeroU32,
-    ops::RangeInclusive,
+    ops::{Range, RangeInclusive},
+};
+use zcash_protocol::{
+    consensus::{self, NetworkUpgrade},
+    ShieldedProtocol,
 };
 
-use zcash_protocol::consensus::{self};
 use zip32::fingerprint::SeedFingerprint;
 
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
-    data_api::{Account as _, AccountSource, InputSource, TransactionStatus, WalletRead},
+    data_api::{
+        scanning::{ScanPriority, ScanRange},
+        Account as _, AccountSource, InputSource, TransactionStatus, WalletRead,
+    },
     wallet::{NoteId, WalletSaplingOutput},
 };
 
@@ -37,6 +43,9 @@ pub mod wallet_read;
 pub mod wallet_write;
 pub(crate) use types::*;
 
+#[cfg(test)]
+pub mod testing;
+
 /// The maximum number of blocks the wallet is allowed to rewind. This is
 /// consistent with the bound in zcashd, and allows block data deeper than
 /// this delta from the chain tip to be pruned.
@@ -50,7 +59,7 @@ use types::serialization::*;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
     #[serde(skip)]
     params: P,
@@ -61,6 +70,11 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     received_notes: ReceivedNoteTable,
     received_note_spends: ReceievdNoteSpends,
     nullifiers: NullifierMap,
+
+    /// Stores the outputs of transactions created by the wallet.
+    #[serde(skip)]
+    sent_notes: SentNoteTable,
+
     tx_locator: TxLocatorMap,
     scan_queue: ScanQueue,
     #[serde_as(as = "MemoryShardTreeDef")]
@@ -100,6 +114,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             orchard_tree_shard_end_heights: BTreeMap::new(),
             tx_table: TransactionTable::new(),
             received_notes: ReceivedNoteTable::new(),
+            sent_notes: SentNoteTable::new(),
             nullifiers: NullifierMap::new(),
             tx_locator: TxLocatorMap::new(),
             received_note_spends: ReceievdNoteSpends::new(),
@@ -371,7 +386,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         let max_checkpoint_height =
             u32::from(chain_tip_height).saturating_sub(u32::from(min_confirmations) - 1);
         // scan backward and find the first checkpoint that matches a blockheight prior to max_checkpoint_height
-        for height in max_checkpoint_height..0 {
+        for height in (0..=max_checkpoint_height).rev() {
             let height = BlockHeight::from_u32(height);
             if self.sapling_tree.store().get_checkpoint(&height)?.is_some() {
                 return Ok(Some(height));
@@ -389,12 +404,168 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         let max_checkpoint_height =
             u32::from(chain_tip_height).saturating_sub(u32::from(min_confirmations) - 1);
         // scan backward and find the first checkpoint that matches a blockheight prior to max_checkpoint_height
-        for height in max_checkpoint_height..0 {
+        for height in (0..=max_checkpoint_height).rev() {
             let height = BlockHeight::from_u32(height);
             if self.orchard_tree.store().get_checkpoint(&height)?.is_some() {
                 return Ok(Some(height));
             }
         }
         Ok(None)
+    }
+
+    /// Makes the required changes to the scan queue to reflect the completion of a scan
+    pub(crate) fn scan_complete(
+        &mut self,
+        range: Range<BlockHeight>,
+        wallet_note_positions: &[(ShieldedProtocol, Position)],
+    ) -> Result<(), Error> {
+        let wallet_birthday = self.get_wallet_birthday()?;
+
+        // Determine the range of block heights for which we will be updating the scan queue.
+        let extended_range = {
+            // If notes have been detected in the scan, we need to extend any adjacent un-scanned
+            // ranges starting from the wallet birthday to include the blocks needed to complete
+            // the note commitment tree subtrees containing the positions of the discovered notes.
+            // We will query by subtree index to find these bounds.
+            let mut required_sapling_subtrees = BTreeSet::new();
+            #[cfg(feature = "orchard")]
+            let mut required_orchard_subtrees = BTreeSet::new();
+            for (protocol, position) in wallet_note_positions {
+                match protocol {
+                    ShieldedProtocol::Sapling => {
+                        required_sapling_subtrees.insert(
+                            Address::above_position(SAPLING_SHARD_HEIGHT.into(), *position).index(),
+                        );
+                    }
+                    ShieldedProtocol::Orchard => {
+                        #[cfg(feature = "orchard")]
+                        required_orchard_subtrees.insert(
+                            Address::above_position(ORCHARD_SHARD_HEIGHT.into(), *position).index(),
+                        );
+
+                        #[cfg(not(feature = "orchard"))]
+                        return Err(Error::OrchardNotEnabled);
+                    }
+                }
+            }
+
+            let extended_range = self.extend_range(
+                &ShieldedProtocol::Sapling,
+                &range,
+                required_sapling_subtrees,
+                self.params.activation_height(NetworkUpgrade::Sapling),
+                wallet_birthday,
+            )?;
+
+            #[cfg(feature = "orchard")]
+            let extended_range = self
+                .extend_range(
+                    &ShieldedProtocol::Orchard,
+                    extended_range.as_ref().unwrap_or(&range),
+                    required_orchard_subtrees,
+                    self.params.activation_height(NetworkUpgrade::Nu5),
+                    wallet_birthday,
+                )?
+                .or(extended_range);
+
+            #[allow(clippy::let_and_return)]
+            extended_range
+        };
+
+        let query_range = extended_range.clone().unwrap_or_else(|| range.clone());
+
+        let scanned = ScanRange::from_parts(range.clone(), ScanPriority::Scanned);
+
+        // If any of the extended range actually extends beyond the scanned range, we need to
+        // scan that extension in order to make the found note(s) spendable. We need to avoid
+        // creating empty ranges here, as that acts as an optimization barrier preventing
+        // `SpanningTree` from merging non-empty scanned ranges on either side.
+        let extended_before = extended_range
+            .as_ref()
+            .map(|extended| {
+                ScanRange::from_parts(extended.start..range.start, ScanPriority::FoundNote)
+            })
+            .filter(|range| !range.is_empty());
+        let extended_after = extended_range
+            .map(|extended| ScanRange::from_parts(range.end..extended.end, ScanPriority::FoundNote))
+            .filter(|range| !range.is_empty());
+
+        let replacement = Some(scanned)
+            .into_iter()
+            .chain(extended_before)
+            .chain(extended_after);
+
+        self.scan_queue
+            .replace_queue_entries(&query_range, replacement, false)
+    }
+
+    // Given a range of block heights, extend the range to include the subtrees containing the
+    // given subtree indices, bounded by the wallet birthday and the fallback start height.
+    fn extend_range(
+        &self,
+        pool: &ShieldedProtocol,
+        range: &Range<BlockHeight>,
+        required_subtree_indices: BTreeSet<u64>,
+        fallback_start_height: Option<BlockHeight>,
+        birthday_height: Option<BlockHeight>,
+    ) -> Result<Option<Range<BlockHeight>>, Error> {
+        // we'll either have both min and max bounds, or we'll have neither
+        let subtree_index_bounds = required_subtree_indices
+            .iter()
+            .min()
+            .zip(required_subtree_indices.iter().max());
+
+        let shard_end = |index| -> Result<_, Error> {
+            match pool {
+                ShieldedProtocol::Sapling => Ok(self
+                    .sapling_tree_shard_end_heights
+                    .get(&Address::from_parts(0.into(), index))
+                    .cloned()),
+                ShieldedProtocol::Orchard => {
+                    #[cfg(feature = "orchard")]
+                    {
+                        Ok(self
+                            .orchard_tree_shard_end_heights
+                            .get(&Address::from_parts(0.into(), index))
+                            .cloned())
+                    }
+                    #[cfg(not(feature = "orchard"))]
+                    panic!("Unsupported pool")
+                }
+            }
+        };
+
+        // If no notes belonging to the wallet were found, we don't need to extend the scanning
+        // range suggestions to include the associated subtrees, and our bounds are just the
+        // scanned range. Otherwise, ensure that all shard ranges starting from the wallet
+        // birthday are included.
+        subtree_index_bounds
+            .map(|(min_idx, max_idx)| {
+                let range_min = if *min_idx > 0 {
+                    // get the block height of the end of the previous shard
+                    shard_end(*min_idx - 1)?
+                } else {
+                    // our lower bound is going to be the fallback height
+                    fallback_start_height
+                };
+
+                // bound the minimum to the wallet birthday
+                let range_min =
+                    range_min.map(|h| birthday_height.map_or(h, |b| std::cmp::max(b, h)));
+
+                // Get the block height for the end of the current shard, and make it an
+                // exclusive end bound.
+                let range_max = shard_end(*max_idx)?.map(|end| end + 1);
+
+                Ok(Range {
+                    start: range.start.min(range_min.unwrap_or(range.start)),
+                    end: range.end.max(range_max.unwrap_or(range.end)),
+                })
+            })
+            .transpose()
+    }
+
+    fn get_sent_notes(&self) -> &SentNoteTable {
+        &self.sent_notes
     }
 }
