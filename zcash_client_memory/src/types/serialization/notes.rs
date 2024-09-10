@@ -1,5 +1,5 @@
 use sapling::{value::NoteValue, PaymentAddress, Rseed};
-use serde_with::{ser::SerializeAsWrap, As, DeserializeAs, Same, SerializeAs};
+use serde_with::{DeserializeAs, SerializeAs};
 
 use zcash_address::ZcashAddress;
 use zcash_client_backend::wallet::Note;

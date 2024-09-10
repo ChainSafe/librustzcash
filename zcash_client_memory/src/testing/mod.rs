@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use zcash_client_backend::{
     data_api::{
         chain::BlockSource,
-        testing::{DataStoreFactory, NoteCommitments, TestCache},
+        testing::{DataStoreFactory, TestCache},
     },
     proto::compact_formats::CompactBlock,
 };
@@ -80,11 +80,11 @@ impl TestCache for MemBlockCache {
     type InsertResult = ();
 
     fn block_source(&self) -> &Self::BlockSource {
-        &self
+        self
     }
 
     fn insert(&mut self, cb: &CompactBlock) -> Self::InsertResult {
         self.0.insert(cb.height().into(), cb.clone());
-        ()
+        
     }
 }

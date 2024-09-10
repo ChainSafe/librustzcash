@@ -294,7 +294,7 @@ impl SentNoteTable {
         output: &SentTransactionOutput<AccountId>,
     ) {
         let protocol = match output.recipient() {
-            Recipient::External(_, PoolType::Shielded(protocol)) => protocol.clone(),
+            Recipient::External(_, PoolType::Shielded(protocol)) => *protocol,
             Recipient::External(_, PoolType::Transparent)
             | Recipient::EphemeralTransparent { .. } => {
                 unimplemented!("Transparent transfers not yet supported")
@@ -309,7 +309,7 @@ impl SentNoteTable {
         self.0.insert(
             note_id,
             SentNote {
-                from_account_id: tx.account_id().clone(),
+                from_account_id: *tx.account_id(),
                 to: output.recipient().clone(),
                 value: output.value(),
                 memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
