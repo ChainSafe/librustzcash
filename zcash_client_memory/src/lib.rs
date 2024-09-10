@@ -3,7 +3,7 @@ use incrementalmerkletree::{Address, Position};
 use scanning::ScanQueue;
 
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde_with::{serde_as, FromInto};
 use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},
     ShardTree,
@@ -54,12 +54,11 @@ pub(crate) const PRUNING_DEPTH: u32 = 100;
 /// The number of blocks to verify ahead when the chain tip is updated.
 pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 
-use serde_with::FromInto;
 use types::serialization::*;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[serde_as]
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
     #[serde(skip)]
     params: P,
@@ -72,7 +71,6 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     nullifiers: NullifierMap,
 
     /// Stores the outputs of transactions created by the wallet.
-    #[serde(skip)]
     sent_notes: SentNoteTable,
 
     tx_locator: TxLocatorMap,

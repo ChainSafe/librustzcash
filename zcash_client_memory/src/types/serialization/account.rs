@@ -5,19 +5,25 @@ use serde_with::serde_as;
 use serde_with::{DeserializeAs, TryFromInto};
 use serde_with::{FromInto, SerializeAs};
 
+use shardtree::Tree;
+use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::{AccountPurpose, AccountSource};
 use zcash_keys::keys::UnifiedFullViewingKey;
-
 use zcash_primitives::block::BlockHash;
+use zcash_primitives::legacy::TransparentAddress;
 use zcash_protocol::consensus::{BlockHeight, MainNetwork};
 
 use incrementalmerkletree::frontier::Frontier;
 
+use zcash_protocol::{PoolType, ShieldedProtocol};
 use zip32::fingerprint::SeedFingerprint;
 
-use zcash_client_backend::data_api::{chain::ChainState, AccountBirthday};
+use zcash_client_backend::{
+    data_api::{chain::ChainState, AccountBirthday},
+    wallet::Recipient,
+};
 
-use crate::{ByteArray, FrontierDef, ToFromBytes};
+use crate::{ByteArray, FrontierDef, ShieldedProtocolDef, ToFromBytes};
 
 use super::{FromArray, ToArray};
 
@@ -88,22 +94,72 @@ pub struct AccountBirthdayDef {
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "AccountSource")]
 pub enum AccountSourceDef {
-    /// An account derived from a known seed.
     Derived {
         #[serde_as(as = "ByteArray<32>")]
         seed_fingerprint: SeedFingerprint,
         #[serde_as(as = "TryFromInto<u32>")]
         account_index: zip32::AccountId,
     },
-
-    /// An account imported from a viewing key.
     Imported {
         #[serde_as(as = "AccountPurposeDef")]
         purpose: AccountPurpose,
     },
 }
 
+pub struct ZcashAddressDef;
+impl SerializeAs<ZcashAddress> for ZcashAddressDef {
+    fn serialize_as<S>(value: &ZcashAddress, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        value.encode().serialize(serializer)
+    }
+}
+impl<'de> DeserializeAs<'de, ZcashAddress> for ZcashAddressDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<ZcashAddress, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        ZcashAddress::try_from_encoded(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "TransparentAddress")]
+pub enum TransparentAddressDef {
+    PublicKeyHash([u8; 20]),
+    ScriptHash([u8; 20]),
+}
+
 // BOILERPLATE: Trivial conversions between types and the trivial implementations of SerializeAs and DeserializeAs
+
+impl From<TransparentAddressDef> for TransparentAddress {
+    fn from(wrapper: TransparentAddressDef) -> Self {
+        match wrapper {
+            TransparentAddressDef::PublicKeyHash(pkh) => TransparentAddress::PublicKeyHash(pkh),
+            TransparentAddressDef::ScriptHash(sh) => TransparentAddress::ScriptHash(sh),
+        }
+    }
+}
+
+impl SerializeAs<TransparentAddress> for TransparentAddressDef {
+    fn serialize_as<S>(value: &TransparentAddress, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        TransparentAddressDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, TransparentAddress> for TransparentAddressDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<TransparentAddress, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        TransparentAddressDef::deserialize(deserializer)
+    }
+}
 
 impl SerializeAs<ChainState> for ChainStateDef {
     fn serialize_as<S>(source: &ChainState, serializer: S) -> Result<S::Ok, S::Error>

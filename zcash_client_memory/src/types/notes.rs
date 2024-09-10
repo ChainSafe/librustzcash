@@ -3,7 +3,7 @@ use incrementalmerkletree::Position;
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use serde_with::FromInto;
+use serde_with::{FromInto, TryFromInto};
 
 use std::{
     collections::BTreeMap,
@@ -277,7 +277,11 @@ pub(crate) fn to_spendable_notes(
     ))
 }
 
-pub(crate) struct SentNoteTable(BTreeMap<NoteId, SentNote>);
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub(crate) struct SentNoteTable(
+    #[serde_as(as = "BTreeMap<NoteIdDef, _>")] BTreeMap<NoteId, SentNote>,
+);
 
 impl SentNoteTable {
     pub fn new() -> Self {
@@ -335,9 +339,14 @@ impl Deref for SentNoteTable {
     }
 }
 
+#[serde_as]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct SentNote {
     pub(crate) from_account_id: AccountId,
+    #[serde_as(as = "RecipientDef<AccountId, Note, OutPoint>")]
     pub(crate) to: Recipient<AccountId, Note, OutPoint>,
+    #[serde_as(as = "TryFromInto<u64>")]
     pub(crate) value: Zatoshis,
+    #[serde_as(as = "MemoBytesDef")]
     pub(crate) memo: Memo,
 }

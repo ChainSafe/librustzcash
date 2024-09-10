@@ -1,6 +1,7 @@
 use sapling::{value::NoteValue, PaymentAddress, Rseed};
-use serde_with::{DeserializeAs, SerializeAs};
+use serde_with::{ser::SerializeAsWrap, As, DeserializeAs, Same, SerializeAs};
 
+use zcash_address::ZcashAddress;
 use zcash_client_backend::wallet::Note;
 use zip32::Scope;
 
@@ -10,15 +11,18 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use serde_with::serde_as;
 
-use zcash_client_backend::wallet::NoteId;
+use zcash_client_backend::wallet::{NoteId, Recipient};
 
-use crate::{ByteArray, TryByteArray};
-use zcash_primitives::transaction::TxId;
+use crate::{ByteArray, TransparentAddressDef, TryByteArray, ZcashAddressDef};
 
-use zcash_protocol::ShieldedProtocol;
+use zcash_primitives::{
+    legacy::TransparentAddress,
+    transaction::{components::OutPoint, TxId},
+};
+
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use super::{ToArray, TryFromArray};
-
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Note")]
@@ -130,7 +134,214 @@ impl<'de> serde_with::DeserializeAs<'de, Rseed> for RseedDef {
     }
 }
 
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "PoolType")]
+pub enum PoolTypeDef {
+    /// The transparent value pool
+    Transparent,
+    /// A shielded value pool.
+    Shielded(#[serde_as(as = "ShieldedProtocolDef")] ShieldedProtocol),
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "OutPoint")]
+pub struct OutPointDef {
+    #[serde_as(as = "ByteArray<32>")]
+    #[serde(getter = "OutPoint::txid")]
+    pub hash: TxId,
+    #[serde(getter = "OutPoint::n")]
+    pub n: u32,
+}
+
+/// Concrete conversion implementation of commonly used Recipient typ
+// #[serde_as]
+// #[derive(Serialize)]
+// pub enum RecipientDef {
+//     External(
+//         #[serde_as(as = "ZcashAddressDef")] ZcashAddress,
+//         #[serde_as(as = "PoolTypeDef")] PoolType,
+//     ),
+//     EphemeralTransparent {
+//         receiving_account: crate::AccountId,
+//         #[serde_as(as = "TransparentAddressDef")]
+//         ephemeral_address: TransparentAddress,
+//         #[serde_as(as = "OutPointDef")]
+//         outpoint_metadata: OutPoint,
+//     },
+//     InternalAccount {
+//         receiving_account: crate::AccountId,
+//         #[serde_as(as = "Option<ZcashAddressDef>")]
+//         external_address: Option<ZcashAddress>,
+//         // #[serde(bound(
+//         //     serialize = "NoteDef: Into<NoteDef>, NoteDef: SerializeAs<N>",
+//         // ))]
+//         #[serde_as(as = "NoteDef")]
+//         note: Note,
+//     },
+// }
+pub struct RecipientDef<AccountId, Note, OutPoint>(
+    std::marker::PhantomData<(AccountId, Note, OutPoint)>,
+);
+
+impl SerializeAs<Recipient<crate::AccountId, Note, OutPoint>>
+    for RecipientDef<crate::AccountId, Note, OutPoint>
+{
+    fn serialize_as<S>(
+        value: &Recipient<crate::AccountId, Note, OutPoint>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[serde_as]
+        #[derive(Serialize)]
+        pub enum RecipientSer<'a> {
+            External(
+                #[serde_as(as = "ZcashAddressDef")] &'a ZcashAddress,
+                #[serde_as(as = "PoolTypeDef")] &'a PoolType,
+            ),
+            EphemeralTransparent {
+                receiving_account: &'a crate::AccountId,
+                #[serde_as(as = "TransparentAddressDef")]
+                ephemeral_address: &'a TransparentAddress,
+                #[serde_as(as = "OutPointDef")]
+                outpoint_metadata: &'a OutPoint,
+            },
+            InternalAccount {
+                receiving_account: &'a crate::AccountId,
+                #[serde_as(as = "Option<ZcashAddressDef>")]
+                external_address: &'a Option<ZcashAddress>,
+
+                #[serde_as(as = "NoteDef")]
+                note: &'a Note,
+            },
+        }
+        let v = match value {
+            Recipient::External(address, pool) => RecipientSer::External(address, pool),
+            Recipient::EphemeralTransparent {
+                receiving_account,
+                ephemeral_address,
+                outpoint_metadata,
+            } => RecipientSer::EphemeralTransparent {
+                receiving_account,
+                ephemeral_address,
+                outpoint_metadata,
+            },
+            Recipient::InternalAccount {
+                receiving_account,
+                external_address,
+                note,
+            } => RecipientSer::InternalAccount {
+                receiving_account,
+                external_address,
+                note,
+            },
+        };
+        RecipientSer::serialize(&v, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, Recipient<crate::AccountId, Note, OutPoint>>
+    for RecipientDef<crate::AccountId, Note, OutPoint>
+{
+    fn deserialize_as<D>(
+        deserializer: D,
+    ) -> Result<Recipient<crate::AccountId, Note, OutPoint>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[serde_as]
+        #[derive(Deserialize)]
+        pub enum RecipientDe {
+            External(
+                #[serde_as(as = "ZcashAddressDef")] ZcashAddress,
+                #[serde_as(as = "PoolTypeDef")] PoolType,
+            ),
+            EphemeralTransparent {
+                receiving_account: crate::AccountId,
+                #[serde_as(as = "TransparentAddressDef")]
+                ephemeral_address: TransparentAddress,
+                #[serde_as(as = "OutPointDef")]
+                outpoint_metadata: OutPoint,
+            },
+            InternalAccount {
+                receiving_account: crate::AccountId,
+                #[serde_as(as = "Option<ZcashAddressDef>")]
+                external_address: Option<ZcashAddress>,
+                #[serde_as(as = "NoteDef")]
+                note: Note,
+            },
+        }
+        let v = RecipientDe::deserialize(deserializer)?;
+        match v {
+            RecipientDe::External(address, pool) => Ok(Recipient::External(address, pool)),
+            RecipientDe::EphemeralTransparent {
+                receiving_account,
+                ephemeral_address,
+                outpoint_metadata,
+            } => Ok(Recipient::EphemeralTransparent {
+                receiving_account,
+                ephemeral_address,
+                outpoint_metadata,
+            }),
+            RecipientDe::InternalAccount {
+                receiving_account,
+                external_address,
+                note,
+            } => Ok(Recipient::InternalAccount {
+                receiving_account,
+                external_address,
+                note,
+            }),
+        }
+    }
+}
+
 // BOILERPLATE: Trivial conversions between types and the trivial implementations of SerializeAs and DeserializeAs
+
+impl From<OutPointDef> for OutPoint {
+    fn from(def: OutPointDef) -> OutPoint {
+        OutPoint::new(def.hash.into(), def.n)
+    }
+}
+
+impl SerializeAs<OutPoint> for OutPointDef {
+    fn serialize_as<S>(value: &OutPoint, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        OutPointDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, OutPoint> for OutPointDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<OutPoint, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        OutPointDef::deserialize(deserializer).map(Into::into)
+    }
+}
+
+impl SerializeAs<PoolType> for PoolTypeDef {
+    fn serialize_as<S>(value: &PoolType, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        PoolTypeDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, PoolType> for PoolTypeDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<PoolType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        PoolTypeDef::deserialize(deserializer)
+    }
+}
 
 impl SerializeAs<ShieldedProtocol> for ShieldedProtocolDef {
     fn serialize_as<S>(value: &ShieldedProtocol, serializer: S) -> Result<S::Ok, S::Error>
@@ -225,6 +436,7 @@ impl<'de> serde_with::DeserializeAs<'de, sapling::Note> for SaplingNoteDef {
         SaplingNoteDef::deserialize(deserializer).map(Into::into)
     }
 }
+
 impl From<NoteDef> for Note {
     fn from(note: NoteDef) -> Self {
         match note {
