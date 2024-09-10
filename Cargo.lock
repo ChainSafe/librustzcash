@@ -2104,7 +2104,7 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 [[package]]
 name = "incrementalmerkletree"
 version = "0.6.0"
-source = "git+https://github.com/ec2/incrementalmerkletree.git?rev=0e9d4d635af5c7dff8b934017546df80848e6330#0e9d4d635af5c7dff8b934017546df80848e6330"
+source = "git+https://github.com/zcash/incrementalmerkletree.git?rev=0f76ad80092510735f03dcceb1e614bce220ed08#0f76ad80092510735f03dcceb1e614bce220ed08"
 dependencies = [
  "either",
  "proptest",
@@ -3905,7 +3905,7 @@ dependencies = [
 [[package]]
 name = "shardtree"
 version = "0.4.0"
-source = "git+https://github.com/ec2/incrementalmerkletree.git?rev=0e9d4d635af5c7dff8b934017546df80848e6330#0e9d4d635af5c7dff8b934017546df80848e6330"
+source = "git+https://github.com/zcash/incrementalmerkletree.git?rev=0f76ad80092510735f03dcceb1e614bce220ed08#0f76ad80092510735f03dcceb1e614bce220ed08"
 dependencies = [
  "assert_matches",
  "bitflags 2.6.0",

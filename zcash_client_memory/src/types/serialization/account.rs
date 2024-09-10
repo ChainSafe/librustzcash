@@ -204,6 +204,7 @@ impl SerializeAs<AccountPurpose> for AccountPurposeDef {
         AccountPurposeDef::serialize(value, serializer)
     }
 }
+
 impl<'de> serde_with::DeserializeAs<'de, AccountPurpose> for AccountPurposeDef {
     fn deserialize_as<D>(deserializer: D) -> Result<AccountPurpose, D::Error>
     where
@@ -212,11 +213,13 @@ impl<'de> serde_with::DeserializeAs<'de, AccountPurpose> for AccountPurposeDef {
         AccountPurposeDef::deserialize(deserializer)
     }
 }
+
 impl ToArray<u8, 32> for SeedFingerprint {
     fn to_array(&self) -> [u8; 32] {
         self.to_bytes()
     }
 }
+
 impl FromArray<u8, 32> for SeedFingerprint {
     fn from_array(arr: [u8; 32]) -> Self {
         Self::from_bytes(arr)

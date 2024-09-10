@@ -45,6 +45,7 @@ pub struct SaplingNoteDef {
     #[serde_as(as = "RseedDef")]
     rseed: Rseed,
 }
+
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "NoteId")]
@@ -58,12 +59,14 @@ pub(crate) struct NoteIdDef {
     #[serde(getter = "NoteId::output_index")]
     output_index: u16,
 }
+
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "ShieldedProtocol")]
 pub enum ShieldedProtocolDef {
     Sapling,
     Orchard,
 }
+
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Scope")]
 pub enum ScopeDef {
