@@ -576,12 +576,11 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 mod test {
 
     use ciborium::into_writer;
-    use zcash_protocol::consensus;
 
     use crate::MemoryWalletDb;
     #[test]
     fn test_empty_wallet_serialization() {
-        let network = Network::TestNetwork;
+        let network = zcash_primitives::consensus::Network::TestNetwork;
         let wallet = MemoryWalletDb::new(network, 100);
         let mut wallet_ser = vec![];
         into_writer(&wallet, &mut wallet_ser).unwrap();
