@@ -28,6 +28,7 @@ impl FromArray<u8, 32> for BlockHash {
         BlockHash(arr)
     }
 }
+
 mod array {
     use serde::{Deserialize, Deserializer, Serialize};
     use serde_with::{serde_as, SerializeAs};

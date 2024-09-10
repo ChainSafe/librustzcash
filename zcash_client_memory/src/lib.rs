@@ -120,6 +120,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
     }
 
+    pub fn params(&self) -> &P {
+        &self.params
+    }
+
     pub(crate) fn get_received_notes(&self) -> &ReceivedNoteTable {
         &self.received_notes
     }
@@ -577,7 +581,7 @@ mod test {
     use crate::MemoryWalletDb;
     #[test]
     fn test_empty_wallet_serialization() {
-        let network = consensus::Network::TestNetwork;
+        let network = Network::TestNetwork;
         let wallet = MemoryWalletDb::new(network, 100);
         let mut wallet_ser = vec![];
         into_writer(&wallet, &mut wallet_ser).unwrap();

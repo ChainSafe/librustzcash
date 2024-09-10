@@ -106,38 +106,15 @@ impl<
             })
             .collect::<Result<Vec<_>, _>>()?;
         let mut checkpoints = BTreeMap::default();
-
         let checkpoint_count = value
             .checkpoint_count()
             .map_err(|_| serde::ser::Error::custom("Failed to get checkpoint count"))?;
-
-        let min_checkpoint: Option<u32> = value
-            .max_checkpoint_id()
-            .map_err(|_| serde::ser::Error::custom("Failed to get max checkpoint id"))?
-            .map(Into::into);
-        let max_checkpoint: Option<u32> = value
-            .min_checkpoint_id()
-            .map_err(|_| serde::ser::Error::custom("Failed to get min checkpoint id"))?
-            .map(Into::into);
-
-        if let (Some(min_checkpoint), Some(max_checkpoint)) = (min_checkpoint, max_checkpoint) {
-            // The idea way would be to use with_checkpoints but that requires a mutable reference
-            // TODO: Make a PR into incrementalmerkletree to add this functionality
-            for checkpoint_id in min_checkpoint..=max_checkpoint {
-                let checkpoint = value
-                    .get_checkpoint(&checkpoint_id.into())
-                    .map_err(|_| serde::ser::Error::custom("Failed to get checkpoint"))?
-                    .ok_or_else(|| serde::ser::Error::custom("Missing checkpoint"))?; // TODO: I think we can skip this and just do a length check at the end
-                checkpoints.insert(checkpoint_id, checkpoint);
-            }
-            if checkpoints.len() != checkpoint_count {
-                return Err(serde::ser::Error::custom(format!(
-                    "Expected {} checkpoints but got {}",
-                    checkpoint_count,
-                    checkpoints.len()
-                )));
-            }
-        }
+        value
+            .for_each_checkpoint(checkpoint_count, |checkpoint_id, checkpoint| {
+                checkpoints.insert(checkpoint_id.clone(), checkpoint.clone());
+                Ok(())
+            })
+            .map_err(serde::ser::Error::custom)?;
 
         ShardStoreSer {
             shards: &shards,
