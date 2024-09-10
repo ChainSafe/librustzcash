@@ -567,3 +567,20 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         &self.sent_notes
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    use ciborium::into_writer;
+    use zcash_protocol::consensus;
+
+    use crate::MemoryWalletDb;
+    #[test]
+    fn test_empty_wallet_serialization() {
+        let network = consensus::Network::TestNetwork;
+        let wallet = MemoryWalletDb::new(network, 100);
+        let mut wallet_ser = vec![];
+        into_writer(&wallet, &mut wallet_ser).unwrap();
+        println!("Empty Wallet Size: {}", wallet_ser.len());
+    }
+}
