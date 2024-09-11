@@ -824,7 +824,6 @@ pub trait InputSource {
         Ok(vec![])
     }
 
-    /// Return the notes with a given value
     #[cfg(any(test, feature = "test-dependencies"))]
     fn get_notes(
         &self,

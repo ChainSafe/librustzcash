@@ -390,13 +390,13 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 _transactions: transactions.keys().cloned().collect(),
                 _memos: memos,
                 sapling_commitment_tree_size: Some(block.sapling().final_tree_size()),
-                _sapling_output_count: Some(
+                sapling_output_count: Some(
                     block.sapling().commitments().len().try_into().unwrap(),
                 ),
                 #[cfg(feature = "orchard")]
                 orchard_commitment_tree_size: Some(block.orchard().final_tree_size()),
                 #[cfg(feature = "orchard")]
-                _orchard_action_count: Some(
+                orchard_action_count: Some(
                     block.orchard().commitments().len().try_into().unwrap(),
                 ),
             };

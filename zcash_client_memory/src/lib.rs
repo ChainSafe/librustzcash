@@ -21,7 +21,9 @@ use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use zcash_client_backend::{
     data_api::{
-        scanning::{ScanPriority, ScanRange}, Account as _, AccountSource, InputSource, Ratio, SentTransaction, SentTransactionOutput, TransactionStatus, WalletRead
+        scanning::{ScanPriority, ScanRange},
+        Account as _, AccountSource, InputSource, Ratio, SentTransaction, SentTransactionOutput,
+        TransactionStatus, WalletRead,
     },
     wallet::{NoteId, WalletSaplingOutput},
 };
@@ -579,20 +581,162 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
     pub fn sapling_scan_progress(
         &self,
-        birthday_height: BlockHeight,
-        fully_scanned_height: BlockHeight,
-        chain_tip_height: BlockHeight,
+        birthday_height: &BlockHeight,
+        fully_scanned_height: &BlockHeight,
+        chain_tip_height: &BlockHeight,
     ) -> Result<Option<Ratio<u64>>, Error> {
-        Ok(None)
+        if fully_scanned_height == chain_tip_height {
+            let outputs_sum = self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height >= &birthday_height)
+                .fold(0, |sum, (_, block)| {
+                    sum + block.sapling_output_count.unwrap_or(0)
+                });
+            Ok(Some(Ratio::new(outputs_sum as u64, outputs_sum as u64)))
+        } else {
+            // Get the starting note commitment tree size from the wallet birthday, or failing that
+            // from the blocks table.
+            let start_size = self
+                .accounts
+                .iter()
+                .filter_map(|(_, account)| {
+                    if account.birthday().height() == *birthday_height {
+                        Some(account.birthday().sapling_frontier().tree_size())
+                    } else {
+                        None
+                    }
+                })
+                .next()
+                .or_else(|| {
+                    self.blocks
+                        .iter()
+                        .filter(|(height, _)| height <= &birthday_height)
+                        .map(|(_, block)| {
+                            (block.sapling_commitment_tree_size.unwrap_or(0)
+                                - block.sapling_output_count.unwrap_or(0))
+                                as u64
+                        })
+                        .max()
+                });
+
+            // Compute the total blocks scanned so far above the starting height
+            let scanned_count = Some(self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height > &birthday_height)
+                .fold(0_u64, |acc, (_, block)| {
+                    acc + block.sapling_output_count.unwrap_or(0) as u64
+                }));
+
+            // We don't have complete information on how many outputs will exist in the shard at
+            // the chain tip without having scanned the chain tip block, so we overestimate by
+            // computing the maximum possible number of notes directly from the shard indices.
+            //
+            // TODO: it would be nice to be able to reliably have the size of the commitment tree
+            // at the chain tip without having to have scanned that block.
+
+            let shard_index_iter = self
+                .sapling_tree_shard_end_heights
+                .iter()
+                .filter(|(_, height)| height > &birthday_height)
+                .map(|(address, _)| address.index());
+
+            let min_idx = shard_index_iter.clone().min().unwrap_or(0);
+            let max_idx = shard_index_iter.max().unwrap_or(0);
+
+            let max_tree_size = Some(min_idx << SAPLING_SHARD_HEIGHT);
+            let min_tree_size = Some((max_idx + 1) << SAPLING_SHARD_HEIGHT);
+
+            Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
+                |(min_tree_size, max_tree_size)| {
+                    Ratio::new(
+                        scanned_count.unwrap_or(0),
+                        max_tree_size - min_tree_size,
+                    )
+                },
+            ))
+        }
     }
 
     #[cfg(feature = "orchard")]
     pub fn orchard_scan_progress(
         &self,
-        birthday_height: BlockHeight,
-        fully_scanned_height: BlockHeight,
-        chain_tip_height: BlockHeight,
+        birthday_height: &BlockHeight,
+        fully_scanned_height: &BlockHeight,
+        chain_tip_height: &BlockHeight,
     ) -> Result<Option<Ratio<u64>>, Error> {
-        Ok(None)
+        if fully_scanned_height == chain_tip_height {
+            let outputs_sum = self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height >= &birthday_height)
+                .fold(0, |sum, (_, block)| {
+                    sum + block.orchard_action_count.unwrap_or(0)
+                });
+            Ok(Some(Ratio::new(outputs_sum as u64, outputs_sum as u64)))
+        } else {
+            // Get the starting note commitment tree size from the wallet birthday, or failing that
+            // from the blocks table.
+            let start_size = self
+                .accounts
+                .iter()
+                .filter_map(|(_, account)| {
+                    if account.birthday().height() == *birthday_height {
+                        Some(account.birthday().sapling_frontier().tree_size())
+                    } else {
+                        None
+                    }
+                })
+                .next()
+                .or_else(|| {
+                    self.blocks
+                        .iter()
+                        .filter(|(height, _)| height <= &birthday_height)
+                        .map(|(_, block)| {
+                            (block.orchard_commitment_tree_size.unwrap_or(0)
+                                - block.orchard_action_count.unwrap_or(0))
+                                as u64
+                        })
+                        .max()
+                });
+
+            // Compute the total blocks scanned so far above the starting height
+            let scanned_count = Some(self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height > &birthday_height)
+                .fold(0_u64, |acc, (_, block)| {
+                    acc + block.orchard_action_count.unwrap_or(0) as u64
+                }));
+
+            // We don't have complete information on how many outputs will exist in the shard at
+            // the chain tip without having scanned the chain tip block, so we overestimate by
+            // computing the maximum possible number of notes directly from the shard indices.
+            //
+            // TODO: it would be nice to be able to reliably have the size of the commitment tree
+            // at the chain tip without having to have scanned that block.
+
+            let shard_index_iter = self
+                .orchard_tree_shard_end_heights
+                .iter()
+                .filter(|(_, height)| height > &birthday_height)
+                .map(|(address, _)| address.index());
+
+            let min_idx = shard_index_iter.clone().min().unwrap_or(0);
+            let max_idx = shard_index_iter.max().unwrap_or(0);
+
+            let max_tree_size = Some(min_idx << ORCHARD_SHARD_HEIGHT);
+            let min_tree_size = Some((max_idx + 1) << ORCHARD_SHARD_HEIGHT);
+
+            Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
+                |(min_tree_size, max_tree_size)| {
+                    Ratio::new(
+                        scanned_count.unwrap_or(0),
+                        max_tree_size - min_tree_size,
+                    )
+                },
+            ))
+        }
     }
 }

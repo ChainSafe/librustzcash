@@ -293,10 +293,10 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
 
         // Treat Sapling and Orchard outputs as having the same cost to scan.
         let sapling_scan_progress =
-            self.sapling_scan_progress(birthday_height, fully_scanned_height, chain_tip_height)?;
+            self.sapling_scan_progress(&birthday_height, &fully_scanned_height, &chain_tip_height)?;
         #[cfg(feature = "orchard")]
         let orchard_scan_progress =
-            self.orchard_scan_progress(birthday_height, fully_scanned_height, chain_tip_height)?;
+            self.orchard_scan_progress(&birthday_height, &fully_scanned_height, &chain_tip_height)?;
         #[cfg(not(feature = "orchard"))]
         let orchard_scan_progress: Option<Ratio<u64>> = None;
 
