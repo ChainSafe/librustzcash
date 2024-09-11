@@ -13,7 +13,8 @@ use zip32::fingerprint::SeedFingerprint;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, SeedRelevance, TransactionDataRequest, TransactionStatus
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, Ratio,
+        SeedRelevance, TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     wallet::NoteId,
@@ -24,7 +25,10 @@ use zcash_primitives::{
     transaction::{Transaction, TransactionData, TxId},
 };
 use zcash_protocol::{
-    consensus::{self, BranchId}, memo::Memo, value::BalanceError, PoolType, ShieldedProtocol
+    consensus::{self, BranchId},
+    memo::Memo,
+    value::BalanceError,
+    PoolType, ShieldedProtocol,
 };
 
 use zcash_client_backend::data_api::{
@@ -243,12 +247,17 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             if let Entry::Vacant(entry) = account_balances.entry(account_id) {
                 entry.insert(AccountBalance::ZERO);
             }
-            let account_balance = account_balances.get_mut(&account_id).expect("Account balance should exist");
+            let account_balance = account_balances
+                .get_mut(&account_id)
+                .expect("Account balance should exist");
 
             // Given a note update the balance for the account
             // This includes determining if it is change, spendable, etc
             let update_balance_with_note = |b: &mut Balance| -> Result<(), Error> {
-                match (self.note_is_pending(note, min_confirmations)?, note.is_change) {
+                match (
+                    self.note_is_pending(note, min_confirmations)?,
+                    note.is_change,
+                ) {
                     (true, true) => b.add_pending_change_value(note.note.value()),
                     (true, false) => b.add_pending_spendable_value(note.note.value()),
                     (false, _) => b.add_spendable_value(note.note.value()),
@@ -258,12 +267,10 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
 
             match note.pool() {
                 PoolType::SAPLING => {
-                    account_balance
-                        .with_sapling_balance_mut(update_balance_with_note)?;
+                    account_balance.with_sapling_balance_mut(update_balance_with_note)?;
                 }
                 PoolType::ORCHARD => {
-                    account_balance
-                        .with_orchard_balance_mut(update_balance_with_note)?;
+                    account_balance.with_orchard_balance_mut(update_balance_with_note)?;
                 }
                 _ => unimplemented!("Unknown pool type"),
             }
@@ -284,11 +291,31 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .map(|s| s.root_addr().index())
             .unwrap_or(0);
 
+        // Treat Sapling and Orchard outputs as having the same cost to scan.
+        let sapling_scan_progress =
+            self.sapling_scan_progress(birthday_height, fully_scanned_height, chain_tip_height)?;
+        #[cfg(feature = "orchard")]
+        let orchard_scan_progress =
+            self.orchard_scan_progress(birthday_height, fully_scanned_height, chain_tip_height)?;
+        #[cfg(not(feature = "orchard"))]
+        let orchard_scan_progress: Option<Ratio<u64>> = None;
+
+        let scan_progress = sapling_scan_progress
+            .zip(orchard_scan_progress)
+            .map(|(s, o)| {
+                Ratio::new(
+                    s.numerator() + o.numerator(),
+                    s.denominator() + o.denominator(),
+                )
+            })
+            .or(sapling_scan_progress)
+            .or(orchard_scan_progress);
+
         let summary = WalletSummary::new(
             account_balances,
             chain_tip_height,
             fully_scanned_height,
-            None, // TODO: Deal with scan progress (I dont believe thats actually a hard requirement)
+            scan_progress,
             next_sapling_subtree_index,
             #[cfg(feature = "orchard")]
             next_orchard_subtree_index,

@@ -21,9 +21,7 @@ use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use zcash_client_backend::{
     data_api::{
-        scanning::{ScanPriority, ScanRange},
-        Account as _, AccountSource, InputSource, SentTransaction, SentTransactionOutput,
-        TransactionStatus, WalletRead,
+        scanning::{ScanPriority, ScanRange}, Account as _, AccountSource, InputSource, Ratio, SentTransaction, SentTransactionOutput, TransactionStatus, WalletRead
     },
     wallet::{NoteId, WalletSaplingOutput},
 };
@@ -577,5 +575,24 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
     fn get_sent_notes(&self) -> &SentNoteTable {
         &self.sent_notes
+    }
+
+    pub fn sapling_scan_progress(
+        &self,
+        birthday_height: BlockHeight,
+        fully_scanned_height: BlockHeight,
+        chain_tip_height: BlockHeight,
+    ) -> Result<Option<Ratio<u64>>, Error> {
+        Ok(None)
+    }
+
+    #[cfg(feature = "orchard")]
+    pub fn orchard_scan_progress(
+        &self,
+        birthday_height: BlockHeight,
+        fully_scanned_height: BlockHeight,
+        chain_tip_height: BlockHeight,
+    ) -> Result<Option<Ratio<u64>>, Error> {
+        Ok(None)
     }
 }
