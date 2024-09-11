@@ -308,6 +308,24 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> InputSource for 
         wallet::transparent::get_wallet_transparent_output(self.conn.borrow(), outpoint, false)
     }
 
+    /// Fetches the transparent output corresponding to the provided `outpoint`.
+    /// Allows selecting unspendable outputs for testing purposes.
+    ///
+    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
+    /// spendable as of the chain tip height.
+    #[cfg(all(feature = "test-dependencies", feature = "transparent-inputs"))]
+    fn get_all_unspent_transparent_output(
+        &self,
+        outpoint: &OutPoint,
+        allow_unspendable: bool,
+    ) -> Result<Option<WalletTransparentOutput>, Self::Error> {
+        wallet::transparent::get_wallet_transparent_output(
+            self.conn.borrow(),
+            outpoint,
+            allow_unspendable,
+        )
+    }
+
     #[cfg(feature = "transparent-inputs")]
     fn get_spendable_transparent_outputs(
         &self,
@@ -322,6 +340,43 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> InputSource for 
             target_height,
             min_confirmations,
         )
+    }
+
+    /// Return all the notes that have been received by the wallet
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_notes(
+        &self,
+        protocol: ShieldedProtocol,
+    ) -> Result<Vec<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
+        use wallet::common::per_protocol_names;
+
+        let (table_prefix, index_col, _) = per_protocol_names(protocol);
+        let mut stmt_received_notes = self.conn.borrow().prepare(&format!(
+            "SELECT txid, {index_col}
+                 FROM {table_prefix}_received_notes rn
+                 INNER JOIN transactions ON transactions.id_tx = rn.tx
+                 AND transactions.block IS NOT NULL
+                 AND recipient_key_scope IS NOT NULL
+                 AND nf IS NOT NULL
+                 AND commitment_tree_position IS NOT NULL"
+        ))?;
+
+        let result = stmt_received_notes
+            .query([])
+            .unwrap()
+            .mapped(|row| {
+                let txid: [u8; 32] = row.get(0)?;
+                let output_index: u32 = row.get(1)?;
+                let note = self
+                    .get_spendable_note(&TxId::from_bytes(txid), protocol, output_index)
+                    .unwrap()
+                    .unwrap();
+                Ok(note)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(SqliteClientError::from)?;
+
+        Ok(result)
     }
 }
 
@@ -643,6 +698,52 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> WalletRead for W
             .mapped(|row| Ok(NoteId::new(*txid, protocol, row.get(0)?)))
             .collect::<Result<Vec<_>, _>>()
             .map_err(SqliteClientError::from)
+    }
+
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_confirmed_sends(
+        &self,
+        txid: &TxId,
+    ) -> Result<Vec<(u64, Option<String>, Option<String>, Option<u32>)>, Self::Error> {
+        let mut stmt_sent = self
+            .conn.borrow()
+            .prepare(
+                "SELECT value, to_address, ephemeral_addresses.address, ephemeral_addresses.address_index
+                 FROM sent_notes
+                 JOIN transactions ON transactions.id_tx = sent_notes.tx
+                 LEFT JOIN ephemeral_addresses ON ephemeral_addresses.used_in_tx = sent_notes.tx
+                 WHERE transactions.txid = ?
+                 ORDER BY value",
+            )
+            .unwrap();
+
+        stmt_sent
+            .query(rusqlite::params![txid.as_ref()])
+            .unwrap()
+            .mapped(|row| {
+                let v: u32 = row.get(0)?;
+                let to_address: Option<String> = row.get(1)?;
+                let ephemeral_address: Option<String> = row.get(2)?;
+                let address_index: Option<u32> = row.get(3)?;
+                Ok((u64::from(v), to_address, ephemeral_address, address_index))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(SqliteClientError::from)
+    }
+
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_checkpoint_history(
+        &self,
+    ) -> Result<
+        Vec<(
+            BlockHeight,
+            ShieldedProtocol,
+            Option<incrementalmerkletree::Position>,
+        )>,
+        Self::Error,
+    > {
+        use wallet::testing::get_checkpoint_history;
+        get_checkpoint_history(self.conn.borrow())
     }
 }
 
