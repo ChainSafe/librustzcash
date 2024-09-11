@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::sync::Arc;
 
 use incrementalmerkletree::{Address, Level, Position};
 use serde::de::SeqAccess;
-use serde::ser::{self, SerializeSeq};
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use serde_with::serde_as;
@@ -16,9 +16,9 @@ use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, TreeState};
 use shardtree::{store::ShardStore, LocatedPrunableTree, Node, PrunableTree};
 use shardtree::{RetentionFlags, ShardTree};
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
-use crate::{ByteArray, ToArray, TryByteArray, TryFromArray};
+use crate::{ByteArray, ToArray, TryFromArray};
 
 use super::TreeNode;
 
@@ -245,7 +245,7 @@ impl<H: ToArray<u8, N>, const N: usize> SerializeAs<PrunableTree<H>> for Prunabl
         let mut state = serializer.serialize_seq(Some(1 + elems.len()))?;
         state.serialize_element(&SER_V1)?;
 
-        for (i, element) in elems.into_iter().rev().enumerate() {
+        for element in elems.into_iter().rev() {
             state.serialize_element(&element)?;
         }
 
@@ -328,9 +328,9 @@ impl<'de, H: TryFromArray<u8, N> + Debug, const N: usize> DeserializeAs<'de, Pru
 
                 // After processing all nodes, there should be exactly one element left in the stack (the root)
                 if stack.len() == 1 {
-                    return Ok(stack.pop().unwrap());
+                    Ok(stack.pop().unwrap())
                 } else {
-                    return Err(serde::de::Error::custom("Invalid data: Unbalanced tree"));
+                    Err(serde::de::Error::custom("Invalid data: Unbalanced tree"))
                 }
             }
         }
