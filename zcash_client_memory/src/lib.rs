@@ -215,6 +215,26 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             && !exclude.contains(&note.note_id()))
     }
 
+    /// To be pending a note must be:
+    /// - ?
+    pub(crate) fn note_is_pending(
+        &self,
+        note: &ReceivedNote,
+        min_confirmations: u32,
+    ) -> Result<bool, Error> {
+        if let (Some(summary_height), Some(received_height)) = (
+            self.summary_height(min_confirmations)?,
+            self.tx_table
+                .get(&note.txid())
+                .ok_or_else(|| Error::TransactionNotFound(note.txid()))?
+                .mined_height(),
+        ) {
+            Ok(received_height > summary_height)
+        } else {
+            Ok(true) // no summary height or note not mined means it's pending
+        }
+    }
+
     pub fn summary_height(&self, min_confirmations: u32) -> Result<Option<BlockHeight>, Error> {
         let chain_tip_height = match self.chain_height()? {
             Some(height) => height,

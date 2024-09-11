@@ -13,8 +13,7 @@ use zip32::fingerprint::SeedFingerprint;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, SeedRelevance,
-        TransactionDataRequest, TransactionStatus,
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, SeedRelevance, TransactionDataRequest, TransactionStatus
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     wallet::NoteId,
@@ -25,9 +24,7 @@ use zcash_primitives::{
     transaction::{Transaction, TransactionData, TxId},
 };
 use zcash_protocol::{
-    consensus::{self, BranchId},
-    memo::Memo,
-    PoolType, ShieldedProtocol,
+    consensus::{self, BranchId}, memo::Memo, value::BalanceError, PoolType, ShieldedProtocol
 };
 
 use zcash_client_backend::data_api::{
@@ -41,7 +38,7 @@ use {
 };
 
 use super::{Account, AccountId, MemoryWalletDb};
-use crate::{error::Error, MemoryWalletBlock};
+use crate::{account, error::Error, MemoryWalletBlock};
 
 impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     type Error = Error;
@@ -241,32 +238,32 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             // TODO: We need to receiving transaction to be mined
             // TODO: We require a witness in the shard tree to spend the note
 
+            let account_id = note.account_id();
+            // if this is the first note for this account add a new balance record
+            if let Entry::Vacant(entry) = account_balances.entry(account_id) {
+                entry.insert(AccountBalance::ZERO);
+            }
+            let account_balance = account_balances.get_mut(&account_id).expect("Account balance should exist");
+
+            // Given a note update the balance for the account
+            // This includes determining if it is change, spendable, etc
+            let update_balance_with_note = |b: &mut Balance| -> Result<(), Error> {
+                match (self.note_is_pending(note, min_confirmations)?, note.is_change) {
+                    (true, true) => b.add_pending_change_value(note.note.value()),
+                    (true, false) => b.add_pending_spendable_value(note.note.value()),
+                    (false, _) => b.add_spendable_value(note.note.value()),
+                }?;
+                Ok(())
+            };
+
             match note.pool() {
                 PoolType::SAPLING => {
-                    let account_id = note.account_id();
-                    match account_balances.entry(account_id) {
-                        Entry::Occupied(mut entry) => {
-                            entry.get_mut().with_sapling_balance_mut(|b| {
-                                b.add_spendable_value(note.note.value())
-                            })?;
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(AccountBalance::ZERO);
-                        }
-                    };
+                    account_balance
+                        .with_sapling_balance_mut(update_balance_with_note)?;
                 }
                 PoolType::ORCHARD => {
-                    let account_id = note.account_id();
-                    match account_balances.entry(account_id) {
-                        Entry::Occupied(mut entry) => {
-                            entry.get_mut().with_orchard_balance_mut(|b| {
-                                b.add_spendable_value(note.note.value())
-                            })?;
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(AccountBalance::ZERO);
-                        }
-                    };
+                    account_balance
+                        .with_orchard_balance_mut(update_balance_with_note)?;
                 }
                 _ => unimplemented!("Unknown pool type"),
             }
@@ -656,26 +653,33 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     #[cfg(any(test, feature = "test-dependencies"))]
     fn get_tx_history(
         &self,
-    ) -> Result<Vec<zcash_client_backend::data_api::testing::TransactionSummary<Self::AccountId>>, Self::Error> {
+    ) -> Result<
+        Vec<zcash_client_backend::data_api::testing::TransactionSummary<Self::AccountId>>,
+        Self::Error,
+    > {
         // TODO: This is only looking at sent notes, we need to look at received notes as well
         // TODO: Need to actually implement a bunch of these fields
-        Ok(self.sent_notes.iter().map(|(note_id, note)| {
-            zcash_client_backend::data_api::testing::TransactionSummary::new(
-                note.from_account_id, // account_id
-                *note_id.txid(), // txid
-                None, // expiry_height
-                None, // mined_height
-                0.try_into().unwrap(),    // account_value_delta
-                None, // fee_paid
-                0, // spent_note_count
-                false, // has_change
-                0, // sent_note_count
-                0, // received_note_count
-                0, // memo_count
-                false, // expired_unmined
-                false, // is_shielding
-            )
-        }).collect::<Vec<_>>())
+        Ok(self
+            .sent_notes
+            .iter()
+            .map(|(note_id, note)| {
+                zcash_client_backend::data_api::testing::TransactionSummary::new(
+                    note.from_account_id,  // account_id
+                    *note_id.txid(),       // txid
+                    None,                  // expiry_height
+                    None,                  // mined_height
+                    0.try_into().unwrap(), // account_value_delta
+                    None,                  // fee_paid
+                    0,                     // spent_note_count
+                    false,                 // has_change
+                    0,                     // sent_note_count
+                    0,                     // received_note_count
+                    0,                     // memo_count
+                    false,                 // expired_unmined
+                    false,                 // is_shielding
+                )
+            })
+            .collect::<Vec<_>>())
     }
 }
 
