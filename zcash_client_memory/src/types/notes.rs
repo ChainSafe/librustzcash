@@ -47,6 +47,7 @@ impl ReceievdNoteSpends {
 /// TODO: Instead of Vec, perhaps we should identify by some unique ID
 pub(crate) struct ReceivedNoteTable(pub Vec<ReceivedNote>);
 
+#[derive(Debug, Clone)]
 pub(crate) struct ReceivedNote {
     // Uniquely identifies this note
     pub(crate) note_id: NoteId,
@@ -159,6 +160,19 @@ impl ReceivedNote {
             commitment_tree_position: Some(output.note_commitment_tree_position()),
             recipient_key_scope: output.recipient_key_scope(),
         }
+    }
+}
+
+impl Into<zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>> for ReceivedNote {
+    fn into(self) -> zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note> {
+        zcash_client_backend::wallet::ReceivedNote::from_parts(
+            self.note_id,
+            self.txid,
+            self.output_index.try_into().unwrap(),
+            self.note,
+            self.recipient_key_scope.unwrap(),
+            self.commitment_tree_position.unwrap(),
+        )
     }
 }
 
@@ -275,28 +289,34 @@ impl SentNoteTable {
         tx: &SentTransaction<AccountId>,
         output: &SentTransactionOutput<AccountId>,
     ) {
-        let protocol = match output.recipient() {
-            Recipient::External(_, PoolType::Shielded(protocol)) => protocol.clone(),
-            Recipient::External(_, PoolType::Transparent)
-            | Recipient::EphemeralTransparent { .. } => {
-                unimplemented!("Transparent transfers not yet supported")
+        let pool_type = match output.recipient() {
+            Recipient::External(_, pool_type) => pool_type.clone(),
+            Recipient::EphemeralTransparent { .. } => {
+                PoolType::Transparent
             }
-            Recipient::InternalAccount { note, .. } => note.protocol(),
+            Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
         };
-        let note_id = NoteId::new(
-            tx.tx().txid(),
-            protocol,
-            output.output_index().try_into().unwrap(),
-        );
-        self.0.insert(
-            note_id,
-            SentNote {
-                from_account_id: tx.account_id().clone(),
-                to: output.recipient().clone(),
-                value: output.value(),
-                memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+        match pool_type {
+            PoolType::Transparent => {
+                tracing::warn!("Transparent protocols not yet supported");
             },
-        );
+            PoolType::Shielded(protocol) => {
+                let note_id = NoteId::new(
+                    tx.tx().txid(),
+                    protocol,
+                    output.output_index().try_into().unwrap(),
+                );
+                self.0.insert(
+                    note_id,
+                    SentNote {
+                        from_account_id: tx.account_id().clone(),
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                    },
+                );
+            }
+        }
     }
 
     pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {

@@ -1,4 +1,5 @@
 use zcash_client_backend::data_api::{InputSource, SpendableNotes, WalletRead};
+use zcash_client_backend::wallet::{Note, ReceivedNote};
 use zcash_protocol::{consensus, value::Zatoshis};
 
 use crate::{error::Error, to_spendable_notes, AccountId, MemoryWalletDb, NoteId};
@@ -93,5 +94,19 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             .collect();
 
         Ok(to_spendable_notes(&selection)?)
+    }
+
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_notes(
+        &self,
+        protocol: zcash_protocol::ShieldedProtocol,
+    ) -> Result<Vec<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
+        Ok(self
+            .received_notes
+            .iter()
+            .filter(|rn| rn.note.protocol() == protocol)
+            .cloned()
+            .map(Into::into)
+            .collect())
     }
 }
