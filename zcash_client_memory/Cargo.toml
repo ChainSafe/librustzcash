@@ -57,6 +57,10 @@ serde_with = "3.9.0"
 # - Test dependencies
 proptest = { workspace = true, optional = true }
 ciborium = "0.2.2"
+ciborium-io = {version = "0.2.2", features = ["alloc", "std"] }
+serde_path_to_error = "0.1.16"
+serde_json.workspace = true
+postcard = { version = "1.0.10", features = ["alloc"] }
 
 [dev-dependencies]
 proptest.workspace = true

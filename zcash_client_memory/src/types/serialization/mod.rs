@@ -85,7 +85,7 @@ mod array {
     }
 
     #[serde_as]
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     #[serde(transparent)]
     /// A wrapper for serializing and deserializing arrays as fixed byte sequences.
     pub struct ByteArray<const N: usize>(#[serde_as(as = "Bytes")] pub [u8; N]);
