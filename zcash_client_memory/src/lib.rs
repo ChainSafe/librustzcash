@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use incrementalmerkletree::{Address, Position};
+use incrementalmerkletree::{Address, Marking, Position, Retention};
 use scanning::ScanQueue;
 
 use shardtree::{
@@ -9,8 +9,9 @@ use shardtree::{
 use std::{
     collections::{hash_map::Entry, BTreeMap, BTreeSet},
     num::NonZeroU32,
-    ops::{Range, RangeInclusive},
+    ops::{Add, Range, RangeInclusive},
 };
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
     ShieldedProtocol,
@@ -22,8 +23,8 @@ use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_client_backend::{
     data_api::{
         scanning::{ScanPriority, ScanRange},
-        Account as _, AccountSource, InputSource, Ratio, SentTransaction, SentTransactionOutput,
-        TransactionStatus, WalletRead,
+        Account as _, AccountBirthday, AccountPurpose, AccountSource, InputSource, Ratio,
+        SentTransaction, SentTransactionOutput, TransactionStatus, WalletRead,
     },
     wallet::{NoteId, WalletSaplingOutput},
 };
@@ -110,6 +111,90 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             received_note_spends: ReceievdNoteSpends::new(),
             scan_queue: ScanQueue::new(),
         }
+    }
+
+    pub(crate) fn add_account(
+        &mut self,
+        kind: AccountSource,
+        viewing_key: UnifiedFullViewingKey,
+        birthday: AccountBirthday,
+        purpose: AccountPurpose,
+    ) -> Result<(AccountId, Account), Error> {
+        let (id, account) =
+            self.accounts
+                .new_account(kind, viewing_key.to_owned(), birthday.clone(), purpose)?;
+
+        // If a birthday frontier is available, insert it into the note commitment tree. If the
+        // birthday frontier is the empty frontier, we don't need to do anything.
+        if let Some(frontier) = birthday.sapling_frontier().value() {
+            tracing::debug!("Inserting Sapling frontier into ShardTree: {:?}", frontier);
+            self.sapling_tree.insert_frontier_nodes(
+                frontier.clone(),
+                Retention::Checkpoint {
+                    // This subtraction is safe, because all leaves in the tree appear in blocks, and
+                    // the invariant that birthday.height() always corresponds to the block for which
+                    // `frontier` is the tree state at the start of the block. Together, this means
+                    // there exists a prior block for which frontier is the tree state at the end of
+                    // the block.
+                    id: birthday.height() - 1,
+                    marking: Marking::Reference,
+                },
+            )?;
+        }
+
+        #[cfg(feature = "orchard")]
+        if let Some(frontier) = birthday.orchard_frontier().value() {
+            tracing::debug!("Inserting Orchard frontier into ShardTree: {:?}", frontier);
+            self.orchard_tree.insert_frontier_nodes(
+                frontier.clone(),
+                Retention::Checkpoint {
+                    // This subtraction is safe, because all leaves in the tree appear in blocks, and
+                    // the invariant that birthday.height() always corresponds to the block for which
+                    // `frontier` is the tree state at the start of the block. Together, this means
+                    // there exists a prior block for which frontier is the tree state at the end of
+                    // the block.
+                    id: birthday.height() - 1,
+                    marking: Marking::Reference,
+                },
+            )?;
+        }
+
+        // The ignored range always starts at Sapling activation
+        let sapling_activation_height = self.params
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("Sapling activation height must be available.");
+
+        // Add the ignored range up to the birthday height.
+        if sapling_activation_height < birthday.height() {
+            let ignored_range = sapling_activation_height..birthday.height();
+            self.scan_queue.replace_queue_entries(
+                &ignored_range,
+                Some(ScanRange::from_parts(
+                    ignored_range.clone(),
+                    ScanPriority::Ignored,
+                ))
+                .into_iter(),
+                false,
+            )?;
+        };
+
+        // Rewrite the scan ranges from the birthday height up to the chain tip so that we'll ensure we
+        // re-scan to find any notes that might belong to the newly added account.
+        if let Some(t) = self.chain_height()? {
+            let rescan_range = birthday.height()..(t + 1);
+
+            self.scan_queue.replace_queue_entries(
+                &rescan_range,
+                Some(ScanRange::from_parts(
+                    rescan_range.clone(),
+                    ScanPriority::Historic,
+                ))
+                .into_iter(),
+                true, // force rescan
+            )?;
+        }
+
+        Ok((id, account))
     }
 
     pub(crate) fn get_received_notes(&self) -> &ReceivedNoteTable {
@@ -202,14 +287,16 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             .get(&note.txid())
             .ok_or_else(|| Error::TransactionNotFound(note.txid()))?;
 
+        let unscanned_ranges = self.unscanned_ranges();
+
         let note_in_unscanned_range =
-            self.unscanned_ranges()
+            unscanned_ranges
                 .iter()
-                .any(|(start, end_exclusive)| {
-                    let in_range = note
-                        .commitment_tree_position
-                        .map_or(false, |pos| pos >= *start && pos < *end_exclusive);
-                    in_range && *end_exclusive > birthday_height && *start <= anchor_height
+                .any(|(start_height, end_height, start, end_exclusive)| {
+                    let in_range = note.commitment_tree_position.map_or(false, |pos| {
+                        pos >= start.unwrap() && pos < end_exclusive.unwrap()
+                    });
+                    in_range && *end_height > birthday_height && *start_height <= anchor_height
                 });
 
         Ok(!self.note_is_spent(note, 0)?
@@ -432,17 +519,40 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         Ok(None)
     }
 
-    /// Get the unscanned ranges from the scan queue and their corresponding subtree positions
+    /// Get the unscanned ranges from the scan queue and their corresponding sapling tree indices
     /// This can be used to determine if a note is in an unscanned range and therefore not spendable
-    pub(crate) fn unscanned_ranges(&self) -> Vec<(BlockHeight, BlockHeight, Position, Position)> {
+    pub(crate) fn unscanned_ranges(
+        &self,
+    ) -> Vec<(BlockHeight, BlockHeight, Option<Position>, Option<Position>)> {
         self.scan_queue
             .iter()
             .filter(|(_, _, priority)| priority > &ScanPriority::Scanned)
             .map(|(start, end, _)| {
-                // lookup the start start and end positions of the subtree corresponding to these heights
-                (*start, *end, )
+                (
+                    *start,
+                    *end,
+                    self.first_subtree_for_height(start)
+                        .map(|a| a.position_range_start()),
+                    self.last_subtree_for_height(end)
+                        .map(|a| a.position_range_end()),
+                )
             })
             .collect()
+    }
+
+    /// Return the address of the last subtree in the sapling tree where note for a give block height was found
+    pub(crate) fn last_subtree_for_height(&self, height: &BlockHeight) -> Option<Address> {
+        self.sapling_tree_shard_end_heights
+            .iter()
+            .filter(|(_, h)| *h == height)
+            .map(|(a, _)| *a)
+            .max()
+    }
+
+    ///  Return the address of the first subtree in the sapling tree where note for a give block height was found
+    pub(crate) fn first_subtree_for_height(&self, height: &BlockHeight) -> Option<Address> {
+        // The first subtree is the last subtree for the previous height
+        self.last_subtree_for_height(&height.saturating_sub(1))
     }
 
     /// Makes the required changes to the scan queue to reflect the completion of a scan

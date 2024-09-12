@@ -53,6 +53,8 @@ impl Accounts {
     }
 
     /// Creates a new account. The account id will be determined by the internal nonce.
+    /// Do not call this directly, use the `Wallet` methods instead.
+    /// Otherwise the scan queue will not be correctly updated
     pub(crate) fn new_account(
         &mut self,
         kind: AccountSource,

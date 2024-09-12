@@ -68,8 +68,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), account_index)?;
             let ufvk = usk.to_unified_full_viewing_key();
 
-            let (id, _account) = Accounts::new_account(
-                &mut self.accounts,
+            let (id, _account) = self.add_account(
                 AccountSource::Derived {
                     seed_fingerprint,
                     account_index,
@@ -630,8 +629,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
         purpose: AccountPurpose,
     ) -> Result<Self::Account, Self::Error> {
         tracing::debug!("import_account_ufvk");
-        let (_id, account) = Accounts::new_account(
-            &mut self.accounts,
+        let (_id, account) = self.add_account(
             AccountSource::Imported { purpose },
             unified_key.to_owned(),
             birthday.clone(),
