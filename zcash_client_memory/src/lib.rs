@@ -182,7 +182,6 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         // re-scan to find any notes that might belong to the newly added account.
         if let Some(t) = self.chain_height()? {
             let rescan_range = birthday.height()..(t + 1);
-
             self.scan_queue.replace_queue_entries(
                 &rescan_range,
                 Some(ScanRange::from_parts(
@@ -661,14 +660,14 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             match pool {
                 ShieldedProtocol::Sapling => Ok(self
                     .sapling_tree_shard_end_heights
-                    .get(&Address::from_parts(0.into(), index))
+                    .get(&Address::from_parts(SAPLING_SHARD_HEIGHT.into(), index))
                     .cloned()),
                 ShieldedProtocol::Orchard => {
                     #[cfg(feature = "orchard")]
                     {
                         Ok(self
                             .orchard_tree_shard_end_heights
-                            .get(&Address::from_parts(0.into(), index))
+                            .get(&Address::from_parts(ORCHARD_SHARD_HEIGHT.into(), index))
                             .cloned())
                     }
                     #[cfg(not(feature = "orchard"))]
