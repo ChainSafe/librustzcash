@@ -293,7 +293,11 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 .iter()
                 .any(|(start_height, end_height, start, end_exclusive)| {
                     let in_range = note.commitment_tree_position.map_or(false, |pos| {
-                        pos >= start.unwrap() && pos < end_exclusive.unwrap()
+                        if let (Some(start), Some(end_exclusive)) = (start, end_exclusive) {
+                            pos >= *start && pos < *end_exclusive
+                        } else {
+                            true
+                        }
                     });
                     in_range && *end_height > birthday_height && *start_height <= anchor_height
                 });
