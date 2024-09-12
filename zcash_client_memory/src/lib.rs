@@ -190,8 +190,8 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub(crate) fn note_is_spendable(
         &self,
         note: &ReceivedNote,
-        birthday_height: zcash_protocol::consensus::BlockHeight,
-        anchor_height: zcash_protocol::consensus::BlockHeight,
+        birthday_height: BlockHeight,
+        anchor_height: BlockHeight,
         exclude: &[<MemoryWalletDb<P> as InputSource>::NoteRef],
     ) -> Result<bool, Error> {
         let note_account = self
@@ -202,9 +202,18 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             .get(&note.txid())
             .ok_or_else(|| Error::TransactionNotFound(note.txid()))?;
 
-        // TODO: Add the unscanned range check
+        let note_in_unscanned_range =
+            self.unscanned_ranges()
+                .iter()
+                .any(|(start, end_exclusive)| {
+                    let in_range = note
+                        .commitment_tree_position
+                        .map_or(false, |pos| pos >= *start && pos < *end_exclusive);
+                    in_range && *end_exclusive > birthday_height && *start <= anchor_height
+                });
 
         Ok(!self.note_is_spent(note, 0)?
+            && !note_in_unscanned_range
             && note.note.value().into_u64() > 5000
             && note_account.ufvk().is_some()
             && note.recipient_key_scope.is_some()
@@ -423,6 +432,19 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         Ok(None)
     }
 
+    /// Get the unscanned ranges from the scan queue and their corresponding subtree positions
+    /// This can be used to determine if a note is in an unscanned range and therefore not spendable
+    pub(crate) fn unscanned_ranges(&self) -> Vec<(BlockHeight, BlockHeight, Position, Position)> {
+        self.scan_queue
+            .iter()
+            .filter(|(_, _, priority)| priority > &ScanPriority::Scanned)
+            .map(|(start, end, _)| {
+                // lookup the start start and end positions of the subtree corresponding to these heights
+                (*start, *end, )
+            })
+            .collect()
+    }
+
     /// Makes the required changes to the scan queue to reflect the completion of a scan
     pub(crate) fn scan_complete(
         &mut self,
@@ -621,13 +643,14 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 });
 
             // Compute the total blocks scanned so far above the starting height
-            let scanned_count = Some(self
-                .blocks
-                .iter()
-                .filter(|(height, _)| height > &birthday_height)
-                .fold(0_u64, |acc, (_, block)| {
-                    acc + block.sapling_output_count.unwrap_or(0) as u64
-                }));
+            let scanned_count = Some(
+                self.blocks
+                    .iter()
+                    .filter(|(height, _)| height > &birthday_height)
+                    .fold(0_u64, |acc, (_, block)| {
+                        acc + block.sapling_output_count.unwrap_or(0) as u64
+                    }),
+            );
 
             // We don't have complete information on how many outputs will exist in the shard at
             // the chain tip without having scanned the chain tip block, so we overestimate by
@@ -650,10 +673,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
             Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
                 |(min_tree_size, max_tree_size)| {
-                    Ratio::new(
-                        scanned_count.unwrap_or(0),
-                        max_tree_size - min_tree_size,
-                    )
+                    Ratio::new(scanned_count.unwrap_or(0), max_tree_size - min_tree_size)
                 },
             ))
         }
@@ -702,13 +722,14 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 });
 
             // Compute the total blocks scanned so far above the starting height
-            let scanned_count = Some(self
-                .blocks
-                .iter()
-                .filter(|(height, _)| height > &birthday_height)
-                .fold(0_u64, |acc, (_, block)| {
-                    acc + block.orchard_action_count.unwrap_or(0) as u64
-                }));
+            let scanned_count = Some(
+                self.blocks
+                    .iter()
+                    .filter(|(height, _)| height > &birthday_height)
+                    .fold(0_u64, |acc, (_, block)| {
+                        acc + block.orchard_action_count.unwrap_or(0) as u64
+                    }),
+            );
 
             // We don't have complete information on how many outputs will exist in the shard at
             // the chain tip without having scanned the chain tip block, so we overestimate by
@@ -731,10 +752,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
             Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
                 |(min_tree_size, max_tree_size)| {
-                    Ratio::new(
-                        scanned_count.unwrap_or(0),
-                        max_tree_size - min_tree_size,
-                    )
+                    Ratio::new(scanned_count.unwrap_or(0), max_tree_size - min_tree_size)
                 },
             ))
         }
