@@ -1046,8 +1046,8 @@ pub fn spend_fails_on_locked_notes<T: ShieldedPoolTester>(
     st.scan_cached_blocks(h43, 1);
 
     // Spendable balance matches total balance at 1 confirmation.
-    assert_eq!(st.get_total_balance(account_id), value);
     assert_eq!(st.get_spendable_balance(account_id, 1), value);
+    assert_eq!(st.get_total_balance(account_id), value);
 
     // Second spend should now succeed
     let amount_sent2 = NonNegativeAmount::const_from_u64(2000);
