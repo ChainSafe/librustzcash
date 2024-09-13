@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use zcash_client_backend::{
     data_api::{
         chain::BlockSource,
-        testing::{DataStoreFactory, NoteCommitments, TestCache},
+        testing::{DataStoreFactory, Reset, TestCache, TestState},
     },
     proto::compact_formats::CompactBlock,
 };
@@ -86,5 +86,17 @@ impl TestCache for MemBlockCache {
     fn insert(&mut self, cb: &CompactBlock) -> Self::InsertResult {
         self.0.insert(cb.height().into(), cb.clone());
         ()
+    }
+}
+
+impl<P> Reset for MemoryWalletDb<P> where P: zcash_primitives::consensus::Parameters + Clone {
+    type Handle = ();
+
+    fn reset<C>(st: &mut TestState<C, Self, LocalNetwork>) -> Self::Handle {
+        let new_wallet = MemoryWalletDb::new(st.wallet().params.clone(), 100);
+        let _ = std::mem::replace(
+            st.wallet_mut(),
+            new_wallet
+        );
     }
 }

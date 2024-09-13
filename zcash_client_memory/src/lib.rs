@@ -415,6 +415,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         new_entries: &[(TxId, u16, Vec<sapling::Nullifier>)],
     ) -> Result<(), Error> {
         for (txid, tx_index, nullifiers) in new_entries {
+            for nf in nullifiers.iter() {
+                self.nullifiers
+                    .insert(block_height, *tx_index as u32, Nullifier::Sapling(*nf));
+            }
             match self.tx_locator.entry((block_height, *tx_index as u32)) {
                 Entry::Occupied(x) => {
                     if txid == x.get() {
@@ -427,10 +431,6 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 Entry::Vacant(entry) => {
                     entry.insert(*txid);
                 }
-            }
-            for nf in nullifiers.iter() {
-                self.nullifiers
-                    .insert(block_height, *tx_index as u32, Nullifier::Sapling(*nf));
             }
         }
         Ok(())
@@ -443,6 +443,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         new_entries: &[(TxId, u16, Vec<orchard::note::Nullifier>)],
     ) -> Result<(), Error> {
         for (txid, tx_index, nullifiers) in new_entries {
+            for nf in nullifiers.iter() {
+                self.nullifiers
+                    .insert(block_height, *tx_index as u32, Nullifier::Orchard(*nf));
+            }
             match self.tx_locator.entry((block_height, *tx_index as u32)) {
                 Entry::Occupied(x) => {
                     if txid == x.get() {
@@ -455,10 +459,6 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 Entry::Vacant(entry) => {
                     entry.insert(*txid);
                 }
-            }
-            for nf in nullifiers.iter() {
-                self.nullifiers
-                    .insert(block_height, *tx_index as u32, Nullifier::Orchard(*nf));
             }
         }
         Ok(())

@@ -206,6 +206,8 @@ impl ReceivedNoteTable {
     }
 
     pub fn insert_received_note(&mut self, note: ReceivedNote) {
+        // ensure note_id is unique. Replace any note with a matching note_id
+        self.0.retain(|n| n.note_id != note.note_id);
         self.0.push(note);
     }
 }

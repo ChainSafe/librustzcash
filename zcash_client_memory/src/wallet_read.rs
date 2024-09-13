@@ -42,7 +42,7 @@ use {
 };
 
 use super::{Account, AccountId, MemoryWalletDb};
-use crate::{account, error::Error, MemoryWalletBlock};
+use crate::{error::Error, MemoryWalletBlock};
 
 impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     type Error = Error;
