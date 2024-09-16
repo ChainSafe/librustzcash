@@ -28,11 +28,11 @@ pub(crate) struct MemoryWalletBlock {
     #[serde_as(as = "Seq<(NoteIdDef, MemoBytesDef)>")]
     pub(crate) _memos: HashMap<NoteId, MemoBytes>,
     pub(crate) sapling_commitment_tree_size: Option<u32>,
-    pub(crate) _sapling_output_count: Option<u32>,
+    pub(crate) sapling_output_count: Option<u32>,
     #[cfg(feature = "orchard")]
     pub(crate) orchard_commitment_tree_size: Option<u32>,
     #[cfg(feature = "orchard")]
-    pub(crate) _orchard_action_count: Option<u32>,
+    pub(crate) orchard_action_count: Option<u32>,
 }
 
 impl PartialEq for MemoryWalletBlock {

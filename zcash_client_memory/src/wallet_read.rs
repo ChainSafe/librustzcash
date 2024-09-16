@@ -13,8 +13,8 @@ use zip32::fingerprint::SeedFingerprint;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, SeedRelevance,
-        TransactionDataRequest, TransactionStatus,
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, Ratio,
+        SeedRelevance, TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     wallet::NoteId,
@@ -238,35 +238,53 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             if self.note_is_spent(note, min_confirmations)? {
                 continue;
             }
-            // TODO: We need to receiving transaction to be mined
-            // TODO: We require a witness in the shard tree to spend the note
+            // don't count notes in unscanned ranges
+            let unscanned_ranges = self.unscanned_ranges();
+            for (_, _, start_position, end_position_exclusive) in unscanned_ranges {
+                if note.commitment_tree_position >= start_position
+                    && note.commitment_tree_position < end_position_exclusive
+                {
+                    continue; // note is in an unscanned range. Skip it
+                }
+            }
+            // don't count notes in unmined transactions or that have expired
+            if let Ok(Some(note_tx)) = self.get_transaction(note.txid) {
+                if note_tx.expiry_height()
+                    < self.summary_height(min_confirmations)?.unwrap_or(0.into())
+                {
+                    continue;
+                }
+            }
+
+            let account_id = note.account_id();
+            // if this is the first note for this account add a new balance record
+            if let Entry::Vacant(entry) = account_balances.entry(account_id) {
+                entry.insert(AccountBalance::ZERO);
+            }
+            let account_balance = account_balances
+                .get_mut(&account_id)
+                .expect("Account balance should exist");
+
+            // Given a note update the balance for the account
+            // This includes determining if it is change, spendable, etc
+            let update_balance_with_note = |b: &mut Balance| -> Result<(), Error> {
+                match (
+                    self.note_is_pending(note, min_confirmations)?,
+                    note.is_change,
+                ) {
+                    (true, true) => b.add_pending_change_value(note.note.value()),
+                    (true, false) => b.add_pending_spendable_value(note.note.value()),
+                    (false, _) => b.add_spendable_value(note.note.value()),
+                }?;
+                Ok(())
+            };
 
             match note.pool() {
                 PoolType::SAPLING => {
-                    let account_id = note.account_id();
-                    match account_balances.entry(account_id) {
-                        Entry::Occupied(mut entry) => {
-                            entry.get_mut().with_sapling_balance_mut(|b| {
-                                b.add_spendable_value(note.note.value())
-                            })?;
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(AccountBalance::ZERO);
-                        }
-                    };
+                    account_balance.with_sapling_balance_mut(update_balance_with_note)?;
                 }
                 PoolType::ORCHARD => {
-                    let account_id = note.account_id();
-                    match account_balances.entry(account_id) {
-                        Entry::Occupied(mut entry) => {
-                            entry.get_mut().with_orchard_balance_mut(|b| {
-                                b.add_spendable_value(note.note.value())
-                            })?;
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(AccountBalance::ZERO);
-                        }
-                    };
+                    account_balance.with_orchard_balance_mut(update_balance_with_note)?;
                 }
                 _ => unimplemented!("Unknown pool type"),
             }
@@ -287,11 +305,31 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .map(|s| s.root_addr().index())
             .unwrap_or(0);
 
+        // Treat Sapling and Orchard outputs as having the same cost to scan.
+        let sapling_scan_progress =
+            self.sapling_scan_progress(&birthday_height, &fully_scanned_height, &chain_tip_height)?;
+        #[cfg(feature = "orchard")]
+        let orchard_scan_progress =
+            self.orchard_scan_progress(&birthday_height, &fully_scanned_height, &chain_tip_height)?;
+        #[cfg(not(feature = "orchard"))]
+        let orchard_scan_progress: Option<Ratio<u64>> = None;
+
+        let scan_progress = sapling_scan_progress
+            .zip(orchard_scan_progress)
+            .map(|(s, o)| {
+                Ratio::new(
+                    s.numerator() + o.numerator(),
+                    s.denominator() + o.denominator(),
+                )
+            })
+            .or(sapling_scan_progress)
+            .or(orchard_scan_progress);
+
         let summary = WalletSummary::new(
             account_balances,
             chain_tip_height,
             fully_scanned_height,
-            None, // TODO: Deal with scan progress (I dont believe thats actually a hard requirement)
+            scan_progress,
             next_sapling_subtree_index,
             #[cfg(feature = "orchard")]
             next_orchard_subtree_index,
@@ -494,9 +532,6 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
 
     fn get_transaction(&self, txid: TxId) -> Result<Option<Transaction>, Self::Error> {
         tracing::debug!("get_transaction: {:?}", txid);
-        let _raw = self.tx_table.get_tx_raw(&txid);
-        let _status = self.tx_table.tx_status(&txid);
-        let _expiry_height = self.tx_table.expiry_height(&txid);
         self.tx_table
             .get(&txid)
             .map(|tx| (tx.status(), tx.expiry_height(), tx.raw()))
@@ -683,6 +718,39 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                 )
             })
             .collect::<Vec<_>>())
+    }
+
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_checkpoint_history(
+        &self,
+    ) -> Result<
+        Vec<(
+            BlockHeight,
+            ShieldedProtocol,
+            Option<incrementalmerkletree::Position>,
+        )>,
+        Self::Error,
+    > {
+        let mut checkpoints = Vec::new();
+
+        self.sapling_tree
+            .store()
+            .for_each_checkpoint(usize::MAX, |id, cp| {
+                checkpoints.push((id.clone(), ShieldedProtocol::Sapling, cp.position()));
+                Ok(())
+            })?;
+
+        #[cfg(feature = "orchard")]
+        self.orchard_tree
+            .store()
+            .for_each_checkpoint(usize::MAX, |id, cp| {
+                checkpoints.push((id.clone(), ShieldedProtocol::Orchard, cp.position()));
+                Ok(())
+            })?;
+
+        checkpoints.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+
+        Ok(checkpoints)
     }
 }
 

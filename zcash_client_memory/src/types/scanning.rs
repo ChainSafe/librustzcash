@@ -45,7 +45,7 @@ impl ScanQueue {
             })
             .collect()
     }
-    fn _insert_queue_entries<'a>(
+    fn insert_queue_entries<'a>(
         &mut self,
         entries: impl Iterator<Item = &'a ScanRange>,
     ) -> Result<(), Error> {
@@ -135,7 +135,7 @@ impl ScanQueue {
                 !to_delete_ends.contains(block_range_end)
             });
             let scan_ranges = tree.into_vec();
-            self._insert_queue_entries(scan_ranges.iter())?;
+            self.insert_queue_entries(scan_ranges.iter())?;
         }
         Ok(())
     }

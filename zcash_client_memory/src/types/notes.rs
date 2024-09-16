@@ -54,7 +54,7 @@ impl ReceievdNoteSpends {
 pub(crate) struct ReceivedNoteTable(pub Vec<ReceivedNote>);
 
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct ReceivedNote {
     // Uniquely identifies this note
     #[serde_as(as = "NoteIdDef")]
@@ -68,7 +68,7 @@ pub(crate) struct ReceivedNote {
     #[serde_as(as = "NoteDef")]
     pub(crate) note: Note,
     pub(crate) nf: Option<Nullifier>,
-    pub(crate) _is_change: bool,
+    pub(crate) is_change: bool,
     #[serde_as(as = "MemoBytesDef")]
     pub(crate) memo: Memo,
     #[serde_as(as = "Option<FromInto<u64>>")]
@@ -112,7 +112,7 @@ impl ReceivedNote {
                 account_id: *receiving_account,
                 note: Note::Sapling(note.clone()),
                 nf: None,
-                _is_change: true,
+                is_change: true,
                 memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
                 commitment_tree_position: None,
                 recipient_key_scope: Some(Scope::Internal),
@@ -129,7 +129,7 @@ impl ReceivedNote {
                 account_id: *receiving_account,
                 note: Note::Orchard(*note),
                 nf: None,
-                _is_change: true,
+                is_change: true,
                 memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
                 commitment_tree_position: None,
                 recipient_key_scope: Some(Scope::Internal),
@@ -150,7 +150,7 @@ impl ReceivedNote {
             account_id: *output.account_id(),
             note: Note::Sapling(output.note().clone()),
             nf: output.nf().map(|nf| Nullifier::Sapling(*nf)),
-            _is_change: output.is_change(),
+            is_change: output.is_change(),
             memo: Memo::Empty,
             commitment_tree_position: Some(output.note_commitment_tree_position()),
             recipient_key_scope: output.recipient_key_scope(),
@@ -168,11 +168,26 @@ impl ReceivedNote {
             account_id: *output.account_id(),
             note: Note::Orchard(*output.note()),
             nf: output.nf().map(|nf| Nullifier::Orchard(*nf)),
-            _is_change: output.is_change(),
+            is_change: output.is_change(),
             memo: Memo::Empty,
             commitment_tree_position: Some(output.note_commitment_tree_position()),
             recipient_key_scope: output.recipient_key_scope(),
         }
+    }
+}
+
+impl From<ReceivedNote>
+    for zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>
+{
+    fn from(value: ReceivedNote) -> Self {
+        zcash_client_backend::wallet::ReceivedNote::from_parts(
+            value.note_id,
+            value.txid,
+            value.output_index.try_into().unwrap(),
+            value.note,
+            value.recipient_key_scope.unwrap(),
+            value.commitment_tree_position.unwrap(),
+        )
     }
 }
 
@@ -206,6 +221,8 @@ impl ReceivedNoteTable {
     }
 
     pub fn insert_received_note(&mut self, note: ReceivedNote) {
+        // ensure note_id is unique. Replace any note with a matching note_id
+        self.0.retain(|n| n.note_id != note.note_id);
         self.0.push(note);
     }
 }
@@ -234,41 +251,49 @@ impl DerefMut for ReceivedNoteTable {
 }
 
 pub(crate) fn to_spendable_notes(
-    received_notes: &[&ReceivedNote],
+    sapling_received_notes: &[&ReceivedNote],
+    #[cfg(feature = "orchard")] orchard_received_notes: &[&ReceivedNote],
 ) -> Result<SpendableNotes<NoteId>, Error> {
-    let mut sapling = Vec::new();
-    #[cfg(feature = "orchard")]
-    let mut orchard = Vec::new();
+    let sapling = sapling_received_notes
+        .iter()
+        .map(|note| {
+            if let Note::Sapling(inner) = &note.note {
+                Ok(zcash_client_backend::wallet::ReceivedNote::from_parts(
+                    note.note_id,
+                    note.txid(),
+                    note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
+                    inner.clone(),
+                    note.recipient_key_scope
+                        .ok_or(Error::Missing("recipient key scope".into()))?,
+                    note.commitment_tree_position
+                        .ok_or(Error::Missing("commitment tree position".into()))?,
+                ))
+            } else {
+                Err(Error::Other("Note is not a sapling note".to_owned()))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-    for note in received_notes {
-        match note.note.clone() {
-            Note::Sapling(inner) => {
-                sapling.push(zcash_client_backend::wallet::ReceivedNote::from_parts(
+    #[cfg(feature = "orchard")]
+    let orchard = orchard_received_notes
+        .iter()
+        .map(|note| {
+            if let Note::Orchard(inner) = &note.note {
+                Ok(zcash_client_backend::wallet::ReceivedNote::from_parts(
                     note.note_id,
                     note.txid(),
                     note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
-                    inner,
+                    inner.clone(),
                     note.recipient_key_scope
                         .ok_or(Error::Missing("recipient key scope".into()))?,
                     note.commitment_tree_position
                         .ok_or(Error::Missing("commitment tree position".into()))?,
-                ));
+                ))
+            } else {
+                Err(Error::Other("Note is not an orchard note".to_owned()))
             }
-            #[cfg(feature = "orchard")]
-            Note::Orchard(inner) => {
-                orchard.push(zcash_client_backend::wallet::ReceivedNote::from_parts(
-                    note.note_id,
-                    note.txid(),
-                    note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
-                    inner,
-                    note.recipient_key_scope
-                        .ok_or(Error::Missing("recipient key scope".into()))?,
-                    note.commitment_tree_position
-                        .ok_or(Error::Missing("commitment tree position".into()))?,
-                ));
-            }
-        }
-    }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(SpendableNotes::new(
         sapling,
@@ -293,28 +318,32 @@ impl SentNoteTable {
         tx: &SentTransaction<AccountId>,
         output: &SentTransactionOutput<AccountId>,
     ) {
-        let protocol = match output.recipient() {
-            Recipient::External(_, PoolType::Shielded(protocol)) => *protocol,
-            Recipient::External(_, PoolType::Transparent)
-            | Recipient::EphemeralTransparent { .. } => {
-                unimplemented!("Transparent transfers not yet supported")
-            }
-            Recipient::InternalAccount { note, .. } => note.protocol(),
+        let pool_type = match output.recipient() {
+            Recipient::External(_, pool_type) => *pool_type,
+            Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
+            Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
         };
-        let note_id = NoteId::new(
-            tx.tx().txid(),
-            protocol,
-            output.output_index().try_into().unwrap(),
-        );
-        self.0.insert(
-            note_id,
-            SentNote {
-                from_account_id: *tx.account_id(),
-                to: output.recipient().clone(),
-                value: output.value(),
-                memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
-            },
-        );
+        match pool_type {
+            PoolType::Transparent => {
+                tracing::warn!("Transparent protocols not yet supported");
+            }
+            PoolType::Shielded(protocol) => {
+                let note_id = NoteId::new(
+                    tx.tx().txid(),
+                    protocol,
+                    output.output_index().try_into().unwrap(),
+                );
+                self.0.insert(
+                    note_id,
+                    SentNote {
+                        from_account_id: *tx.account_id(),
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                    },
+                );
+            }
+        }
     }
 
     pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {

@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use incrementalmerkletree::{Address, Position};
+use incrementalmerkletree::{Address, Marking, Position, Retention};
 use scanning::ScanQueue;
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use std::{
     num::NonZeroU32,
     ops::{Range, RangeInclusive},
 };
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
     ShieldedProtocol,
@@ -26,7 +27,8 @@ use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
     data_api::{
         scanning::{ScanPriority, ScanRange},
-        Account as _, AccountSource, InputSource, TransactionStatus, WalletRead,
+        Account as _, AccountBirthday, AccountPurpose, AccountSource, InputSource, Ratio,
+        TransactionStatus, WalletRead,
     },
     wallet::{NoteId, WalletSaplingOutput},
 };
@@ -124,6 +126,90 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         &self.params
     }
 
+    pub(crate) fn add_account(
+        &mut self,
+        kind: AccountSource,
+        viewing_key: UnifiedFullViewingKey,
+        birthday: AccountBirthday,
+        purpose: AccountPurpose,
+    ) -> Result<(AccountId, Account), Error> {
+        let (id, account) =
+            self.accounts
+                .new_account(kind, viewing_key.to_owned(), birthday.clone(), purpose)?;
+
+        // If a birthday frontier is available, insert it into the note commitment tree. If the
+        // birthday frontier is the empty frontier, we don't need to do anything.
+        if let Some(frontier) = birthday.sapling_frontier().value() {
+            tracing::debug!("Inserting Sapling frontier into ShardTree: {:?}", frontier);
+            self.sapling_tree.insert_frontier_nodes(
+                frontier.clone(),
+                Retention::Checkpoint {
+                    // This subtraction is safe, because all leaves in the tree appear in blocks, and
+                    // the invariant that birthday.height() always corresponds to the block for which
+                    // `frontier` is the tree state at the start of the block. Together, this means
+                    // there exists a prior block for which frontier is the tree state at the end of
+                    // the block.
+                    id: birthday.height() - 1,
+                    marking: Marking::Reference,
+                },
+            )?;
+        }
+
+        #[cfg(feature = "orchard")]
+        if let Some(frontier) = birthday.orchard_frontier().value() {
+            tracing::debug!("Inserting Orchard frontier into ShardTree: {:?}", frontier);
+            self.orchard_tree.insert_frontier_nodes(
+                frontier.clone(),
+                Retention::Checkpoint {
+                    // This subtraction is safe, because all leaves in the tree appear in blocks, and
+                    // the invariant that birthday.height() always corresponds to the block for which
+                    // `frontier` is the tree state at the start of the block. Together, this means
+                    // there exists a prior block for which frontier is the tree state at the end of
+                    // the block.
+                    id: birthday.height() - 1,
+                    marking: Marking::Reference,
+                },
+            )?;
+        }
+
+        // The ignored range always starts at Sapling activation
+        let sapling_activation_height = self
+            .params
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("Sapling activation height must be available.");
+
+        // Add the ignored range up to the birthday height.
+        if sapling_activation_height < birthday.height() {
+            let ignored_range = sapling_activation_height..birthday.height();
+            self.scan_queue.replace_queue_entries(
+                &ignored_range,
+                Some(ScanRange::from_parts(
+                    ignored_range.clone(),
+                    ScanPriority::Ignored,
+                ))
+                .into_iter(),
+                false,
+            )?;
+        };
+
+        // Rewrite the scan ranges from the birthday height up to the chain tip so that we'll ensure we
+        // re-scan to find any notes that might belong to the newly added account.
+        if let Some(t) = self.chain_height()? {
+            let rescan_range = birthday.height()..(t + 1);
+            self.scan_queue.replace_queue_entries(
+                &rescan_range,
+                Some(ScanRange::from_parts(
+                    rescan_range.clone(),
+                    ScanPriority::Historic,
+                ))
+                .into_iter(),
+                true, // force rescan
+            )?;
+        }
+
+        Ok((id, account))
+    }
+
     pub(crate) fn get_received_notes(&self) -> &ReceivedNoteTable {
         &self.received_notes
     }
@@ -202,8 +288,8 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub(crate) fn note_is_spendable(
         &self,
         note: &ReceivedNote,
-        _birthday_height: zcash_protocol::consensus::BlockHeight,
-        anchor_height: zcash_protocol::consensus::BlockHeight,
+        birthday_height: BlockHeight,
+        anchor_height: BlockHeight,
         exclude: &[<MemoryWalletDb<P> as InputSource>::NoteRef],
     ) -> Result<bool, Error> {
         let note_account = self
@@ -214,9 +300,24 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             .get(&note.txid())
             .ok_or_else(|| Error::TransactionNotFound(note.txid()))?;
 
-        // TODO: Add the unscanned range check
+        let unscanned_ranges = self.unscanned_ranges();
+
+        let note_in_unscanned_range =
+            unscanned_ranges
+                .iter()
+                .any(|(start_height, end_height, start, end_exclusive)| {
+                    let in_range = note.commitment_tree_position.map_or(false, |pos| {
+                        if let (Some(start), Some(end_exclusive)) = (start, end_exclusive) {
+                            pos >= *start && pos < *end_exclusive
+                        } else {
+                            true
+                        }
+                    });
+                    in_range && *end_height > birthday_height && *start_height <= anchor_height
+                });
 
         Ok(!self.note_is_spent(note, 0)?
+            && !note_in_unscanned_range
             && note.note.value().into_u64() > 5000
             && note_account.ufvk().is_some()
             && note.recipient_key_scope.is_some()
@@ -225,6 +326,26 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             && note_txn.mined_height().is_some()
             && note_txn.mined_height().unwrap() <= anchor_height
             && !exclude.contains(&note.note_id()))
+    }
+
+    /// To be pending a note must be:
+    /// - ?
+    pub(crate) fn note_is_pending(
+        &self,
+        note: &ReceivedNote,
+        min_confirmations: u32,
+    ) -> Result<bool, Error> {
+        if let (Some(summary_height), Some(received_height)) = (
+            self.summary_height(min_confirmations)?,
+            self.tx_table
+                .get(&note.txid())
+                .ok_or_else(|| Error::TransactionNotFound(note.txid()))?
+                .mined_height(),
+        ) {
+            Ok(received_height > summary_height)
+        } else {
+            Ok(true) // no summary height or note not mined means it's pending
+        }
     }
 
     pub fn summary_height(&self, min_confirmations: u32) -> Result<Option<BlockHeight>, Error> {
@@ -308,6 +429,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         new_entries: &[(TxId, u16, Vec<sapling::Nullifier>)],
     ) -> Result<(), Error> {
         for (txid, tx_index, nullifiers) in new_entries {
+            for nf in nullifiers.iter() {
+                self.nullifiers
+                    .insert(block_height, *tx_index as u32, Nullifier::Sapling(*nf));
+            }
             match self.tx_locator.entry((block_height, *tx_index as u32)) {
                 Entry::Occupied(x) => {
                     if txid == x.get() {
@@ -320,10 +445,6 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 Entry::Vacant(entry) => {
                     entry.insert(*txid);
                 }
-            }
-            for nf in nullifiers.iter() {
-                self.nullifiers
-                    .insert(block_height, *tx_index as u32, Nullifier::Sapling(*nf));
             }
         }
         Ok(())
@@ -336,6 +457,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         new_entries: &[(TxId, u16, Vec<orchard::note::Nullifier>)],
     ) -> Result<(), Error> {
         for (txid, tx_index, nullifiers) in new_entries {
+            for nf in nullifiers.iter() {
+                self.nullifiers
+                    .insert(block_height, *tx_index as u32, Nullifier::Orchard(*nf));
+            }
             match self.tx_locator.entry((block_height, *tx_index as u32)) {
                 Entry::Occupied(x) => {
                     if txid == x.get() {
@@ -348,10 +473,6 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 Entry::Vacant(entry) => {
                     entry.insert(*txid);
                 }
-            }
-            for nf in nullifiers.iter() {
-                self.nullifiers
-                    .insert(block_height, *tx_index as u32, Nullifier::Orchard(*nf));
             }
         }
         Ok(())
@@ -413,6 +534,42 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             }
         }
         Ok(None)
+    }
+
+    /// Get the unscanned ranges from the scan queue and their corresponding sapling tree indices
+    /// This can be used to determine if a note is in an unscanned range and therefore not spendable
+    pub(crate) fn unscanned_ranges(
+        &self,
+    ) -> Vec<(BlockHeight, BlockHeight, Option<Position>, Option<Position>)> {
+        self.scan_queue
+            .iter()
+            .filter(|(_, _, priority)| priority > &ScanPriority::Scanned)
+            .map(|(start, end, _)| {
+                (
+                    *start,
+                    *end,
+                    self.first_subtree_for_height(start)
+                        .map(|a| a.position_range_start()),
+                    self.last_subtree_for_height(end)
+                        .map(|a| a.position_range_end()),
+                )
+            })
+            .collect()
+    }
+
+    /// Return the address of the last subtree in the sapling tree where note for a give block height was found
+    pub(crate) fn last_subtree_for_height(&self, height: &BlockHeight) -> Option<Address> {
+        self.sapling_tree_shard_end_heights
+            .iter()
+            .filter(|(_, h)| *h == height)
+            .map(|(a, _)| *a)
+            .max()
+    }
+
+    ///  Return the address of the first subtree in the sapling tree where note for a give block height was found
+    pub(crate) fn first_subtree_for_height(&self, height: &BlockHeight) -> Option<Address> {
+        // The first subtree is the last subtree for the previous height
+        self.last_subtree_for_height(&height.saturating_sub(1))
     }
 
     /// Makes the required changes to the scan queue to reflect the completion of a scan
@@ -521,14 +678,14 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             match pool {
                 ShieldedProtocol::Sapling => Ok(self
                     .sapling_tree_shard_end_heights
-                    .get(&Address::from_parts(0.into(), index))
+                    .get(&Address::from_parts(SAPLING_SHARD_HEIGHT.into(), index))
                     .cloned()),
                 ShieldedProtocol::Orchard => {
                     #[cfg(feature = "orchard")]
                     {
                         Ok(self
                             .orchard_tree_shard_end_heights
-                            .get(&Address::from_parts(0.into(), index))
+                            .get(&Address::from_parts(ORCHARD_SHARD_HEIGHT.into(), index))
                             .cloned())
                     }
                     #[cfg(not(feature = "orchard"))]
@@ -569,6 +726,162 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
     fn get_sent_notes(&self) -> &SentNoteTable {
         &self.sent_notes
+    }
+
+    pub fn sapling_scan_progress(
+        &self,
+        birthday_height: &BlockHeight,
+        fully_scanned_height: &BlockHeight,
+        chain_tip_height: &BlockHeight,
+    ) -> Result<Option<Ratio<u64>>, Error> {
+        if fully_scanned_height == chain_tip_height {
+            let outputs_sum = self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height >= &birthday_height)
+                .fold(0, |sum, (_, block)| {
+                    sum + block.sapling_output_count.unwrap_or(0)
+                });
+            Ok(Some(Ratio::new(outputs_sum as u64, outputs_sum as u64)))
+        } else {
+            // Get the starting note commitment tree size from the wallet birthday, or failing that
+            // from the blocks table.
+            let start_size = self
+                .accounts
+                .iter()
+                .filter_map(|(_, account)| {
+                    if account.birthday().height() == *birthday_height {
+                        Some(account.birthday().sapling_frontier().tree_size())
+                    } else {
+                        None
+                    }
+                })
+                .next()
+                .or_else(|| {
+                    self.blocks
+                        .iter()
+                        .filter(|(height, _)| height <= &birthday_height)
+                        .map(|(_, block)| {
+                            (block.sapling_commitment_tree_size.unwrap_or(0)
+                                - block.sapling_output_count.unwrap_or(0))
+                                as u64
+                        })
+                        .max()
+                });
+
+            // Compute the total blocks scanned so far above the starting height
+            let scanned_count = self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height > &birthday_height)
+                .fold(0_u64, |acc, (_, block)| {
+                    acc + block.sapling_output_count.unwrap_or(0) as u64
+                });
+
+            // We don't have complete information on how many outputs will exist in the shard at
+            // the chain tip without having scanned the chain tip block, so we overestimate by
+            // computing the maximum possible number of notes directly from the shard indices.
+            //
+            // TODO: it would be nice to be able to reliably have the size of the commitment tree
+            // at the chain tip without having to have scanned that block.
+
+            let shard_index_iter = self
+                .sapling_tree_shard_end_heights
+                .iter()
+                .filter(|(_, height)| height > &birthday_height)
+                .map(|(address, _)| address.index());
+
+            let min_idx = shard_index_iter.clone().min().unwrap_or(0);
+            let max_idx = shard_index_iter.max().unwrap_or(0);
+
+            let max_tree_size = Some(min_idx << SAPLING_SHARD_HEIGHT);
+            let min_tree_size = Some((max_idx + 1) << SAPLING_SHARD_HEIGHT);
+
+            Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
+                |(min_tree_size, max_tree_size)| {
+                    Ratio::new(scanned_count, max_tree_size - min_tree_size)
+                },
+            ))
+        }
+    }
+
+    #[cfg(feature = "orchard")]
+    pub fn orchard_scan_progress(
+        &self,
+        birthday_height: &BlockHeight,
+        fully_scanned_height: &BlockHeight,
+        chain_tip_height: &BlockHeight,
+    ) -> Result<Option<Ratio<u64>>, Error> {
+        if fully_scanned_height == chain_tip_height {
+            let outputs_sum = self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height >= &birthday_height)
+                .fold(0, |sum, (_, block)| {
+                    sum + block.orchard_action_count.unwrap_or(0)
+                });
+            Ok(Some(Ratio::new(outputs_sum as u64, outputs_sum as u64)))
+        } else {
+            // Get the starting note commitment tree size from the wallet birthday, or failing that
+            // from the blocks table.
+            let start_size = self
+                .accounts
+                .iter()
+                .filter_map(|(_, account)| {
+                    if account.birthday().height() == *birthday_height {
+                        Some(account.birthday().sapling_frontier().tree_size())
+                    } else {
+                        None
+                    }
+                })
+                .next()
+                .or_else(|| {
+                    self.blocks
+                        .iter()
+                        .filter(|(height, _)| height <= &birthday_height)
+                        .map(|(_, block)| {
+                            (block.orchard_commitment_tree_size.unwrap_or(0)
+                                - block.orchard_action_count.unwrap_or(0))
+                                as u64
+                        })
+                        .max()
+                });
+
+            // Compute the total blocks scanned so far above the starting height
+            let scanned_count = Some(
+                self.blocks
+                    .iter()
+                    .filter(|(height, _)| height > &birthday_height)
+                    .fold(0_u64, |acc, (_, block)| {
+                        acc + block.orchard_action_count.unwrap_or(0) as u64
+                    }),
+            );
+
+            // We don't have complete information on how many outputs will exist in the shard at
+            // the chain tip without having scanned the chain tip block, so we overestimate by
+            // computing the maximum possible number of notes directly from the shard indices.
+            //
+            // TODO: it would be nice to be able to reliably have the size of the commitment tree
+            // at the chain tip without having to have scanned that block.
+
+            let shard_index_iter = self
+                .orchard_tree_shard_end_heights
+                .iter()
+                .filter(|(_, height)| height > &birthday_height)
+                .map(|(address, _)| address.index());
+
+            let min_idx = shard_index_iter.clone().min().unwrap_or(0);
+            let max_idx = shard_index_iter.max().unwrap_or(0);
+
+            let max_tree_size = Some(min_idx << ORCHARD_SHARD_HEIGHT);
+            let min_tree_size = Some((max_idx + 1) << ORCHARD_SHARD_HEIGHT);
+
+            Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
+                |(min_tree_size, max_tree_size)| {
+                    Ratio::new(scanned_count.unwrap_or(0), max_tree_size - min_tree_size)
+                },
+            ))
+        }
     }
 }
 
