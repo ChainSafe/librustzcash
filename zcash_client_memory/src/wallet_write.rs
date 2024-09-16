@@ -389,15 +389,11 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 _transactions: transactions.keys().cloned().collect(),
                 _memos: memos,
                 sapling_commitment_tree_size: Some(block.sapling().final_tree_size()),
-                sapling_output_count: Some(
-                    block.sapling().commitments().len().try_into().unwrap(),
-                ),
+                sapling_output_count: Some(block.sapling().commitments().len().try_into().unwrap()),
                 #[cfg(feature = "orchard")]
                 orchard_commitment_tree_size: Some(block.orchard().final_tree_size()),
                 #[cfg(feature = "orchard")]
-                orchard_action_count: Some(
-                    block.orchard().commitments().len().try_into().unwrap(),
-                ),
+                orchard_action_count: Some(block.orchard().commitments().len().try_into().unwrap()),
             };
 
             // Insert transaction metadata into the transaction table
@@ -660,7 +656,8 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 #[cfg(feature = "orchard")]
                 {
                     for action in bundle.actions() {
-                        match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid()) {
+                        match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid())
+                        {
                             Ok(()) => {}
                             Err(Error::NoteNotFound) => {
                                 // This is expected as some of the actions will be new outputs we don't have notes for

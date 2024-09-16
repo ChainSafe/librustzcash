@@ -89,14 +89,14 @@ impl TestCache for MemBlockCache {
     }
 }
 
-impl<P> Reset for MemoryWalletDb<P> where P: zcash_primitives::consensus::Parameters + Clone {
+impl<P> Reset for MemoryWalletDb<P>
+where
+    P: zcash_primitives::consensus::Parameters + Clone,
+{
     type Handle = ();
 
     fn reset<C>(st: &mut TestState<C, Self, LocalNetwork>) -> Self::Handle {
         let new_wallet = MemoryWalletDb::new(st.wallet().params.clone(), 100);
-        let _ = std::mem::replace(
-            st.wallet_mut(),
-            new_wallet
-        );
+        let _ = std::mem::replace(st.wallet_mut(), new_wallet);
     }
 }

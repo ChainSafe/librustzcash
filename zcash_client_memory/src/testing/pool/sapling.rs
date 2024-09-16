@@ -60,9 +60,8 @@ fn change_note_spends_succeed() {
 
 #[test]
 fn external_address_change_spends_detected_in_restore_from_seed() {
-    testing::pool::external_address_change_spends_detected_in_restore_from_seed::<
-        SaplingPoolTester,
-    >()
+    testing::pool::external_address_change_spends_detected_in_restore_from_seed::<SaplingPoolTester>(
+    )
 }
 
 #[test]

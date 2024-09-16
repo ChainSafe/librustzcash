@@ -1,6 +1,4 @@
 use incrementalmerkletree::Position;
-use sapling::circuit::Spend;
-use zcash_address::unified::Address;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -10,9 +8,7 @@ use std::{
 use zip32::Scope;
 
 use zcash_primitives::transaction::{components::OutPoint, TxId};
-use zcash_protocol::{
-    memo::Memo, value::Zatoshis, PoolType, ShieldedProtocol, ShieldedProtocol::Sapling,
-};
+use zcash_protocol::{memo::Memo, value::Zatoshis, PoolType, ShieldedProtocol::Sapling};
 
 use zcash_client_backend::{
     data_api::{SentTransaction, SentTransactionOutput, SpendableNotes},
@@ -163,8 +159,13 @@ impl ReceivedNote {
     }
 }
 
-impl Into<zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>> for ReceivedNote {
-    fn into(self) -> zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note> {
+impl Into<zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>>
+    for ReceivedNote
+{
+    fn into(
+        self,
+    ) -> zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>
+    {
         zcash_client_backend::wallet::ReceivedNote::from_parts(
             self.note_id,
             self.txid,
@@ -236,41 +237,49 @@ impl DerefMut for ReceivedNoteTable {
 }
 
 pub(crate) fn to_spendable_notes(
-    received_notes: &[&ReceivedNote],
+    sapling_received_notes: &[&ReceivedNote],
+    #[cfg(feature = "orchard")] orchard_received_notes: &[&ReceivedNote],
 ) -> Result<SpendableNotes<NoteId>, Error> {
-    let mut sapling = Vec::new();
-    #[cfg(feature = "orchard")]
-    let mut orchard = Vec::new();
+    let sapling = sapling_received_notes
+        .iter()
+        .map(|note| {
+            if let Note::Sapling(inner) = &note.note {
+                Ok(zcash_client_backend::wallet::ReceivedNote::from_parts(
+                    note.note_id,
+                    note.txid(),
+                    note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
+                    inner.clone(),
+                    note.recipient_key_scope
+                        .ok_or(Error::Missing("recipient key scope".into()))?,
+                    note.commitment_tree_position
+                        .ok_or(Error::Missing("commitment tree position".into()))?,
+                ))
+            } else {
+                Err(Error::Other("Note is not a sapling note".to_owned()))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-    for note in received_notes {
-        match note.note.clone() {
-            Note::Sapling(inner) => {
-                sapling.push(zcash_client_backend::wallet::ReceivedNote::from_parts(
+    #[cfg(feature = "orchard")]
+    let orchard = orchard_received_notes
+        .iter()
+        .map(|note| {
+            if let Note::Orchard(inner) = &note.note {
+                Ok(zcash_client_backend::wallet::ReceivedNote::from_parts(
                     note.note_id,
                     note.txid(),
                     note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
-                    inner,
+                    inner.clone(),
                     note.recipient_key_scope
                         .ok_or(Error::Missing("recipient key scope".into()))?,
                     note.commitment_tree_position
                         .ok_or(Error::Missing("commitment tree position".into()))?,
-                ));
+                ))
+            } else {
+                Err(Error::Other("Note is not an orchard note".to_owned()))
             }
-            #[cfg(feature = "orchard")]
-            Note::Orchard(inner) => {
-                orchard.push(zcash_client_backend::wallet::ReceivedNote::from_parts(
-                    note.note_id,
-                    note.txid(),
-                    note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
-                    inner,
-                    note.recipient_key_scope
-                        .ok_or(Error::Missing("recipient key scope".into()))?,
-                    note.commitment_tree_position
-                        .ok_or(Error::Missing("commitment tree position".into()))?,
-                ));
-            }
-        }
-    }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(SpendableNotes::new(
         sapling,
@@ -293,15 +302,13 @@ impl SentNoteTable {
     ) {
         let pool_type = match output.recipient() {
             Recipient::External(_, pool_type) => pool_type.clone(),
-            Recipient::EphemeralTransparent { .. } => {
-                PoolType::Transparent
-            }
+            Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
             Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
         };
         match pool_type {
             PoolType::Transparent => {
                 tracing::warn!("Transparent protocols not yet supported");
-            },
+            }
             PoolType::Shielded(protocol) => {
                 let note_id = NoteId::new(
                     tx.tx().txid(),

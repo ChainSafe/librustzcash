@@ -1,6 +1,10 @@
-use zcash_client_backend::data_api::{InputSource, SpendableNotes, WalletRead};
+use zcash_client_backend::data_api::{InputSource, WalletRead};
 use zcash_client_backend::wallet::{Note, ReceivedNote};
-use zcash_protocol::{consensus, value::Zatoshis};
+use zcash_protocol::{
+    consensus,
+    value::Zatoshis,
+    ShieldedProtocol::{Orchard, Sapling},
+};
 
 use crate::{error::Error, to_spendable_notes, AccountId, MemoryWalletDb, NoteId};
 
@@ -48,6 +52,7 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             None
         })
     }
+
     fn select_spendable_notes(
         &self,
         account: Self::AccountId,
@@ -56,31 +61,36 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
         anchor_height: zcash_protocol::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<zcash_client_backend::data_api::SpendableNotes<Self::NoteRef>, Self::Error> {
-        let birthday_height = match self.get_wallet_birthday()? {
-            Some(birthday) => birthday,
-            None => {
-                // the wallet birthday can only be unknown if there are no accounts in the wallet; in
-                // such a case, the wallet has no notes to spend.
-                return Ok(SpendableNotes::empty());
-            }
+        let sapling_eligible_notes = if sources.contains(&Sapling) {
+            self.select_spendable_notes_from_pool(
+                account,
+                target_value,
+                &Sapling,
+                anchor_height,
+                exclude,
+            )?
+        } else {
+            Vec::new()
         };
 
-        // First grab all eligible (unspent, spendable, fully scanned) notes into a vec.
-        let mut eligible_notes = self
-            .received_notes
-            .iter()
-            .filter(|note| note.account_id == account)
-            .filter(|note| sources.contains(&note.note.protocol()))
-            .filter(|note| {
-                self.note_is_spendable(note, birthday_height, anchor_height, exclude)
-                    .unwrap()
-            })
-            .collect::<Vec<_>>();
+        #[cfg(feature = "orchard")]
+        let orchard_eligible_notes = if sources.contains(&Orchard) {
+            self.select_spendable_notes_from_pool(
+                account,
+                target_value,
+                &Orchard,
+                anchor_height,
+                exclude,
+            )?
+        } else {
+            Vec::new()
+        };
 
-        // sort by oldest first (use location in commitment tree since this gives a total order)
-        eligible_notes.sort_by(|a, b| a.commitment_tree_position.cmp(&b.commitment_tree_position));
-
-        Ok(to_spendable_notes(&eligible_notes)?)
+        Ok(to_spendable_notes(
+            &sapling_eligible_notes,
+            #[cfg(feature = "orchard")]
+            &orchard_eligible_notes,
+        )?)
     }
 
     #[cfg(any(test, feature = "test-dependencies"))]
@@ -95,5 +105,54 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             .cloned()
             .map(Into::into)
             .collect())
+    }
+}
+
+impl<P: consensus::Parameters> MemoryWalletDb<P> {
+    // Select the spendable notes to cover the given target value considering only a single pool
+    // Returns the notes sorted oldest to newest
+    fn select_spendable_notes_from_pool(
+        &self,
+        account: AccountId,
+        target_value: Zatoshis,
+        pool: &zcash_protocol::ShieldedProtocol,
+        anchor_height: consensus::BlockHeight,
+        exclude: &[NoteId],
+    ) -> Result<Vec<&crate::ReceivedNote>, Error> {
+        let birthday_height = match self.get_wallet_birthday()? {
+            Some(birthday) => birthday,
+            None => {
+                // the wallet birthday can only be unknown if there are no accounts in the wallet; in
+                // such a case, the wallet has no notes to spend.
+                return Ok(Vec::new());
+            }
+        };
+        // First grab all eligible (unspent, spendable, fully scanned) notes into a vec.
+        let mut eligible_notes = self
+            .received_notes
+            .iter()
+            .filter(|note| note.account_id == account)
+            .filter(|note| note.note.protocol() == *pool)
+            .filter(|note| {
+                self.note_is_spendable(note, birthday_height, anchor_height, exclude)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        // sort by oldest first (use location in commitment tree since this gives a total order)
+        eligible_notes.sort_by(|a, b| a.commitment_tree_position.cmp(&b.commitment_tree_position));
+
+        // now take notes until we have enough to cover the target value
+        let mut value_acc = Zatoshis::ZERO;
+        let selection: Vec<_> = eligible_notes
+            .into_iter()
+            .take_while(|note| {
+                let take = value_acc <= target_value;
+                value_acc = (value_acc + note.note.value()).expect("value overflow");
+                take
+            })
+            .collect();
+
+        Ok(selection)
     }
 }

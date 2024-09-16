@@ -160,7 +160,8 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
 
         // The ignored range always starts at Sapling activation
-        let sapling_activation_height = self.params
+        let sapling_activation_height = self
+            .params
             .activation_height(NetworkUpgrade::Sapling)
             .expect("Sapling activation height must be available.");
 

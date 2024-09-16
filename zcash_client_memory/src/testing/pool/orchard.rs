@@ -1,7 +1,7 @@
 use crate::testing;
 
-use zcash_client_backend::data_api::testing::sapling::SaplingPoolTester;
 use zcash_client_backend::data_api::testing::orchard::OrchardPoolTester;
+use zcash_client_backend::data_api::testing::sapling::SaplingPoolTester;
 
 #[test]
 fn send_single_step_proposed_transfer() {
@@ -59,9 +59,8 @@ fn change_note_spends_succeed() {
 
 #[test]
 fn external_address_change_spends_detected_in_restore_from_seed() {
-    testing::pool::external_address_change_spends_detected_in_restore_from_seed::<
-        OrchardPoolTester,
-    >()
+    testing::pool::external_address_change_spends_detected_in_restore_from_seed::<OrchardPoolTester>(
+    )
 }
 
 #[test]
