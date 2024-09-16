@@ -27,7 +27,7 @@ use {
     zcash_client_backend::wallet::WalletOrchardOutput, zcash_protocol::ShieldedProtocol::Orchard,
 };
 
-use crate::{error::Error, Nullifier};
+use crate::{error::Error, Nullifier, OutPointDef};
 
 /// Keeps track of notes that are spent in which transaction
 #[serde_as]
@@ -306,11 +306,18 @@ pub(crate) fn to_spendable_notes(
 #[derive(Serialize, Deserialize)]
 pub(crate) struct SentNoteTable(
     #[serde_as(as = "BTreeMap<NoteIdDef, _>")] BTreeMap<NoteId, SentNote>,
+    #[cfg(feature = "transparent-inputs")]
+    #[serde_as(as = "BTreeMap<OutPointDef, _>")]
+    BTreeMap<OutPoint, SentNote>,
 );
 
 impl SentNoteTable {
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self(
+            BTreeMap::new(),
+            #[cfg(feature = "transparent-inputs")]
+            BTreeMap::new(),
+        )
     }
 
     pub fn insert_sent_output(
@@ -325,7 +332,15 @@ impl SentNoteTable {
         };
         match pool_type {
             PoolType::Transparent => {
-                tracing::warn!("Transparent protocols not yet supported");
+                self.1.insert(
+                    OutPoint::new(*tx.tx().txid().as_ref(), output.output_index() as u32),
+                    SentNote {
+                        from_account_id: *tx.account_id(),
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                    },
+                );
             }
             PoolType::Shielded(protocol) => {
                 let note_id = NoteId::new(

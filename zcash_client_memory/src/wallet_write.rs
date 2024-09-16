@@ -8,7 +8,10 @@ use std::{
     ops::Range,
 };
 
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::{
+    consensus::BlockHeight,
+    transaction::{components::TxOut, TxId},
+};
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
     ShieldedProtocol::{self, Sapling},
@@ -43,7 +46,7 @@ use zcash_protocol::ShieldedProtocol::Orchard;
 
 #[cfg(feature = "transparent-inputs")]
 use {
-    zcash_client_backend::wallet::TransparentAddressMetadata,
+    crate::ReceivedTransparentUtxo, zcash_client_backend::wallet::TransparentAddressMetadata,
     zcash_primitives::legacy::TransparentAddress,
 };
 
@@ -699,12 +702,24 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                             ReceivedNote::from_sent_tx_output(sent_tx.tx().txid(), output)?,
                         );
                     }
+                    #[cfg(feature = "transparent-inputs")]
                     Recipient::EphemeralTransparent {
-                        receiving_account: _,
-                        ephemeral_address: _,
-                        outpoint_metadata: _,
+                        receiving_account,
+                        ephemeral_address,
+                        outpoint_metadata,
                     } => {
-                        // mark ephemeral address as used
+                        let received = ReceivedTransparentUtxo {
+                            account_id: *receiving_account,
+                            recipient_address: *ephemeral_address,
+                            outpoint: outpoint_metadata.clone(),
+                            txout: TxOut {
+                                value: output.value(),
+                                script_pubkey: ephemeral_address.script(),
+                            },
+                            max_observed_unspent_height: todo!(),
+                            mined_height: None,
+                        };
+                        // TODO: Mark ephemeral address as used
                     }
                     Recipient::External(_, _) => {}
                 }
