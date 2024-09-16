@@ -33,7 +33,7 @@ use zcash_client_backend::data_api::{
 };
 
 use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
-use crate::{Accounts, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
+use crate::{MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
 use maybe_rayon::prelude::*;
 
 use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};

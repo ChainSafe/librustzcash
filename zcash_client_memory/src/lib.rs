@@ -9,7 +9,7 @@ use shardtree::{
 use std::{
     collections::{hash_map::Entry, BTreeMap, BTreeSet},
     num::NonZeroU32,
-    ops::{Add, Range, RangeInclusive},
+    ops::{Range, RangeInclusive},
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::{
@@ -24,7 +24,7 @@ use zcash_client_backend::{
     data_api::{
         scanning::{ScanPriority, ScanRange},
         Account as _, AccountBirthday, AccountPurpose, AccountSource, InputSource, Ratio,
-        SentTransaction, SentTransactionOutput, TransactionStatus, WalletRead,
+        TransactionStatus, WalletRead,
     },
     wallet::{NoteId, WalletSaplingOutput},
 };

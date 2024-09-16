@@ -27,7 +27,6 @@ use zcash_primitives::{
 use zcash_protocol::{
     consensus::{self, BranchId},
     memo::Memo,
-    value::BalanceError,
     PoolType, ShieldedProtocol,
 };
 
@@ -719,6 +718,39 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                 )
             })
             .collect::<Vec<_>>())
+    }
+
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_checkpoint_history(
+        &self,
+    ) -> Result<
+        Vec<(
+            BlockHeight,
+            ShieldedProtocol,
+            Option<incrementalmerkletree::Position>,
+        )>,
+        Self::Error,
+    > {
+        let mut checkpoints = Vec::new();
+
+        self.sapling_tree
+            .store()
+            .for_each_checkpoint(usize::MAX, |id, cp| {
+                checkpoints.push((id.clone(), ShieldedProtocol::Sapling, cp.position()));
+                Ok(())
+            })?;
+
+        #[cfg(feature = "orchard")]
+        self.orchard_tree
+            .store()
+            .for_each_checkpoint(usize::MAX, |id, cp| {
+                checkpoints.push((id.clone(), ShieldedProtocol::Orchard, cp.position()));
+                Ok(())
+            })?;
+
+        checkpoints.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+
+        Ok(checkpoints)
     }
 }
 
