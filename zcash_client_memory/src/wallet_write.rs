@@ -33,8 +33,8 @@ use zcash_client_backend::data_api::{
 };
 
 use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
-use crate::{Accounts, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
-use maybe_rayon::prelude::*;
+use crate::{MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
+use rayon::prelude::*;
 
 use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
 
@@ -68,8 +68,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), account_index)?;
             let ufvk = usk.to_unified_full_viewing_key();
 
-            let (id, _account) = Accounts::new_account(
-                &mut self.accounts,
+            let (id, _account) = self.add_account(
                 AccountSource::Derived {
                     seed_fingerprint,
                     account_index,
@@ -390,15 +389,11 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 _transactions: transactions.keys().cloned().collect(),
                 _memos: memos,
                 sapling_commitment_tree_size: Some(block.sapling().final_tree_size()),
-                _sapling_output_count: Some(
-                    block.sapling().commitments().len().try_into().unwrap(),
-                ),
+                sapling_output_count: Some(block.sapling().commitments().len().try_into().unwrap()),
                 #[cfg(feature = "orchard")]
                 orchard_commitment_tree_size: Some(block.orchard().final_tree_size()),
                 #[cfg(feature = "orchard")]
-                _orchard_action_count: Some(
-                    block.orchard().commitments().len().try_into().unwrap(),
-                ),
+                orchard_action_count: Some(block.orchard().commitments().len().try_into().unwrap()),
             };
 
             // Insert transaction metadata into the transaction table
@@ -630,8 +625,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
         purpose: AccountPurpose,
     ) -> Result<Self::Account, Self::Error> {
         tracing::debug!("import_account_ufvk");
-        let (_id, account) = Accounts::new_account(
-            &mut self.accounts,
+        let (_id, account) = self.add_account(
             AccountSource::Imported { purpose },
             unified_key.to_owned(),
             birthday.clone(),
@@ -662,7 +656,8 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 #[cfg(feature = "orchard")]
                 {
                     for action in bundle.actions() {
-                        match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid()) {
+                        match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid())
+                        {
                             Ok(()) => {}
                             Err(Error::NoteNotFound) => {
                                 // This is expected as some of the actions will be new outputs we don't have notes for

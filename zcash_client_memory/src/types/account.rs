@@ -53,6 +53,8 @@ impl Accounts {
     }
 
     /// Creates a new account. The account id will be determined by the internal nonce.
+    /// Do not call this directly, use the `Wallet` methods instead.
+    /// Otherwise the scan queue will not be correctly updated
     pub(crate) fn new_account(
         &mut self,
         kind: AccountSource,
@@ -162,7 +164,7 @@ impl Account {
             .to_unified_incoming_viewing_key()
             .to_address_request()
             .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
-            .ok_or_else(|| AddressGenerationError::ShieldedReceiverRequired)?;
+            .ok_or(AddressGenerationError::ShieldedReceiverRequired)?;
         self.uivk()
             .find_address(self.diversifier_index, request)
             .map_err(Error::from)

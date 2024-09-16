@@ -2116,8 +2116,7 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 [[package]]
 name = "incrementalmerkletree"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75346da3bd8e3d8891d02508245ed2df34447ca6637e343829f8d08986e9cde2"
+source = "git+https://github.com/ec2/incrementalmerkletree.git?rev=16eff253ad2575d48feec04f7387e6507a7dd698#16eff253ad2575d48feec04f7387e6507a7dd698"
 dependencies = [
  "either",
  "proptest",
@@ -3918,8 +3917,7 @@ dependencies = [
 [[package]]
 name = "shardtree"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78222845cd8bbe5eb95687407648ff17693a35de5e8abaa39a4681fb21e033f9"
+source = "git+https://github.com/ec2/incrementalmerkletree.git?rev=16eff253ad2575d48feec04f7387e6507a7dd698#16eff253ad2575d48feec04f7387e6507a7dd698"
 dependencies = [
  "assert_matches",
  "bitflags 2.6.0",
@@ -5901,10 +5899,10 @@ dependencies = [
  "group",
  "incrementalmerkletree",
  "jubjub",
- "maybe-rayon",
  "nonempty",
  "orchard",
  "prost",
+ "rayon",
  "sapling-crypto",
  "secrecy",
  "shardtree",
