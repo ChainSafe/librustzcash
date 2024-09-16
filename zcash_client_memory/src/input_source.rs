@@ -86,11 +86,11 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             Vec::new()
         };
 
-        Ok(to_spendable_notes(
+        to_spendable_notes(
             &sapling_eligible_notes,
             #[cfg(feature = "orchard")]
             &orchard_eligible_notes,
-        )?)
+        )
     }
 
     #[cfg(any(test, feature = "test-dependencies"))]

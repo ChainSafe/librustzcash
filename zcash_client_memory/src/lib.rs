@@ -757,14 +757,13 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 });
 
             // Compute the total blocks scanned so far above the starting height
-            let scanned_count = Some(
-                self.blocks
-                    .iter()
-                    .filter(|(height, _)| height > &birthday_height)
-                    .fold(0_u64, |acc, (_, block)| {
-                        acc + block.sapling_output_count.unwrap_or(0) as u64
-                    }),
-            );
+            let scanned_count = self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height > &birthday_height)
+                .fold(0_u64, |acc, (_, block)| {
+                    acc + block.sapling_output_count.unwrap_or(0) as u64
+                });
 
             // We don't have complete information on how many outputs will exist in the shard at
             // the chain tip without having scanned the chain tip block, so we overestimate by
@@ -787,7 +786,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
             Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
                 |(min_tree_size, max_tree_size)| {
-                    Ratio::new(scanned_count.unwrap_or(0), max_tree_size - min_tree_size)
+                    Ratio::new(scanned_count, max_tree_size - min_tree_size)
                 },
             ))
         }

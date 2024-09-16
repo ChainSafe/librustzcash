@@ -159,20 +159,17 @@ impl ReceivedNote {
     }
 }
 
-impl Into<zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>>
-    for ReceivedNote
+impl From<ReceivedNote>
+    for zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>
 {
-    fn into(
-        self,
-    ) -> zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>
-    {
+    fn from(value: ReceivedNote) -> Self {
         zcash_client_backend::wallet::ReceivedNote::from_parts(
-            self.note_id,
-            self.txid,
-            self.output_index.try_into().unwrap(),
-            self.note,
-            self.recipient_key_scope.unwrap(),
-            self.commitment_tree_position.unwrap(),
+            value.note_id,
+            value.txid,
+            value.output_index.try_into().unwrap(),
+            value.note,
+            value.recipient_key_scope.unwrap(),
+            value.commitment_tree_position.unwrap(),
         )
     }
 }
@@ -301,7 +298,7 @@ impl SentNoteTable {
         output: &SentTransactionOutput<AccountId>,
     ) {
         let pool_type = match output.recipient() {
-            Recipient::External(_, pool_type) => pool_type.clone(),
+            Recipient::External(_, pool_type) => *pool_type,
             Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
             Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
         };
@@ -318,7 +315,7 @@ impl SentNoteTable {
                 self.0.insert(
                     note_id,
                     SentNote {
-                        from_account_id: tx.account_id().clone(),
+                        from_account_id: *tx.account_id(),
                         to: output.recipient().clone(),
                         value: output.value(),
                         memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
