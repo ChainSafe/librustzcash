@@ -11,6 +11,12 @@ and this library adheres to Rust's notion of
 - The `Account` trait now uses an associated type for its `AccountId`
   type instead of a type parameter. This change allows for the simplification
   of some type signatures.
+- `zcash_client_backend::sync::run`:
+  - Transparent outputs are now refreshed in addition to shielded notes.
+
+### Fixed
+- `zcash_client_backend::tor::grpc` now needs the `lightwalletd-tonic-tls-webpki-roots`
+  feature flag instead of `lightwalletd-tonic`, to fix compilation issues.
 
 ## [0.13.0] - 2024-08-20
 
