@@ -1,20 +1,31 @@
+use crate::serialization::*;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
 };
 
+use crate::serialization::ByteArray;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use serde_with::FromInto;
+use serde_with::Seq;
+use serde_with::SetPreventDuplicates;
+use zcash_client_backend::wallet::NoteId;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 use zcash_protocol::memo::MemoBytes;
-
-use zcash_client_backend::wallet::NoteId;
-
 /// Internal wallet representation of a Block.
+#[serde_as]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct MemoryWalletBlock {
+    #[serde_as(as = "FromInto<u32>")]
     pub(crate) height: BlockHeight,
+    #[serde_as(as = "ByteArray<32>")]
     pub(crate) hash: BlockHash,
     pub(crate) block_time: u32,
     // Just the transactions that involve an account in this wallet
+    #[serde_as(as = "SetPreventDuplicates<ByteArray<32>>")]
     pub(crate) _transactions: HashSet<TxId>,
+    #[serde_as(as = "Seq<(NoteIdDef, MemoBytesDef)>")]
     pub(crate) _memos: HashMap<NoteId, MemoBytes>,
     pub(crate) sapling_commitment_tree_size: Option<u32>,
     pub(crate) sapling_output_count: Option<u32>,

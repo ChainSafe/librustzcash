@@ -80,12 +80,11 @@ impl TestCache for MemBlockCache {
     type InsertResult = ();
 
     fn block_source(&self) -> &Self::BlockSource {
-        &self
+        self
     }
 
     fn insert(&mut self, cb: &CompactBlock) -> Self::InsertResult {
         self.0.insert(cb.height().into(), cb.clone());
-        ()
     }
 }
 

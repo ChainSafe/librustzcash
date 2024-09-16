@@ -3,6 +3,7 @@ pub(crate) mod block;
 pub(crate) mod notes;
 pub(crate) mod nullifier;
 pub(crate) mod scanning;
+pub(crate) mod serialization;
 pub(crate) mod transaction;
 
 pub(crate) use account::*;

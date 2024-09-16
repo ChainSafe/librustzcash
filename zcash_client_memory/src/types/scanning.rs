@@ -1,16 +1,25 @@
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+
 use std::ops::{Deref, DerefMut, Range};
 
 use zcash_primitives::consensus::BlockHeight;
 
 use zcash_client_backend::data_api::scanning::{spanning_tree::SpanningTree, ScanPriority};
 
-use zcash_client_backend::data_api::scanning::ScanRange;
-
 use crate::error::Error;
+use crate::types::serialization::ScanPriorityDef;
+use serde_with::FromInto;
+use zcash_client_backend::data_api::scanning::ScanRange;
 
 /// A queue of scanning ranges. Contains the start and end heights of each range, along with the
 /// priority of scanning that range.
-pub(crate) struct ScanQueue(Vec<(BlockHeight, BlockHeight, ScanPriority)>);
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ScanQueue(
+    #[serde_as(as = "Vec<(FromInto<u32>, FromInto<u32>, ScanPriorityDef)>")]
+    Vec<(BlockHeight, BlockHeight, ScanPriority)>,
+);
 
 impl ScanQueue {
     pub(crate) fn new() -> Self {

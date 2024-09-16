@@ -1,24 +1,27 @@
+use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, TryFromInto};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     ops::{Deref, DerefMut},
 };
 use subtle::ConditionallySelectable;
 use zcash_keys::keys::{AddressGenerationError, UnifiedIncomingViewingKey};
 use zip32::DiversifierIndex;
 
+use crate::error::Error;
+use crate::serialization::*;
+
+use zcash_client_backend::data_api::AccountBirthday;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{Account as _, AccountPurpose, AccountSource},
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey},
     wallet::NoteId,
 };
-
-use zcash_client_backend::data_api::AccountBirthday;
-
-use crate::error::Error;
-
 /// Internal representation of ID type for accounts. Will be unique for each account.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct AccountId(u32);
 
 impl Deref for AccountId {
@@ -39,6 +42,7 @@ impl ConditionallySelectable for AccountId {
 
 /// This is the top-level struct that handles accounts. We could theoretically have this just be a Vec
 /// but we want to have control over the internal AccountId values. The account ids are unique.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Accounts {
     nonce: u32,
     accounts: BTreeMap<AccountId, Account>,
@@ -71,7 +75,7 @@ impl Accounts {
             birthday,
             _purpose: purpose,
             diversifier_index: DiversifierIndex::default(),
-            _notes: HashSet::new(),
+            _notes: BTreeSet::new(),
         };
 
         let ua_request = acc
@@ -128,17 +132,23 @@ impl DerefMut for Accounts {
 }
 
 /// An internal representation account stored in the database.
-#[derive(Debug, Clone)]
-
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     account_id: AccountId,
+    #[serde_as(as = "AccountSourceDef")]
     kind: AccountSource,
+    #[serde_as(as = "BytesVec<UnifiedFullViewingKey>")]
     viewing_key: UnifiedFullViewingKey,
+    #[serde_as(as = "AccountBirthdayDef")]
     birthday: AccountBirthday,
+    #[serde_as(as = "AccountPurposeDef")]
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
     /// The current diversifier index for this Account
+    #[serde_as(as = "TryFromInto<u128>")]
     diversifier_index: DiversifierIndex,
-    _notes: HashSet<NoteId>,
+    #[serde_as(as = "BTreeSet<NoteIdDef>")]
+    _notes: BTreeSet<NoteId>,
 }
 
 impl Account {

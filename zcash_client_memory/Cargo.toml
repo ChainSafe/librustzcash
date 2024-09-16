@@ -33,6 +33,7 @@ nonempty.workspace = true
 prost.workspace = true
 group.workspace = true
 jubjub.workspace = true
+serde = { workspace = true, features = ["rc"] }
 
 # - Secret management
 secrecy.workspace = true
@@ -51,10 +52,20 @@ shardtree = { workspace = true, features = ["legacy-api"] }
 thiserror = "1.0.61"
 
 rayon.workspace = true
+serde_with = "3.9.0"
+
+# - Test dependencies
+proptest = { workspace = true, optional = true }
+
+[dev-dependencies]
+ciborium = "0.2.2"
+serde_json.workspace = true
+postcard = { version = "1.0.10", features = ["alloc"] }
+
 
 [features]
 default = ["multicore"]
-
+local-consensus = ["zcash_protocol/local-consensus"]
 ## Enables multithreading support for creating proofs and building subtrees.
 multicore = ["zcash_primitives/multicore"]
 
@@ -63,7 +74,7 @@ multicore = ["zcash_primitives/multicore"]
 orchard = ["dep:orchard", "zcash_client_backend/orchard", "zcash_keys/orchard"]
 
 ## Exposes APIs that are useful for testing, such as `proptest` strategies.
-test-dependencies = ["incrementalmerkletree/test-dependencies", "zcash_primitives/test-dependencies", "zcash_client_backend/test-dependencies", "incrementalmerkletree/test-dependencies"]
+test-dependencies = ["dep:proptest", "incrementalmerkletree/test-dependencies", "shardtree/test-dependencies", "zcash_primitives/test-dependencies", "zcash_client_backend/test-dependencies", "incrementalmerkletree/test-dependencies"]
 
 ## Enables receiving transparent funds and sending to transparent recipients
 transparent-inputs = ["dep:bip32", "zcash_keys/transparent-inputs", "zcash_client_backend/transparent-inputs"]
