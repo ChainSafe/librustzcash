@@ -12,3 +12,6 @@ pub(crate) use notes::*;
 pub(crate) use nullifier::*;
 
 pub(crate) use transaction::*;
+
+pub(crate) mod transparent;
+pub(crate) use transparent::*;

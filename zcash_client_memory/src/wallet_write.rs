@@ -41,6 +41,12 @@ use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
 #[cfg(feature = "orchard")]
 use zcash_protocol::ShieldedProtocol::Orchard;
 
+#[cfg(feature = "transparent-inputs")]
+use {
+    zcash_client_backend::wallet::TransparentAddressMetadata,
+    zcash_primitives::legacy::TransparentAddress,
+};
+
 impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
     type UtxoRef = u32;
 
@@ -578,9 +584,16 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
     /// Adds a transparent UTXO received by the wallet to the data store.
     fn put_received_transparent_utxo(
         &mut self,
-        _output: &WalletTransparentOutput,
+        output: &WalletTransparentOutput,
     ) -> Result<Self::UtxoRef, Self::Error> {
         tracing::debug!("put_received_transparent_utxo");
+        let address = output.recipient_address();
+        // TODO: find_account_for_transparent_address??
+        if let Some(receiving_account) = self.find_account_for_ephemeral_address(address)? {}
+        #[cfg(not(feature = "transparent-inputs"))]
+        panic!(
+            "The wallet must be compiled with the transparent-inputs feature to use this method."
+        );
         Ok(0)
     }
 
@@ -699,6 +712,17 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             // in sqlite they que
         }
         Ok(())
+    }
+    #[cfg(feature = "transparent-inputs")]
+    fn reserve_next_n_ephemeral_addresses(
+        &mut self,
+        _account_id: Self::AccountId,
+        _n: usize,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
+        // Default impl is required for feature-flagged trait methods to prevent
+        // breakage due to inadvertent activation of features by transitive dependencies
+        // of the implementing crate.
+        Ok(vec![])
     }
 
     fn set_transaction_status(

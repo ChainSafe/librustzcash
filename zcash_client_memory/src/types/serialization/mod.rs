@@ -18,6 +18,9 @@ pub use memo::*;
 pub use array::*;
 pub use bytes::*;
 
+mod transparent;
+pub use transparent::*;
+
 impl ToArray<u8, 32> for BlockHash {
     fn to_array(&self) -> [u8; 32] {
         self.0
