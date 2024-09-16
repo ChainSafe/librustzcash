@@ -6,6 +6,7 @@ use shardtree::store::ShardStore as _;
 use std::{
     collections::{hash_map::Entry, HashMap},
     num::NonZeroU32,
+    ops::Range,
 };
 use zcash_keys::keys::UnifiedIncomingViewingKey;
 use zip32::fingerprint::SeedFingerprint;
@@ -644,8 +645,10 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         account_id: Self::AccountId,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
         tracing::debug!("get_transparent_receivers");
-
-        Ok(HashMap::new())
+        self.accounts
+            .get(account_id)
+            .map(Account::get_transparent_receivers)
+            .ok_or_else(|| Error::AccountUnknown(account_id))?
     }
 
     #[cfg(feature = "transparent-inputs")]
@@ -656,6 +659,25 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     ) -> Result<HashMap<TransparentAddress, zcash_protocol::value::Zatoshis>, Self::Error> {
         tracing::debug!("get_transparent_balances");
         todo!()
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    fn get_known_ephemeral_addresses(
+        &self,
+        account_id: Self::AccountId,
+        index_range: Option<Range<u32>>,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
+        let ret = self.get_transparent_receivers(account_id)?;
+        let ret = ret
+            .into_iter()
+            .filter_map(|(addr, meta)| meta.map(|m| (addr, m)));
+        if let Some(range) = index_range {
+            Ok(ret
+                .filter(|(_, meta)| range.contains(&meta.address_index().index()))
+                .collect())
+        } else {
+            Ok(ret.collect())
+        }
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {

@@ -244,6 +244,7 @@ impl Account {
             (current_addr, current_idx) = self.uivk().find_address(current_idx, request)?;
             addrs.push((current_addr.clone(), current_idx));
         }
+
         addrs
             .into_iter()
             .filter_map(|(addr, idx)| addr.transparent().map(|taddr| (*taddr, idx)))
