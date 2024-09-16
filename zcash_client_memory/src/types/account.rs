@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, TryFromInto};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     ops::{Deref, DerefMut},
 };
 use subtle::ConditionallySelectable;
@@ -18,6 +18,13 @@ use zcash_client_backend::{
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey},
     wallet::NoteId,
 };
+
+#[cfg(feature = "transparent-inputs")]
+use {
+    zcash_client_backend::wallet::TransparentAddressMetadata,
+    zcash_primitives::legacy::TransparentAddress,
+};
+
 /// Internal representation of ID type for accounts. Will be unique for each account.
 #[derive(
     Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord, Serialize, Deserialize,
@@ -207,6 +214,59 @@ impl Account {
             }
             None => Ok(None),
         }
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub(crate) fn get_transparent_receivers(
+        &self,
+    ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Error> {
+        use zcash_primitives::legacy::keys::NonHardenedChildIndex;
+        use zip32::Scope;
+
+        let mut addrs: Vec<(UnifiedAddress, DiversifierIndex)> = vec![];
+
+        let request = self
+            .viewing_key
+            .to_unified_incoming_viewing_key()
+            .to_address_request()
+            .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
+            .ok_or(AddressGenerationError::ShieldedReceiverRequired)?;
+
+        let (mut current_addr, mut current_idx) = self.default_address(request)?;
+        addrs.push((current_addr.clone(), current_idx));
+
+        let (highest_addr, _) = self.current_address()?;
+
+        while current_addr != highest_addr {
+            current_idx.increment().map_err(|_| {
+                Error::AddressGeneration(AddressGenerationError::DiversifierSpaceExhausted)
+            })?;
+            (current_addr, current_idx) = self.uivk().find_address(current_idx, request)?;
+            addrs.push((current_addr.clone(), current_idx));
+        }
+        addrs
+            .into_iter()
+            .filter_map(|(addr, idx)| addr.transparent().map(|taddr| (*taddr, idx)))
+            .map(|(taddr, idx)| {
+                let metadata = TransparentAddressMetadata::new(
+                    Scope::External.into(),
+                    NonHardenedChildIndex::from_index(
+                        DiversifierIndex::from(idx).try_into().map_err(|_| {
+                            Error::CorruptedData(
+                                "Unable to get diversifier for transparent address.".to_string(),
+                            )
+                        })?,
+                    )
+                    .ok_or_else(|| {
+                        Error::CorruptedData(
+                            "Unexpected hardened index for transparent address.".to_string(),
+                        )
+                    })?,
+                );
+                Ok((taddr, Some(metadata)))
+            })
+            .collect()
+        // TODO: Handle legacy???
     }
 
     pub(crate) fn account_id(&self) -> AccountId {

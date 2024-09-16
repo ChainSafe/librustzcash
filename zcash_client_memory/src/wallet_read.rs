@@ -641,9 +641,10 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_receivers(
         &self,
-        _account: Self::AccountId,
+        account_id: Self::AccountId,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
         tracing::debug!("get_transparent_receivers");
+
         Ok(HashMap::new())
     }
 
