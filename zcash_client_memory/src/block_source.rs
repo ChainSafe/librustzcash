@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use zcash_client_backend::data_api::chain::{
     BlockCache,
     BlockSource};
@@ -13,7 +14,7 @@ pub struct MemBlockCache(pub(crate) RwLock<BTreeMap<BlockHeight, CompactBlock>>)
 
 
 impl MemBlockCache {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Default::default()
     }
 
@@ -23,7 +24,7 @@ impl MemBlockCache {
 }
 
 impl BlockSource for MemBlockCache {
-    type Error = ();
+    type Error = Infallible;
 
     fn with_blocks<F, WalletErrT>(
         &self,
@@ -100,7 +101,7 @@ impl BlockCache for MemBlockCache {
         let range = range.block_range();
         for height in u32::from(range.start)..u32::from(range.end) {
             self.0.write().remove(&height.into());
-        } 
+        }
         Ok(())
     }
 }
