@@ -5600,6 +5600,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af190c94f2773fdb3729c55b007a722abb5384da03bc0986df4c289bf5567e96"
 
 [[package]]
+name = "wasm_sync"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cff360cade7fec41ff0e9d2cda57fe58258c5f16def0e21302394659e6bbb0ea"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "weak-table"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5974,7 +5985,6 @@ dependencies = [
  "jubjub",
  "nonempty",
  "orchard",
- "parking_lot",
  "postcard",
  "proptest",
  "prost",
@@ -5990,6 +6000,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "wasm_sync",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",

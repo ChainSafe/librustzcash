@@ -6,7 +6,7 @@ use zcash_client_backend::data_api::chain::{
 use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_protocol::consensus::BlockHeight;
-use parking_lot::RwLock;
+use wasm_sync::RwLock;
 
 /// A block cache that just holds blocks in a map in memory
 #[derive(Default)]
@@ -19,7 +19,7 @@ impl MemBlockCache {
     }
 
     pub fn find_block(&self, block_height: BlockHeight) -> Option<CompactBlock> {
-        self.0.read().get(&block_height).map(CompactBlock::clone)
+        self.0.read().unwrap().get(&block_height).map(CompactBlock::clone)
     }
 }
 
@@ -40,7 +40,7 @@ impl BlockSource for MemBlockCache {
             zcash_client_backend::data_api::chain::error::Error<WalletErrT, Self::Error>,
         >,
     {
-        let inner = self.0.read();
+        let inner = self.0.read().unwrap();
         let block_iter = inner
             .iter()
             .filter(|(_, cb)| {
@@ -64,7 +64,7 @@ impl BlockCache for MemBlockCache {
         &self,
         range: Option<&ScanRange>,
     ) -> Result<Option<BlockHeight>, Self::Error> {
-        let inner = self.0.read();
+        let inner = self.0.read().unwrap();
         if let Some(range) = range {
             let range = range.block_range();
             for h in (u32::from(range.start)..u32::from(range.end)).rev() {
@@ -79,7 +79,7 @@ impl BlockCache for MemBlockCache {
     }
 
     async fn read(&self, range: &ScanRange) -> Result<Vec<CompactBlock>, Self::Error> {
-        let inner = self.0.read();
+        let inner = self.0.read().unwrap();
         let mut ret = Vec::with_capacity(range.len());
         let range = range.block_range();
         for height in u32::from(range.start)..u32::from(range.end) {
@@ -92,7 +92,7 @@ impl BlockCache for MemBlockCache {
 
     async fn insert(&self, compact_blocks: Vec<CompactBlock>) -> Result<(), Self::Error> {
         compact_blocks.into_iter().for_each(|compact_block| {
-            self.0.write().insert(compact_block.height(), compact_block);
+            self.0.write().unwrap().insert(compact_block.height(), compact_block);
         });
         Ok(())
     }
@@ -100,7 +100,7 @@ impl BlockCache for MemBlockCache {
     async fn delete(&self, range: ScanRange) -> Result<(), Self::Error> {
         let range = range.block_range();
         for height in u32::from(range.start)..u32::from(range.end) {
-            self.0.write().remove(&height.into());
+            self.0.write().unwrap().remove(&height.into());
         }
         Ok(())
     }
