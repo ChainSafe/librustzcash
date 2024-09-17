@@ -44,11 +44,11 @@ pub mod wallet_commitment_trees;
 pub mod wallet_read;
 pub mod wallet_write;
 pub(crate) use types::*;
+pub mod block_source;
+pub use block_source::*;
 
-mod block_source;
 #[cfg(test)]
 pub mod testing;
-pub use block_source::*;
 
 /// The maximum number of blocks the wallet is allowed to rewind. This is
 /// consistent with the bound in zcashd, and allows block data deeper than

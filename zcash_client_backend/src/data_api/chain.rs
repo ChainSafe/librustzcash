@@ -382,7 +382,6 @@ pub trait BlockSource {
 ///    assert_eq!(block_cache.get_tip_height(None).unwrap(), None);
 /// ```
 #[cfg(feature = "sync")]
-#[async_trait]
 pub trait BlockCache: BlockSource + Send + Sync
 where
     Self::Error: Send,
