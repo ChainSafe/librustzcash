@@ -109,7 +109,7 @@ impl<C, H, const SHARD_HEIGHT: u8> SqliteShardStore<C, H, SHARD_HEIGHT> {
 }
 
 impl<'conn, 'a: 'conn, H: HashSer, const SHARD_HEIGHT: u8> ShardStore
-    for SqliteShardStore<&'a rusqlite::Transaction<'conn>, H, SHARD_HEIGHT>
+for SqliteShardStore<&'a rusqlite::Transaction<'conn>, H, SHARD_HEIGHT>
 {
     type H = H;
     type CheckpointId = BlockHeight;
@@ -188,6 +188,13 @@ impl<'conn, 'a: 'conn, H: HashSer, const SHARD_HEIGHT: u8> ShardStore
         with_checkpoints(self.conn, self.table_prefix, limit, callback)
     }
 
+    fn for_each_checkpoint<F>(&self, _limit: usize, _callback: F) -> Result<(), Self::Error>
+    where
+        F: FnMut(&Self::CheckpointId, &Checkpoint) -> Result<(), Self::Error>,
+    {
+        todo!()
+    }
+
     fn update_checkpoint_with<F>(
         &mut self,
         checkpoint_id: &Self::CheckpointId,
@@ -212,7 +219,7 @@ impl<'conn, 'a: 'conn, H: HashSer, const SHARD_HEIGHT: u8> ShardStore
 }
 
 impl<H: HashSer, const SHARD_HEIGHT: u8> ShardStore
-    for SqliteShardStore<rusqlite::Connection, H, SHARD_HEIGHT>
+for SqliteShardStore<rusqlite::Connection, H, SHARD_HEIGHT>
 {
     type H = H;
     type CheckpointId = BlockHeight;
@@ -298,6 +305,13 @@ impl<H: HashSer, const SHARD_HEIGHT: u8> ShardStore
         tx.commit().map_err(Error::Query)
     }
 
+    fn for_each_checkpoint<F>(&self, _limit: usize, _callback: F) -> Result<(), Self::Error>
+    where
+        F: FnMut(&Self::CheckpointId, &Checkpoint) -> Result<(), Self::Error>,
+    {
+        todo!()
+    }
+
     fn update_checkpoint_with<F>(
         &mut self,
         checkpoint_id: &Self::CheckpointId,
@@ -343,19 +357,19 @@ pub(crate) fn get_shard<H: HashSer>(
         named_params![":shard_index": shard_root_addr.index()],
         |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Option<Vec<u8>>>(1)?)),
     )
-    .optional()
-    .map_err(Error::Query)?
-    .map(|(shard_data, root_hash)| {
-        let shard_tree = read_shard(&mut Cursor::new(shard_data)).map_err(Error::Serialization)?;
-        let located_tree = LocatedPrunableTree::from_parts(shard_root_addr, shard_tree);
-        if let Some(root_hash_data) = root_hash {
-            let root_hash = H::read(Cursor::new(root_hash_data)).map_err(Error::Serialization)?;
-            Ok(located_tree.reannotate_root(Some(Arc::new(root_hash))))
-        } else {
-            Ok(located_tree)
-        }
-    })
-    .transpose()
+        .optional()
+        .map_err(Error::Query)?
+        .map(|(shard_data, root_hash)| {
+            let shard_tree = read_shard(&mut Cursor::new(shard_data)).map_err(Error::Serialization)?;
+            let located_tree = LocatedPrunableTree::from_parts(shard_root_addr, shard_tree);
+            if let Some(root_hash_data) = root_hash {
+                let root_hash = H::read(Cursor::new(root_hash_data)).map_err(Error::Serialization)?;
+                Ok(located_tree.reannotate_root(Some(Arc::new(root_hash))))
+            } else {
+                Ok(located_tree)
+            }
+        })
+        .transpose()
 }
 
 pub(crate) fn last_shard<H: HashSer>(
@@ -378,14 +392,14 @@ pub(crate) fn last_shard<H: HashSer>(
             Ok((shard_index, shard_data))
         },
     )
-    .optional()
-    .map_err(Error::Query)?
-    .map(|(shard_index, shard_data)| {
-        let shard_root = Address::from_parts(shard_root_level, shard_index);
-        let shard_tree = read_shard(&mut Cursor::new(shard_data)).map_err(Error::Serialization)?;
-        Ok(LocatedPrunableTree::from_parts(shard_root, shard_tree))
-    })
-    .transpose()
+        .optional()
+        .map_err(Error::Query)?
+        .map(|(shard_index, shard_data)| {
+            let shard_root = Address::from_parts(shard_root_level, shard_index);
+            let shard_tree = read_shard(&mut Cursor::new(shard_data)).map_err(Error::Serialization)?;
+            Ok(LocatedPrunableTree::from_parts(shard_root, shard_tree))
+        })
+        .transpose()
 }
 
 /// Returns an error iff the proposed insertion range
@@ -514,8 +528,8 @@ pub(crate) fn truncate(
         ),
         [from.index()],
     )
-    .map_err(Error::Query)
-    .map(|_| ())
+        .map_err(Error::Query)
+        .map(|_| ())
 }
 
 #[tracing::instrument(skip(conn))]
@@ -528,12 +542,12 @@ pub(crate) fn get_cap<H: HashSer>(
         [],
         |row| row.get::<_, Vec<u8>>(0),
     )
-    .optional()
-    .map_err(Error::Query)?
-    .map_or_else(
-        || Ok(PrunableTree::empty()),
-        |cap_data| read_shard(&mut Cursor::new(cap_data)).map_err(Error::Serialization),
-    )
+        .optional()
+        .map_err(Error::Query)?
+        .map_or_else(
+            || Ok(PrunableTree::empty()),
+            |cap_data| read_shard(&mut Cursor::new(cap_data)).map_err(Error::Serialization),
+        )
 }
 
 #[tracing::instrument(skip(conn, cap))]
@@ -574,7 +588,7 @@ pub(crate) fn min_checkpoint_id(
                 .map(|opt| opt.map(BlockHeight::from))
         },
     )
-    .map_err(Error::Query)
+        .map_err(Error::Query)
 }
 
 pub(crate) fn max_checkpoint_id(
@@ -592,7 +606,7 @@ pub(crate) fn max_checkpoint_id(
                 .map(|opt| opt.map(BlockHeight::from))
         },
     )
-    .map_err(Error::Query)
+        .map_err(Error::Query)
 }
 
 pub(crate) fn add_checkpoint(
@@ -695,7 +709,7 @@ pub(crate) fn checkpoint_count(
         [],
         |row| row.get::<_, usize>(0),
     )
-    .map_err(Error::Query)
+        .map_err(Error::Query)
 }
 
 fn get_marks_removed(
@@ -776,7 +790,7 @@ pub(crate) fn get_max_checkpointed_height(
         named_params![":max_checkpoint_height": max_checkpoint_height],
         |row| row.get::<_, u32>(0).map(BlockHeight::from),
     )
-    .optional()
+        .optional()
 }
 
 pub(crate) fn get_checkpoint_at_depth(
@@ -947,7 +961,7 @@ pub(crate) fn truncate_checkpoints(
         ),
         [u32::from(checkpoint_id)],
     )
-    .map_err(Error::Query)?;
+        .map_err(Error::Query)?;
 
     Ok(())
 }
@@ -1027,7 +1041,7 @@ pub(crate) fn put_shard_roots<
         table_prefix,
         start_index..start_index + (roots.len() as u64),
     )
-    .map_err(ShardTreeError::Storage)?;
+        .map_err(ShardTreeError::Storage)?;
 
     // We want to avoid deserializing the subtree just to annotate its root node, so we simply
     // cache the downloaded root alongside of any already-persisted subtree. We will update the
@@ -1062,7 +1076,7 @@ pub(crate) fn put_shard_roots<
             ":root_hash": root_hash_data,
             ":shard_data": shard_data,
         ])
-        .map_err(|e| ShardTreeError::Storage(Error::Query(e)))?;
+            .map_err(|e| ShardTreeError::Storage(Error::Query(e)))?;
     }
     drop(put_roots);
 
@@ -1234,7 +1248,7 @@ mod tests {
                 )
             }),
         )
-        .unwrap();
+            .unwrap();
 
         // construct a witness for the note
         let witness = tree
