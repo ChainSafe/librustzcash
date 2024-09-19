@@ -7,6 +7,7 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_protocol::consensus::BlockHeight;
 use wasm_sync::RwLock;
+use async_trait::async_trait;
 
 /// A block cache that just holds blocks in a map in memory
 #[derive(Default)]
@@ -59,6 +60,7 @@ impl BlockSource for MemBlockCache {
     }
 }
 
+#[async_trait]
 impl BlockCache for MemBlockCache {
     fn get_tip_height(
         &self,
