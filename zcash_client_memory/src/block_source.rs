@@ -73,8 +73,10 @@ impl BlockCache for MemBlockCache {
                 }
             }
         } else {
+
             return Ok(inner.last_key_value().map(|(h, _)| *h));
         }
+
         Ok(None)
     }
 
@@ -87,20 +89,23 @@ impl BlockCache for MemBlockCache {
                 ret.push(cb.clone());
             }
         }
+
         Ok(ret)
     }
 
     async fn insert(&self, compact_blocks: Vec<CompactBlock>) -> Result<(), Self::Error> {
+        let mut inner = self.0.write().unwrap();
         compact_blocks.into_iter().for_each(|compact_block| {
-            self.0.write().unwrap().insert(compact_block.height(), compact_block);
+            inner.insert(compact_block.height(), compact_block);
         });
         Ok(())
     }
 
     async fn delete(&self, range: ScanRange) -> Result<(), Self::Error> {
+        let mut inner = self.0.write().unwrap();
         let range = range.block_range();
         for height in u32::from(range.start)..u32::from(range.end) {
-            self.0.write().unwrap().remove(&height.into());
+            inner.remove(&height.into());
         }
         Ok(())
     }
