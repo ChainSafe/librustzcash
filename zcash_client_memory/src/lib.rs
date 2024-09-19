@@ -13,7 +13,9 @@ use std::{
     num::NonZeroU32,
     ops::{Range, RangeInclusive},
 };
-use transparent::{TransparentReceivedOutputSpends, TransparentReceivedOutputs};
+use transparent::{
+    TransparentReceivedOutputSpends, TransparentReceivedOutputs, TransparentSpendCache,
+};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
@@ -22,7 +24,11 @@ use zcash_protocol::{
 
 use zip32::fingerprint::SeedFingerprint;
 
-use zcash_primitives::{consensus::BlockHeight, legacy::TransparentAddress, transaction::TxId};
+use zcash_primitives::{
+    consensus::BlockHeight,
+    legacy::TransparentAddress,
+    transaction::{components::OutPoint, TxId},
+};
 
 use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
@@ -105,6 +111,9 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
 
     #[serde(skip)]
     transparent_received_output_spends: TransparentReceivedOutputSpends,
+
+    #[serde(skip)]
+    transparent_spend_map: TransparentSpendCache,
 }
 
 impl<P: consensus::Parameters> MemoryWalletDb<P> {
@@ -128,6 +137,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             scan_queue: ScanQueue::new(),
             transparent_received_outputs: TransparentReceivedOutputs::new(),
             transparent_received_output_spends: TransparentReceivedOutputSpends::new(),
+            transparent_spend_map: TransparentSpendCache::new(),
         }
     }
 
@@ -896,7 +906,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub(crate) fn find_account_for_transparent_address(
         &self,
         address: &TransparentAddress,
-    ) -> Result<Option<&AccountId>, Error> {
+    ) -> Result<Option<AccountId>, Error> {
         Ok(self
             .accounts
             .iter()
@@ -906,7 +916,22 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                     .iter()
                     .any(|(_, unified_address)| unified_address.transparent() == Some(address))
             })
-            .map(|(id, _)| id))
+            .map(|(id, _)| id.clone()))
+    }
+
+    pub(crate) fn mark_transparent_output_spent(
+        &mut self,
+        spent_in_tx: &TxId,
+        outpoint: &OutPoint,
+    ) -> Result<bool, Error> {
+        // TODO: Remove it from the search queue
+
+        self.transparent_received_output_spends
+            .insert(outpoint.clone(), *spent_in_tx);
+
+        // TODO: Check if this is an update and therefore we need to add something to transparent_spend_map
+
+        Ok(false)
     }
 }
 

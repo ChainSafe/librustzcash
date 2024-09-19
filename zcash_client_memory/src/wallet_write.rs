@@ -4,7 +4,7 @@ use secrecy::SecretVec;
 use shardtree::{error::ShardTreeError, store::ShardStore};
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{btree_map::Entry, BTreeMap, HashMap},
     ops::Range,
 };
 
@@ -32,7 +32,9 @@ use zcash_client_backend::data_api::{
     AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, WalletRead, WalletWrite,
 };
 
-use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
+use crate::{
+    error::Error, transparent::ReceivedTransparentOutput, PRUNING_DEPTH, VERIFY_LOOKAHEAD,
+};
 use crate::{MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
 use rayon::prelude::*;
 
@@ -600,11 +602,54 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 // look for a spent_height for this output by querying transparent_received_output_spends.
                 // If there isn't one then return None (this is an unspent output)
                 // otherwise return the height found by joining on the tx table
+                let spent_height = self
+                    .transparent_received_output_spends
+                    .get(&output.outpoint())
+                    .map(|txid| {
+                        self.tx_table
+                            .tx_status(txid)
+                            .map(|status| match status {
+                                TransactionStatus::Mined(height) => Some(height),
+                                _ => None,
+                            })
+                            .flatten()
+                    })
+                    .flatten();
 
-                // insert into transparent_received_outputs table and update if there is a conflict
+                // The max observed unspent height is either the spending transaction's mined height - 1, or
+                // the current chain tip height (assuming we know it is unspent)
+                let max_observed_unspent = match spent_height {
+                    Some(h) => Some(h - 1),
+                    None => self.chain_height()?,
+                }.unwrap_or(BlockHeight::from(0));
+
+                // insert into transparent_received_outputs table. Update if it exists
+                match self
+                    .transparent_received_outputs
+                    .entry(output.outpoint().clone())
+                {
+                    Entry::Occupied(mut entry) => {
+                        entry.get_mut().transaction_id = txid;
+                        entry.get_mut().address = *address;
+                        entry.get_mut().account_id = receiving_account;
+                        entry.get_mut().txout = output.txout().clone();
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(ReceivedTransparentOutput::new(
+                            txid,
+                            receiving_account,
+                            *address,
+                            output.txout().clone(),
+                            max_observed_unspent,
+                        ));
+                    }
+                }
 
                 // look in transparent_spend_map for a record of the output already having been spent, then mark it as spent using the
                 // stored reference to the spending transaction.
+                if self.transparent_spend_map.contains(&txid, output.outpoint()) {
+                    self.mark_transparent_output_spent(&txid, output.outpoint())?;
+                }
 
                 todo!()
             } else {
