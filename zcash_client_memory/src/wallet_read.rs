@@ -9,6 +9,7 @@ use std::{
 };
 use zcash_keys::keys::UnifiedIncomingViewingKey;
 use zip32::fingerprint::SeedFingerprint;
+use zip32::Scope;
 
 use zcash_client_backend::{
     address::UnifiedAddress,
@@ -22,6 +23,7 @@ use zcash_client_backend::{
 use zcash_primitives::{
     block::BlockHash,
     consensus::BlockHeight,
+    legacy::keys::NonHardenedChildIndex,
     transaction::{Transaction, TransactionData, TxId},
 };
 use zcash_protocol::{
@@ -536,6 +538,10 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .get(&txid)
             .map(|tx| (tx.status(), tx.expiry_height(), tx.raw()))
             .map(|(status, expiry_height, raw)| {
+                let raw = raw.ok_or_else(|| {
+                    Self::Error::CorruptedData("Transaction raw data not found".to_string())
+                })?;
+
                 // We need to provide a consensus branch ID so that pre-v5 `Transaction` structs
                 // (which don't commit directly to one) can store it internally.
                 // - If the transaction is mined, we use the block height to get the correct one.
@@ -641,20 +647,35 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_receivers(
         &self,
-        _account: Self::AccountId,
+        account_id: Self::AccountId,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
-        tracing::debug!("get_transparent_receivers");
-        Ok(HashMap::new())
+        let account = self
+            .get_account(account_id)?
+            .ok_or(Error::AccountUnknown(account_id))?;
+
+        let t_addresses = account
+            .addresses()
+            .iter()
+            .filter_map(|(diversifier_index, ua)| {
+                ua.transparent().map(|ta| {
+                    let metadata =
+                        NonHardenedChildIndex::from_index((*diversifier_index).try_into().unwrap())
+                            .map(|i| TransparentAddressMetadata::new(Scope::External.into(), i));
+                    (ta.clone(), metadata)
+                })
+            })
+            .collect();
+        Ok(t_addresses)
     }
 
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_balances(
         &self,
-        _account: Self::AccountId,
-        _max_height: BlockHeight,
+        account_id: Self::AccountId,
+        summary_height: BlockHeight,
     ) -> Result<HashMap<TransparentAddress, zcash_protocol::value::Zatoshis>, Self::Error> {
         tracing::debug!("get_transparent_balances");
-        todo!()
+        todo!();
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {

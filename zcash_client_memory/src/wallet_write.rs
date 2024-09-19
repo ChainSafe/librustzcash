@@ -578,10 +578,44 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
     /// Adds a transparent UTXO received by the wallet to the data store.
     fn put_received_transparent_utxo(
         &mut self,
-        _output: &WalletTransparentOutput,
+        output: &WalletTransparentOutput,
     ) -> Result<Self::UtxoRef, Self::Error> {
         tracing::debug!("put_received_transparent_utxo");
-        Ok(0)
+        #[cfg(feature = "transparent-inputs")]
+        {
+            let address = output.recipient_address();
+            if let Some(receiving_account) = self.find_account_for_transparent_address(address)? {
+                // get the block height of the block that mined the output only if we have it in the block table
+                // otherwise return None
+                let block = output
+                    .mined_height()
+                    .map(|h| self.blocks.get(&h).map(|b| b.height))
+                    .flatten();
+                let txid = TxId::from_bytes(output.outpoint().hash().to_vec().try_into().unwrap());
+
+                // insert a new tx into the transactions table for the one that spent this output. If there is already one then do an update
+                self.tx_table
+                    .put_tx_partial(&txid, &block, output.mined_height());
+
+                // look for a spent_height for this output by querying transparent_received_output_spends.
+                // If there isn't one then return None (this is an unspent output)
+                // otherwise return the height found by joining on the tx table
+
+                // insert into transparent_received_outputs table and update if there is a conflict
+
+                // look in transparent_spend_map for a record of the output already having been spent, then mark it as spent using the
+                // stored reference to the spending transaction.
+
+                todo!()
+            } else {
+                // The UTXO was not for any of our transparent addresses.
+                Err(Error::AddressNotRecognized(*address))
+            }
+        }
+        #[cfg(not(feature = "transparent-inputs"))]
+        panic!(
+            "The wallet must be compiled with the transparent-inputs feature to use this method."
+        );
     }
 
     fn store_decrypted_tx(

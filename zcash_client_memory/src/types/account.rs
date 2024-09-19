@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, TryFromInto};
+use serde_with::serde_as;
 use std::{
     collections::{BTreeMap, BTreeSet},
     ops::{Deref, DerefMut},
@@ -68,27 +68,8 @@ impl Accounts {
     ) -> Result<(AccountId, Account), Error> {
         let account_id = AccountId(self.nonce);
 
-        let mut acc = Account {
-            account_id,
-            kind,
-            viewing_key,
-            birthday,
-            _purpose: purpose,
-            diversifier_index: DiversifierIndex::default(),
-            _notes: BTreeSet::new(),
-        };
+        let acc = Account::new(account_id, kind, viewing_key, birthday, purpose)?;
 
-        let ua_request = acc
-            .viewing_key
-            .to_unified_incoming_viewing_key()
-            .to_address_request()
-            .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
-            .ok_or_else(|| {
-                Error::AddressGeneration(AddressGenerationError::ShieldedReceiverRequired)
-            })?;
-
-        let (_, diversifier_index) = acc.default_address(ua_request)?;
-        acc.diversifier_index = diversifier_index;
         self.nonce += 1;
         self.accounts.insert(account_id, acc.clone());
 
@@ -136,22 +117,64 @@ impl DerefMut for Accounts {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     account_id: AccountId,
+
     #[serde_as(as = "AccountSourceDef")]
     kind: AccountSource,
+
     #[serde_as(as = "BytesVec<UnifiedFullViewingKey>")]
     viewing_key: UnifiedFullViewingKey,
+
     #[serde_as(as = "AccountBirthdayDef")]
     birthday: AccountBirthday,
+
     #[serde_as(as = "AccountPurposeDef")]
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
-    /// The current diversifier index for this Account
-    #[serde_as(as = "TryFromInto<u128>")]
-    diversifier_index: DiversifierIndex,
+
+    /// Stores diversified Unified Addresses that have been generated from accounts in the wallet.
+    #[serde(skip)]
+    addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
+
     #[serde_as(as = "BTreeSet<NoteIdDef>")]
     _notes: BTreeSet<NoteId>,
 }
 
 impl Account {
+    pub(crate) fn new(
+        account_id: AccountId,
+        kind: AccountSource,
+        viewing_key: UnifiedFullViewingKey,
+        birthday: AccountBirthday,
+        purpose: AccountPurpose,
+    ) -> Result<Self, Error> {
+        let mut acc = Self {
+            account_id,
+            kind,
+            viewing_key,
+            birthday,
+            _purpose: purpose,
+            addresses: BTreeMap::new(),
+            _notes: BTreeSet::new(),
+        };
+
+        // populate the addresses map with the default address
+        let ua_request = acc
+            .viewing_key
+            .to_unified_incoming_viewing_key()
+            .to_address_request()
+            .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
+            .ok_or_else(|| {
+                Error::AddressGeneration(AddressGenerationError::ShieldedReceiverRequired)
+            })?;
+        let (ua, diversifier_index) = acc.default_address(ua_request)?;
+        acc.addresses.insert(diversifier_index, ua);
+
+        Ok(acc)
+    }
+
+    pub fn addresses(&self) -> &BTreeMap<DiversifierIndex, UnifiedAddress> {
+        &self.addresses
+    }
+
     /// Returns the default Unified Address for the account,
     /// along with the diversifier index that generated it.
     ///
@@ -169,15 +192,12 @@ impl Account {
     }
 
     pub(crate) fn current_address(&self) -> Result<(UnifiedAddress, DiversifierIndex), Error> {
-        let request = self
-            .viewing_key
-            .to_unified_incoming_viewing_key()
-            .to_address_request()
-            .and_then(|ua_request| ua_request.intersect(&UnifiedAddressRequest::all().unwrap()))
-            .ok_or(AddressGenerationError::ShieldedReceiverRequired)?;
-        self.uivk()
-            .find_address(self.diversifier_index, request)
-            .map_err(Error::from)
+        Ok(self
+            .addresses
+            .iter()
+            .last()
+            .map(|(diversifier_index, ua)| (ua.clone(), *diversifier_index))
+            .unwrap()) // can unwrap as the map is never empty
     }
 
     pub(crate) fn kind(&self) -> &AccountSource {
@@ -201,9 +221,9 @@ impl Account {
                         Ok::<_, Error>(diversifier_index)
                     })
                     .unwrap_or(Ok(DiversifierIndex::default()))?;
-                let (addr, diversifier_index) = ufvk.find_address(search_from, request)?;
-                self.diversifier_index = diversifier_index;
-                Ok(Some(addr))
+                let (ua, diversifier_index) = ufvk.find_address(search_from, request)?;
+                self.addresses.insert(diversifier_index, ua.clone());
+                Ok(Some(ua))
             }
             None => Ok(None),
         }

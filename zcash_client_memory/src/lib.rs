@@ -13,6 +13,7 @@ use std::{
     num::NonZeroU32,
     ops::{Range, RangeInclusive},
 };
+use transparent::{TransparentReceivedOutputSpends, TransparentReceivedOutputs};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
@@ -21,7 +22,7 @@ use zcash_protocol::{
 
 use zip32::fingerprint::SeedFingerprint;
 
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::{consensus::BlockHeight, legacy::TransparentAddress, transaction::TxId};
 
 use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
@@ -98,6 +99,12 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     /// Stores the block height corresponding to the last note commitment in a shard
     #[serde_as(as = "BTreeMap<TreeAddressDef, FromInto<u32>>")]
     orchard_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
+
+    #[serde(skip)]
+    transparent_received_outputs: TransparentReceivedOutputs,
+
+    #[serde(skip)]
+    transparent_received_output_spends: TransparentReceivedOutputSpends,
 }
 
 impl<P: consensus::Parameters> MemoryWalletDb<P> {
@@ -119,6 +126,8 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             tx_locator: TxLocatorMap::new(),
             received_note_spends: ReceievdNoteSpends::new(),
             scan_queue: ScanQueue::new(),
+            transparent_received_outputs: TransparentReceivedOutputs::new(),
+            transparent_received_output_spends: TransparentReceivedOutputSpends::new(),
         }
     }
 
@@ -882,6 +891,22 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 },
             ))
         }
+    }
+
+    pub(crate) fn find_account_for_transparent_address(
+        &self,
+        address: &TransparentAddress,
+    ) -> Result<Option<&AccountId>, Error> {
+        Ok(self
+            .accounts
+            .iter()
+            .find(|(_, account)| {
+                account
+                    .addresses()
+                    .iter()
+                    .any(|(_, unified_address)| unified_address.transparent() == Some(address))
+            })
+            .map(|(id, _)| id))
     }
 }
 

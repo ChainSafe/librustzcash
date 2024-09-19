@@ -5,6 +5,7 @@ pub(crate) mod nullifier;
 pub(crate) mod scanning;
 pub(crate) mod serialization;
 pub(crate) mod transaction;
+pub(crate) mod transparent;
 
 pub(crate) use account::*;
 pub(crate) use block::*;

@@ -28,13 +28,15 @@ pub(crate) struct TxLocatorMap(
 #[derive(Serialize, Deserialize)]
 pub(crate) struct TransactionEntry {
     // created: String,
-    /// Combines block height and mined_height into a txn status
+    /// mined_height is rolled into into a txn status
     #[serde(with = "TransactionStatusDef")]
     tx_status: TransactionStatus,
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    block: Option<BlockHeight>,
     tx_index: Option<u32>,
     #[serde_as(as = "Option<FromInto<u32>>")]
     expiry_height: Option<BlockHeight>,
-    raw: Vec<u8>,
+    raw: Option<Vec<u8>>,
     #[serde_as(as = "Option<TryFromInto<u64>>")]
     fee: Option<Zatoshis>,
     /// - `target_height`: stores the target height for which the transaction was constructed, if
@@ -50,8 +52,9 @@ impl TransactionEntry {
         Self {
             tx_status: TransactionStatus::Mined(height),
             tx_index: Some(tx_meta.block_index() as u32),
+            block: Some(height),
             expiry_height: None,
-            raw: Vec::new(),
+            raw: None,
             fee: None,
             _target_height: None,
         }
@@ -70,8 +73,8 @@ impl TransactionEntry {
         }
     }
 
-    pub(crate) fn raw(&self) -> &[u8] {
-        self.raw.as_slice()
+    pub(crate) fn raw(&self) -> Option<&[u8]> {
+        self.raw.as_ref().map(|v| v.as_slice())
     }
 }
 #[serde_as]
@@ -94,6 +97,7 @@ impl TransactionTable {
     pub(crate) fn _get_transaction(&self, txid: TxId) -> Option<&TransactionEntry> {
         self.0.get(&txid)
     }
+
     /// Inserts information about a MINED transaction that was observed to
     /// contain a note related to this wallet
     pub(crate) fn put_tx_meta(&mut self, tx_meta: WalletTx<AccountId>, height: BlockHeight) {
@@ -107,6 +111,49 @@ impl TransactionTable {
             }
         }
     }
+
+    #[cfg(feature = "transparent-inputs")]
+    /// Insert partial transaction data ontained from a received transparent output
+    /// Will update an existing transaction if it already exists with new date (e.g. will replace Nones with newer Some value)
+    pub(crate) fn put_tx_partial(
+        &mut self,
+        txid: &TxId,
+        block: &Option<BlockHeight>,
+        mined_height: Option<BlockHeight>,
+    ) {
+        match self.0.entry(*txid) {
+            Entry::Occupied(mut entry) => {
+                match entry.get().tx_status {
+                    TransactionStatus::Mined(_) => {
+                        // If the transaction is already mined, we don't need to update it
+                        return;
+                    }
+                    _ => {
+                        // If there was no info about the tx being mined we can update it if we have it
+                        entry.get_mut().tx_status = mined_height
+                            .map(|h| TransactionStatus::Mined(h))
+                            .unwrap_or(TransactionStatus::NotInMainChain);
+                    }
+                }
+                // replace the block if it's not already set
+                entry.get_mut().block = (*block).or(entry.get().block);
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(TransactionEntry {
+                    tx_status: mined_height
+                        .map(|h| TransactionStatus::Mined(h))
+                        .unwrap_or(TransactionStatus::NotInMainChain),
+                    block: *block,
+                    tx_index: None,
+                    expiry_height: None,
+                    raw: None,
+                    fee: None,
+                    _target_height: None,
+                });
+            }
+        }
+    }
+
     /// Inserts full transaction data
     pub(crate) fn put_tx_data(
         &mut self,
@@ -118,8 +165,10 @@ impl TransactionTable {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().fee = fee;
                 entry.get_mut().expiry_height = Some(tx.expiry_height());
-                entry.get_mut().raw = Vec::new();
-                tx.write(&mut entry.get_mut().raw).unwrap();
+
+                let mut raw = Vec::new();
+                tx.write(&mut raw).unwrap();
+                entry.get_mut().raw = Some(raw);
             }
             Entry::Vacant(entry) => {
                 let mut raw = Vec::new();
@@ -127,8 +176,9 @@ impl TransactionTable {
                 entry.insert(TransactionEntry {
                     tx_status: TransactionStatus::NotInMainChain,
                     tx_index: None,
+                    block: None,
                     expiry_height: Some(tx.expiry_height()),
-                    raw,
+                    raw: Some(raw),
                     fee,
                     _target_height: target_height,
                 });
@@ -148,7 +198,10 @@ impl TransactionTable {
         }
     }
     pub(crate) fn get_tx_raw(&self, txid: &TxId) -> Option<&[u8]> {
-        self.0.get(txid).map(|entry| entry.raw.as_slice())
+        self.0
+            .get(txid)
+            .map(|entry| entry.raw.as_ref().map(|v| v.as_slice()))
+            .flatten()
     }
 }
 
