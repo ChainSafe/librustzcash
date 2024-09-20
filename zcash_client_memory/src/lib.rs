@@ -68,7 +68,7 @@ use types::serialization::*;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
     #[serde(skip)]
     params: P,
@@ -81,6 +81,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     nullifiers: NullifierMap,
 
     /// Stores the outputs of transactions created by the wallet.
+    #[serde(skip)]
     sent_notes: SentNoteTable,
 
     tx_locator: TxLocatorMap,

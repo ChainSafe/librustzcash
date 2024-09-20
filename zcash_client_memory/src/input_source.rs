@@ -106,17 +106,16 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
         target_height: BlockHeight,
         min_confirmations: u32,
     ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
-
         let txos = self
-        .transparent_received_outputs
-        .iter()
-        .filter(|(_, txo)| txo.address == *address)
-        .map(|(outpoint, txo)| (outpoint, txo, self.tx_table.get(&txo.transaction_id)))
-        // TODO: Only include confirmed transactions, etc
-        .filter_map(|(outpoint, txo, tx)| {
-            txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
-        })
-        .collect();
+            .transparent_received_outputs
+            .iter()
+            .filter(|(_, txo)| txo.address == *address)
+            .map(|(outpoint, txo)| (outpoint, txo, self.tx_table.get(&txo.transaction_id)))
+            // TODO: Only include confirmed transactions, etc
+            .filter_map(|(outpoint, txo, tx)| {
+                txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
+            })
+            .collect();
 
         Ok(txos)
     }

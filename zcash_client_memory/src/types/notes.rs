@@ -4,6 +4,7 @@ use incrementalmerkletree::Position;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::{FromInto, TryFromInto};
+use zcash_protocol::ShieldedProtocol;
 
 use std::{
     collections::BTreeMap,
@@ -310,11 +311,34 @@ pub(crate) fn to_spendable_notes(
     ))
 }
 
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-pub(crate) struct SentNoteTable(
-    #[serde_as(as = "BTreeMap<NoteIdDef, _>")] BTreeMap<NoteId, SentNote>,
-);
+#[derive(PartialEq, PartialOrd, Eq, Ord)]
+pub enum SentNoteId {
+    Shielded(NoteId),
+    Transparent { txid: TxId, output_index: u32 },
+}
+
+impl From<NoteId> for SentNoteId {
+    fn from(note_id: NoteId) -> Self {
+        SentNoteId::Shielded(note_id)
+    }
+}
+
+impl From<&NoteId> for SentNoteId {
+    fn from(note_id: &NoteId) -> Self {
+        SentNoteId::Shielded(note_id.clone())
+    }
+}
+
+impl SentNoteId {
+    pub fn txid(&self) -> &TxId {
+        match self {
+            SentNoteId::Shielded(note_id) => note_id.txid(),
+            SentNoteId::Transparent { txid, .. } => txid,
+        }
+    }
+}
+
+pub(crate) struct SentNoteTable(BTreeMap<SentNoteId, SentNote>);
 
 impl SentNoteTable {
     pub fn new() -> Self {
@@ -333,7 +357,21 @@ impl SentNoteTable {
         };
         match pool_type {
             PoolType::Transparent => {
-                tracing::warn!("Transparent protocols not yet supported");
+                // we kind of are in a tricky spot here since NoteId cannot represent a transparent note..
+                // just make it a sapling one for now until we figure out a better way to represent this
+                let note_id = SentNoteId::Transparent {
+                    txid: tx.tx().txid(),
+                    output_index: output.output_index().try_into().unwrap(),
+                };
+                self.0.insert(
+                    note_id,
+                    SentNote {
+                        from_account_id: *tx.account_id(),
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: Memo::Empty, // transparent notes don't have memos
+                    },
+                );
             }
             PoolType::Shielded(protocol) => {
                 let note_id = NoteId::new(
@@ -342,7 +380,7 @@ impl SentNoteTable {
                     output.output_index().try_into().unwrap(),
                 );
                 self.0.insert(
-                    note_id,
+                    note_id.into(),
                     SentNote {
                         from_account_id: *tx.account_id(),
                         to: output.recipient().clone(),
@@ -355,13 +393,13 @@ impl SentNoteTable {
     }
 
     pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {
-        self.0.get(note_id)
+        self.0.get(&note_id.into())
     }
 }
 
 impl IntoIterator for SentNoteTable {
-    type Item = (NoteId, SentNote);
-    type IntoIter = std::collections::btree_map::IntoIter<NoteId, SentNote>;
+    type Item = (SentNoteId, SentNote);
+    type IntoIter = std::collections::btree_map::IntoIter<SentNoteId, SentNote>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -369,7 +407,7 @@ impl IntoIterator for SentNoteTable {
 }
 
 impl Deref for SentNoteTable {
-    type Target = BTreeMap<NoteId, SentNote>;
+    type Target = BTreeMap<SentNoteId, SentNote>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

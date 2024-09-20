@@ -741,7 +741,8 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             // at present for fully transparent transactions, because any transaction with a shielded
             // component will be detected via ordinary chain scanning and/or nullifier checking.
             if !detectable_via_scanning {
-                self.transaction_data_request_queue.queue_status_retrieval(&sent_tx.tx().txid());
+                self.transaction_data_request_queue
+                    .queue_status_retrieval(&sent_tx.tx().txid());
             }
         }
 

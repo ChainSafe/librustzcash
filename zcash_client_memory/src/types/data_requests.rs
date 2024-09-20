@@ -1,4 +1,3 @@
-
 use std::{collections::VecDeque, ops::Deref};
 
 use zcash_client_backend::data_api::TransactionDataRequest;
@@ -13,7 +12,8 @@ impl TransactionDataRequestQueue {
     }
 
     pub fn queue_status_retrieval(&mut self, txid: &TxId) {
-        self.0.push_back(TransactionDataRequest::GetStatus(txid.clone()));
+        self.0
+            .push_back(TransactionDataRequest::GetStatus(txid.clone()));
     }
 }
 

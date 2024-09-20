@@ -1,4 +1,7 @@
-use std::{collections::{btree_map::Entry, BTreeMap}, ops::Deref};
+use std::{
+    collections::{btree_map::Entry, BTreeMap},
+    ops::Deref,
+};
 
 use serde::{Deserialize, Serialize};
 use zcash_primitives::{

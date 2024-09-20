@@ -18,7 +18,7 @@ use zcash_client_backend::{
         SeedRelevance, TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
-    wallet::NoteId,
+    wallet::{NoteId, Recipient},
 };
 use zcash_primitives::{
     block::BlockHash,
@@ -28,6 +28,7 @@ use zcash_primitives::{
 use zcash_protocol::{
     consensus::{self, BranchId},
     memo::Memo,
+    value::ZatBalance,
     PoolType, ShieldedProtocol,
 };
 
@@ -42,7 +43,7 @@ use {
 };
 
 use super::{Account, AccountId, MemoryWalletDb};
-use crate::{error::Error, MemoryWalletBlock};
+use crate::{error::Error, MemoryWalletBlock, SentNoteId};
 
 impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     type Error = Error;
@@ -696,7 +697,42 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
         tracing::debug!("transaction_data_requests");
-        Ok(self.transaction_data_request_queue.iter().cloned().collect())
+        Ok(self
+            .transaction_data_request_queue
+            .iter()
+            .cloned()
+            .collect())
+    }
+
+    #[cfg(any(test, feature = "test-dependencies"))]
+    fn get_confirmed_sends(
+        &self,
+        txid: &TxId,
+    ) -> Result<Vec<(u64, Option<String>, Option<String>, Option<u32>)>, Self::Error> {
+        Ok(self
+            .sent_notes
+            .iter()
+            .filter(|(note_id, _)| note_id.txid() == txid)
+            .map(|(_, note)| match note.to.clone() {
+                Recipient::External(zcash_address, _) => (
+                    note.value.into_u64(),
+                    Some(zcash_address.to_string()),
+                    None,
+                    None,
+                ),
+                Recipient::EphemeralTransparent {
+                    ephemeral_address, ..
+                } => (
+                    // TODO: Use the ephemeral address index to look up the address
+                    // and find the correct index
+                    note.value.into_u64(),
+                    Some("".to_string()),
+                    Some("".to_string()),
+                    Some(0),
+                ),
+                Recipient::InternalAccount { .. } => (note.value.into_u64(), None, None, None),
+            })
+            .collect())
     }
 
     /// Returns the note IDs for shielded notes sent by the wallet in a particular
@@ -711,8 +747,12 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .get_sent_notes()
             .iter()
             .filter_map(|(id, _)| {
-                if id.txid() == txid && id.protocol() == protocol {
-                    Some(*id)
+                if let SentNoteId::Shielded(id) = id {
+                    if id.txid() == txid && id.protocol() == protocol {
+                        Some(*id)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -744,6 +784,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                     .iter()
                     .filter(|(_, spend_txid)| *spend_txid == txid)
                     .collect::<Vec<_>>();
+
                 let spent_utxos = self
                     .transparent_received_output_spends
                     .iter()
@@ -758,9 +799,11 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                     .filter(|(note_id, _)| {
                         // use a join on the received notes table to detect which are change
                         self.received_notes.iter().any(|received_note| {
-                            received_note.note_id == **note_id && !received_note.is_change
+                            SentNoteId::from(received_note.note_id) == **note_id
+                                && !received_note.is_change
                         })
-                    }).collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
 
                 // notes received by the transaction
                 let received_notes = self
@@ -774,6 +817,18 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                     .map(|(_, note)| note.from_account_id)
                     .unwrap_or_default();
 
+                let balance_gained: u64 = received_notes
+                    .iter()
+                    .map(|note| note.note.value().into_u64())
+                    .sum();
+
+                let balance_lost: u64 = self // includes change
+                    .sent_notes
+                    .iter()
+                    .filter(|(note_id, _)| note_id.txid() == txid)
+                    .map(|(_, sent_note)| sent_note.value.into_u64())
+                    .sum();
+
                 let is_shielding = {
                     //All of the wallet-spent and wallet-received notes are consistent with a shielding transaction.
                     // e.g. only transparent outputs are spend and only shielded notes are received
@@ -785,19 +840,19 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                 };
 
                 zcash_client_backend::data_api::testing::TransactionSummary::new(
-                    account_id,                            // account_id
-                    *txid,                                 // txid
-                    tx.expiry_height(),                    // expiry_height
-                    tx.mined_height(),                     // mined_height
-                    0.try_into().unwrap(),                 //TODO:  account_value_delta
-                    tx.fee(),                              // fee_paid
-                    spent_notes.len() + spent_utxos.len(), // spent_note_count
-                    received_notes.iter().any(|note| note.is_change),                                 // has_change
-                    sent_notes.len(),           // sent_note_count (excluding change)
-                    received_notes.iter().filter(|note| !note.is_change).count(),                  // received_note_count (excluding change)
-                    0,                                     // TODO: memo_count
-                    false,                                 // TODO: expired_unmined
-                    is_shielding,                                 // TODO: is_shielding
+                    account_id,                                                   // account_id
+                    *txid,                                                        // txid
+                    tx.expiry_height(),                                           // expiry_height
+                    tx.mined_height(),                                            // mined_height
+                    ZatBalance::const_from_i64((balance_gained as i64) - (balance_lost as i64)), // account_value_delta
+                    tx.fee(),                                                  // fee_paid
+                    spent_notes.len() + spent_utxos.len(),                     // spent_note_count
+                    received_notes.iter().any(|note| note.is_change),          // has_change
+                    sent_notes.len(), // sent_note_count (excluding change)
+                    received_notes.iter().filter(|note| !note.is_change).count(), // received_note_count (excluding change)
+                    0,            // TODO: memo_count
+                    false,        // TODO: expired_unmined
+                    is_shielding, // TODO: is_shielding
                 )
             })
             .collect())
