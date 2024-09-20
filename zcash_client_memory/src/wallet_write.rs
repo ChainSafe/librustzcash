@@ -49,6 +49,12 @@ use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
 #[cfg(feature = "orchard")]
 use zcash_protocol::ShieldedProtocol::Orchard;
 
+#[cfg(feature = "transparent-inputs")]
+use {
+    zcash_client_backend::wallet::TransparentAddressMetadata,
+    zcash_primitives::legacy::TransparentAddress,
+};
+
 impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
     type UtxoRef = OutPoint;
 
@@ -665,8 +671,10 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 Some(sent_tx.fee_amount()),
                 Some(sent_tx.target_height()),
             );
+            let mut detectable_via_scanning = false;
             // Mark sapling notes as spent
             if let Some(bundle) = sent_tx.tx().sapling_bundle() {
+                detectable_via_scanning = true;
                 for spend in bundle.shielded_spends() {
                     self.mark_sapling_note_spent(*spend.nullifier(), sent_tx.tx().txid())?;
                 }
@@ -675,6 +683,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             if let Some(bundle) = sent_tx.tx().orchard_bundle() {
                 #[cfg(feature = "orchard")]
                 {
+                    detectable_via_scanning = true;
                     for action in bundle.actions() {
                         match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid())
                         {
@@ -727,8 +736,15 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                     _ => {}
                 }
             }
-            // in sqlite they que
+
+            // Add the transaction to the set to be queried for transaction status. This is only necessary
+            // at present for fully transparent transactions, because any transaction with a shielded
+            // component will be detected via ordinary chain scanning and/or nullifier checking.
+            if !detectable_via_scanning {
+                self.transaction_data_request_queue.queue_status_retrieval(&sent_tx.tx().txid());
+            }
         }
+
         Ok(())
     }
 
@@ -739,6 +755,41 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     ) -> Result<(), Self::Error> {
         tracing::debug!("set_transaction_status");
         self.tx_table.set_transaction_status(&txid, status)
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    /// Returns a vector with the next `n` previously unreserved ephemeral addresses for
+    /// the given account.
+    fn reserve_next_n_ephemeral_addresses(
+        &mut self,
+        account_id: Self::AccountId,
+        n: usize,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
+        let mut addresses = Vec::new();
+        if let Some(account) = self.accounts.get_mut(account_id) {
+            for _ in 0..n {
+                if let Some(address) =
+                    account.next_available_address(UnifiedAddressRequest::all().unwrap())?
+                {
+                    let t_address = address.transparent().unwrap().clone();
+                    addresses.push(t_address);
+                } else {
+                    return Err(Error::UnknownZip32Derivation);
+                }
+            }
+        } else {
+            return Err(Error::AccountUnknown(account_id));
+        }
+        addresses
+            .into_iter()
+            .map(|t_address| {
+                Ok((
+                    t_address,
+                    self.get_transparent_address_metadata(account_id, &t_address)?
+                        .unwrap(),
+                ))
+            })
+            .collect()
     }
 }
 

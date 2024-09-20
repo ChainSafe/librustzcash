@@ -115,6 +115,9 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
 
     #[serde(skip)]
     transparent_spend_map: TransparentSpendCache,
+
+    #[serde(skip)]
+    transaction_data_request_queue: TransactionDataRequestQueue,
 }
 
 impl<P: consensus::Parameters> MemoryWalletDb<P> {
@@ -139,6 +142,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             transparent_received_outputs: TransparentReceivedOutputs::new(),
             transparent_received_output_spends: TransparentReceivedOutputSpends::new(),
             transparent_spend_map: TransparentSpendCache::new(),
+            transaction_data_request_queue: TransactionDataRequestQueue::new(),
         }
     }
 

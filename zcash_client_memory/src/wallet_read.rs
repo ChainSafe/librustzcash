@@ -685,6 +685,8 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
 
         let balances = HashMap::new();
 
+        // TODO: Finish implementing this
+
         for (outpoint, txo) in self.transparent_received_outputs.iter() {
             let tx = self.tx_table.get(&txo.transaction_id);
         }
@@ -694,7 +696,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
         tracing::debug!("transaction_data_requests");
-        todo!()
+        Ok(self.transaction_data_request_queue.iter().cloned().collect())
     }
 
     /// Returns the note IDs for shielded notes sent by the wallet in a particular

@@ -6,10 +6,11 @@ pub(crate) mod scanning;
 pub(crate) mod serialization;
 pub(crate) mod transaction;
 pub(crate) mod transparent;
+pub(crate) mod data_requests;
 
 pub(crate) use account::*;
 pub(crate) use block::*;
 pub(crate) use notes::*;
 pub(crate) use nullifier::*;
-
+pub(crate) use data_requests::*;
 pub(crate) use transaction::*;
