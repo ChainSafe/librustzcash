@@ -8,7 +8,13 @@ use std::{
     ops::Range,
 };
 
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::{
+    consensus::BlockHeight,
+    transaction::{
+        components::{OutPoint, TxOut},
+        TxId,
+    },
+};
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
     ShieldedProtocol::{self, Sapling},
@@ -44,7 +50,7 @@ use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
 use zcash_protocol::ShieldedProtocol::Orchard;
 
 impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
-    type UtxoRef = u32;
+    type UtxoRef = OutPoint;
 
     fn create_account(
         &mut self,
@@ -586,74 +592,9 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         #[cfg(feature = "transparent-inputs")]
         {
             let address = output.recipient_address();
-            if let Some(receiving_account) = self.find_account_for_transparent_address(address)? {
-                // get the block height of the block that mined the output only if we have it in the block table
-                // otherwise return None
-                let block = output
-                    .mined_height()
-                    .map(|h| self.blocks.get(&h).map(|b| b.height))
-                    .flatten();
-                let txid = TxId::from_bytes(output.outpoint().hash().to_vec().try_into().unwrap());
-
-                // insert a new tx into the transactions table for the one that spent this output. If there is already one then do an update
-                self.tx_table
-                    .put_tx_partial(&txid, &block, output.mined_height());
-
-                // look for a spent_height for this output by querying transparent_received_output_spends.
-                // If there isn't one then return None (this is an unspent output)
-                // otherwise return the height found by joining on the tx table
-                let spent_height = self
-                    .transparent_received_output_spends
-                    .get(&output.outpoint())
-                    .map(|txid| {
-                        self.tx_table
-                            .tx_status(txid)
-                            .map(|status| match status {
-                                TransactionStatus::Mined(height) => Some(height),
-                                _ => None,
-                            })
-                            .flatten()
-                    })
-                    .flatten();
-
-                // The max observed unspent height is either the spending transaction's mined height - 1, or
-                // the current chain tip height (assuming we know it is unspent)
-                let max_observed_unspent = match spent_height {
-                    Some(h) => Some(h - 1),
-                    None => self.chain_height()?,
-                }.unwrap_or(BlockHeight::from(0));
-
-                // insert into transparent_received_outputs table. Update if it exists
-                match self
-                    .transparent_received_outputs
-                    .entry(output.outpoint().clone())
-                {
-                    Entry::Occupied(mut entry) => {
-                        entry.get_mut().transaction_id = txid;
-                        entry.get_mut().address = *address;
-                        entry.get_mut().account_id = receiving_account;
-                        entry.get_mut().txout = output.txout().clone();
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(ReceivedTransparentOutput::new(
-                            txid,
-                            receiving_account,
-                            *address,
-                            output.txout().clone(),
-                            max_observed_unspent,
-                        ));
-                    }
-                }
-
-                // look in transparent_spend_map for a record of the output already having been spent, then mark it as spent using the
-                // stored reference to the spending transaction.
-                if self.transparent_spend_map.contains(&txid, output.outpoint()) {
-                    self.mark_transparent_output_spent(&txid, output.outpoint())?;
-                }
-
-                todo!()
+            if let Some(account_id) = self.find_account_for_transparent_address(address)? {
+                self.put_transparent_output(output, &account_id, false)
             } else {
-                // The UTXO was not for any of our transparent addresses.
                 Err(Error::AddressNotRecognized(*address))
             }
         }
@@ -752,8 +693,8 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             }
             // Mark transparent UTXOs as spent
             #[cfg(feature = "transparent-inputs")]
-            for _utxo_outpoint in sent_tx.utxos_spent() {
-                todo!()
+            for utxo_outpoint in sent_tx.utxos_spent() {
+                self.mark_transparent_output_spent(&sent_tx.tx().txid(), utxo_outpoint)?;
             }
 
             for output in sent_tx.outputs() {
@@ -765,14 +706,25 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                             ReceivedNote::from_sent_tx_output(sent_tx.tx().txid(), output)?,
                         );
                     }
+                    #[cfg(feature = "transparent-inputs")]
                     Recipient::EphemeralTransparent {
-                        receiving_account: _,
-                        ephemeral_address: _,
-                        outpoint_metadata: _,
+                        receiving_account,
+                        ephemeral_address,
+                        outpoint_metadata,
                     } => {
-                        // mark ephemeral address as used
+                        let txo = WalletTransparentOutput::from_parts(
+                            outpoint_metadata.clone(),
+                            TxOut {
+                                value: output.value(),
+                                script_pubkey: ephemeral_address.script(),
+                            },
+                            None,
+                        )
+                        .unwrap();
+                        self.put_transparent_output(&txo, receiving_account, true)?;
+                        // TODO: mark ephemeral address as used
                     }
-                    Recipient::External(_, _) => {}
+                    _ => {}
                 }
             }
             // in sqlite they que

@@ -48,6 +48,14 @@ impl ReceievdNoteSpends {
     }
 }
 
+impl Deref for ReceievdNoteSpends {
+    type Target = BTreeMap<NoteId, TxId>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// A note that has been received by the wallet
 /// TODO: Instead of Vec, perhaps we should identify by some unique ID
 #[derive(Serialize, Deserialize)]

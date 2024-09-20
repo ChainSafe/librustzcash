@@ -1,4 +1,4 @@
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::{collections::{btree_map::Entry, BTreeMap}, ops::Deref};
 
 use serde::{Deserialize, Serialize};
 use zcash_primitives::{
@@ -71,6 +71,10 @@ impl TransactionEntry {
             TransactionStatus::Mined(height) => Some(height),
             _ => None,
         }
+    }
+
+    pub(crate) fn fee(&self) -> Option<Zatoshis> {
+        self.fee
     }
 
     pub(crate) fn raw(&self) -> Option<&[u8]> {
@@ -216,6 +220,23 @@ impl TransactionTable {
 
     pub(crate) fn _remove(&mut self, txid: &TxId) -> Option<TransactionEntry> {
         self.0.remove(txid)
+    }
+}
+
+// impl IntoIterator for TransactionTable {
+//     type Item = (TxId, TransactionEntry);
+//     type IntoIter = std::collections::btree_map::IntoIter<TxId, TransactionEntry>;
+
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.0.into_iter()
+//     }
+// }
+
+impl Deref for TransactionTable {
+    type Target = BTreeMap<TxId, TransactionEntry>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

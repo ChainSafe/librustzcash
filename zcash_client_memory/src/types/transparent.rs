@@ -3,11 +3,14 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use zcash_client_backend::wallet::WalletTransparentOutput;
 use zcash_primitives::{
-    block::BlockHeader, legacy::TransparentAddress, transaction::{
+    block::BlockHeader,
+    legacy::TransparentAddress,
+    transaction::{
         components::{OutPoint, TxOut},
         TxId,
-    }
+    },
 };
 use zcash_protocol::consensus::BlockHeight;
 
@@ -68,6 +71,14 @@ impl TransparentReceivedOutputSpends {
     }
 }
 
+impl Deref for TransparentReceivedOutputSpends {
+    type Target = BTreeMap<OutPoint, TxId>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // transparent_received_outputs
 pub struct ReceivedTransparentOutput {
     // Reference to the transaction in which this TXO was created
@@ -99,14 +110,22 @@ impl ReceivedTransparentOutput {
             account_id,
             address,
             txout,
-            max_observed_unspent_height
+            max_observed_unspent_height,
         }
+    }
+
+    pub fn to_wallet_transparent_output(
+        &self,
+        outpoint: &OutPoint,
+        mined_height: Option<BlockHeight>,
+    ) -> Option<WalletTransparentOutput> {
+        WalletTransparentOutput::from_parts(outpoint.clone(), self.txout.clone(), mined_height)
     }
 }
 
 /// A cache of the relationship between a transaction and the prevout data of its
 /// transparent inputs.
-/// 
+///
 /// Output may be attempted to be spent in multiple transactions, even though only one will ever be mined
 /// which is why can cannot just rely on TransparentReceivedOutputSpends or implement this as as map
 #[derive(Default)]

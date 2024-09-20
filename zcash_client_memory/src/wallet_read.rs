@@ -23,7 +23,6 @@ use zcash_client_backend::{
 use zcash_primitives::{
     block::BlockHash,
     consensus::BlockHeight,
-    legacy::keys::NonHardenedChildIndex,
     transaction::{Transaction, TransactionData, TxId},
 };
 use zcash_protocol::{
@@ -659,8 +658,10 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .filter_map(|(diversifier_index, ua)| {
                 ua.transparent().map(|ta| {
                     let metadata =
-                        NonHardenedChildIndex::from_index((*diversifier_index).try_into().unwrap())
-                            .map(|i| TransparentAddressMetadata::new(Scope::External.into(), i));
+                        zcash_primitives::legacy::keys::NonHardenedChildIndex::from_index(
+                            (*diversifier_index).try_into().unwrap(),
+                        )
+                        .map(|i| TransparentAddressMetadata::new(Scope::External.into(), i));
                     (ta.clone(), metadata)
                 })
             })
@@ -668,6 +669,12 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         Ok(t_addresses)
     }
 
+    /// Returns a mapping from each transparent receiver associated with the specified account
+    /// to its not-yet-shielded UTXO balance, including only the effects of transactions mined
+    /// at a block height less than or equal to `summary_height`.
+    ///
+    /// Only non-ephemeral transparent receivers with a non-zero balance at the summary height
+    /// will be included.
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_balances(
         &self,
@@ -675,7 +682,14 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         summary_height: BlockHeight,
     ) -> Result<HashMap<TransparentAddress, zcash_protocol::value::Zatoshis>, Self::Error> {
         tracing::debug!("get_transparent_balances");
-        todo!();
+
+        let balances = HashMap::new();
+
+        for (outpoint, txo) in self.transparent_received_outputs.iter() {
+            let tx = self.tx_table.get(&txo.transaction_id);
+        }
+
+        Ok(balances)
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
@@ -716,29 +730,75 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         Vec<zcash_client_backend::data_api::testing::TransactionSummary<Self::AccountId>>,
         Self::Error,
     > {
-        // TODO: This is only looking at sent notes, we need to look at received notes as well
-        // TODO: Need to actually implement a bunch of these fields
         Ok(self
-            .sent_notes
+            .tx_table
             .iter()
-            .map(|(note_id, note)| {
+            .map(|(txid, tx)| {
+                // find all the notes associated with this transaction
+
+                // notes spent by the transaction
+                let spent_notes = self
+                    .received_note_spends
+                    .iter()
+                    .filter(|(_, spend_txid)| *spend_txid == txid)
+                    .collect::<Vec<_>>();
+                let spent_utxos = self
+                    .transparent_received_output_spends
+                    .iter()
+                    .filter(|(_, spend_txid)| *spend_txid == txid)
+                    .collect::<Vec<_>>();
+
+                // notes produced (sent) by the transaction (excluding change)
+                let sent_notes = self
+                    .sent_notes
+                    .iter()
+                    .filter(|(note_id, _)| note_id.txid() == txid)
+                    .filter(|(note_id, _)| {
+                        // use a join on the received notes table to detect which are change
+                        self.received_notes.iter().any(|received_note| {
+                            received_note.note_id == **note_id && !received_note.is_change
+                        })
+                    }).collect::<Vec<_>>();
+
+                // notes received by the transaction
+                let received_notes = self
+                    .received_notes
+                    .iter()
+                    .filter(|received_note| received_note.txid() == *txid)
+                    .collect::<Vec<_>>();
+
+                let account_id = sent_notes
+                    .first()
+                    .map(|(_, note)| note.from_account_id)
+                    .unwrap_or_default();
+
+                let is_shielding = {
+                    //All of the wallet-spent and wallet-received notes are consistent with a shielding transaction.
+                    // e.g. only transparent outputs are spend and only shielded notes are received
+                    spent_notes.is_empty() && !spent_utxos.is_empty()
+                    // The transaction contains at least one wallet-received note.
+                    && !received_notes.is_empty()
+                    // We do not know about any external outputs of the transaction.
+                    && sent_notes.is_empty()
+                };
+
                 zcash_client_backend::data_api::testing::TransactionSummary::new(
-                    note.from_account_id,  // account_id
-                    *note_id.txid(),       // txid
-                    None,                  // expiry_height
-                    None,                  // mined_height
-                    0.try_into().unwrap(), // account_value_delta
-                    None,                  // fee_paid
-                    0,                     // spent_note_count
-                    false,                 // has_change
-                    0,                     // sent_note_count
-                    0,                     // received_note_count
-                    0,                     // memo_count
-                    false,                 // expired_unmined
-                    false,                 // is_shielding
+                    account_id,                            // account_id
+                    *txid,                                 // txid
+                    tx.expiry_height(),                    // expiry_height
+                    tx.mined_height(),                     // mined_height
+                    0.try_into().unwrap(),                 //TODO:  account_value_delta
+                    tx.fee(),                              // fee_paid
+                    spent_notes.len() + spent_utxos.len(), // spent_note_count
+                    received_notes.iter().any(|note| note.is_change),                                 // has_change
+                    sent_notes.len(),           // sent_note_count (excluding change)
+                    received_notes.iter().filter(|note| !note.is_change).count(),                  // received_note_count (excluding change)
+                    0,                                     // TODO: memo_count
+                    false,                                 // TODO: expired_unmined
+                    is_shielding,                                 // TODO: is_shielding
                 )
             })
-            .collect::<Vec<_>>())
+            .collect())
     }
 
     #[cfg(any(test, feature = "test-dependencies"))]

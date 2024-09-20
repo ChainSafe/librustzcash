@@ -2,8 +2,14 @@ use zcash_client_backend::data_api::{InputSource, WalletRead};
 use zcash_client_backend::wallet::{Note, ReceivedNote};
 use zcash_protocol::{
     consensus,
+    consensus::BlockHeight,
     value::Zatoshis,
     ShieldedProtocol::{Orchard, Sapling},
+};
+#[cfg(feature = "transparent-inputs")]
+use {
+    zcash_client_backend::wallet::WalletTransparentOutput,
+    zcash_primitives::legacy::TransparentAddress,
 };
 
 use crate::{error::Error, to_spendable_notes, AccountId, MemoryWalletDb, NoteId};
@@ -91,6 +97,28 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             #[cfg(feature = "orchard")]
             &orchard_eligible_notes,
         )
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    fn get_spendable_transparent_outputs(
+        &self,
+        address: &TransparentAddress,
+        target_height: BlockHeight,
+        min_confirmations: u32,
+    ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
+
+        let txos = self
+        .transparent_received_outputs
+        .iter()
+        .filter(|(_, txo)| txo.address == *address)
+        .map(|(outpoint, txo)| (outpoint, txo, self.tx_table.get(&txo.transaction_id)))
+        // TODO: Only include confirmed transactions, etc
+        .filter_map(|(outpoint, txo, tx)| {
+            txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
+        })
+        .collect();
+
+        Ok(txos)
     }
 
     #[cfg(any(test, feature = "test-dependencies"))]
