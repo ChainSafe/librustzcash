@@ -89,15 +89,6 @@ impl Accounts {
     }
 }
 
-impl IntoIterator for Accounts {
-    type Item = (AccountId, Account);
-    type IntoIter = std::collections::btree_map::IntoIter<AccountId, Account>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.accounts.into_iter()
-    }
-}
-
 impl Deref for Accounts {
     type Target = BTreeMap<AccountId, Account>;
 

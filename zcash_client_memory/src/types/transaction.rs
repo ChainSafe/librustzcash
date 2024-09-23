@@ -241,15 +241,6 @@ impl TransactionTable {
     }
 }
 
-// impl IntoIterator for TransactionTable {
-//     type Item = (TxId, TransactionEntry);
-//     type IntoIter = std::collections::btree_map::IntoIter<TxId, TransactionEntry>;
-
-//     fn into_iter(self) -> Self::IntoIter {
-//         self.0.into_iter()
-//     }
-// }
-
 impl Deref for TransactionTable {
     type Target = BTreeMap<TxId, TransactionEntry>;
 
