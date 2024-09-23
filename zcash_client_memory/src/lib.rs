@@ -52,6 +52,8 @@ pub mod wallet_commitment_trees;
 pub mod wallet_read;
 pub mod wallet_write;
 pub(crate) use types::*;
+pub mod block_source;
+pub use block_source::*;
 
 #[cfg(test)]
 pub mod testing;

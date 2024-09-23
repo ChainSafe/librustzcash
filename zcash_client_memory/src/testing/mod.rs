@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 
 use zcash_client_backend::data_api::InputSource;
 use zcash_client_backend::wallet::Note;
@@ -23,8 +24,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::local_consensus::LocalNetwork;
 
-use crate::SentNoteId;
-use crate::{Account, AccountId, Error, MemoryWalletDb};
+use crate::{Account, AccountId, Error, MemBlockCache, MemoryWalletDb, SentNoteId};
 
 pub mod pool;
 
@@ -48,53 +48,8 @@ impl DataStoreFactory for TestMemDbFactory {
     }
 }
 
-/// A block cache for testing. Just holds blocks in a map
-pub(crate) struct MemBlockCache(BTreeMap<u64, CompactBlock>);
-
-impl MemBlockCache {
-    pub(crate) fn new() -> Self {
-        MemBlockCache(BTreeMap::new())
-    }
-}
-
-impl BlockSource for MemBlockCache {
-    type Error = ();
-
-    fn with_blocks<F, WalletErrT>(
-        &self,
-        from_height: Option<zcash_protocol::consensus::BlockHeight>,
-        limit: Option<usize>,
-        mut with_block: F,
-    ) -> Result<(), zcash_client_backend::data_api::chain::error::Error<WalletErrT, Self::Error>>
-    where
-        F: FnMut(
-            CompactBlock,
-        ) -> Result<
-            (),
-            zcash_client_backend::data_api::chain::error::Error<WalletErrT, Self::Error>,
-        >,
-    {
-        let block_iter = self
-            .0
-            .iter()
-            .filter(|(_, cb)| {
-                if let Some(from_height) = from_height {
-                    cb.height() >= from_height
-                } else {
-                    true
-                }
-            })
-            .take(limit.unwrap_or(usize::MAX));
-
-        for (_, cb) in block_iter {
-            with_block(cb.clone())?;
-        }
-        Ok(())
-    }
-}
-
 impl TestCache for MemBlockCache {
-    type BsError = ();
+    type BsError = Infallible;
     type BlockSource = MemBlockCache;
     type InsertResult = ();
 
@@ -103,7 +58,10 @@ impl TestCache for MemBlockCache {
     }
 
     fn insert(&mut self, cb: &CompactBlock) -> Self::InsertResult {
-        self.0.insert(cb.height().into(), cb.clone());
+        self.0
+            .write()
+            .unwrap()
+            .insert(cb.height().into(), cb.clone());
     }
 }
 

@@ -11,12 +11,14 @@ categories.workspace = true
 
 [dependencies]
 zcash_address.workspace = true
-zcash_client_backend = { workspace = true, features = ["unstable-serialization", "unstable-spanning-tree"] }
+zcash_client_backend = { workspace = true, features = ["unstable-serialization", "unstable-spanning-tree", "sync"] }
 zcash_encoding.workspace = true
 zcash_keys = { workspace = true, features = ["sapling"] }
 zcash_primitives.workspace = true
 zcash_protocol.workspace = true
 zip32.workspace = true
+
+tokio = { workspace = true, features = ["sync"] }
 
 # Dependencies exposed in a public API:
 # (Breaking upgrades to these require a breaking upgrade to this crate.)
@@ -53,9 +55,11 @@ thiserror = "1.0.61"
 
 rayon.workspace = true
 serde_with = "3.9.0"
+async-trait = { version = "0.1" }
 
 # - Test dependencies
 proptest = { workspace = true, optional = true }
+wasm_sync = "0.1.2"
 
 [dev-dependencies]
 ciborium = "0.2.2"
