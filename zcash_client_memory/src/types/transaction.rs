@@ -83,6 +83,18 @@ impl TransactionEntry {
     pub(crate) fn raw(&self) -> Option<&[u8]> {
         self.raw.as_ref().map(|v| v.as_slice())
     }
+
+    pub(crate) fn is_mined_or_unexpired_at(&self, height: BlockHeight) -> bool {
+        match self.tx_status {
+            TransactionStatus::Mined(tx_height) => {
+                tx_height <= height
+            },
+            TransactionStatus::NotInMainChain => {
+                self.expiry_height.map_or(false, |expiry_height| expiry_height > height)
+            },
+            _ => false,
+        }
+    }
 }
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -130,18 +142,9 @@ impl TransactionTable {
     ) {
         match self.0.entry(*txid) {
             Entry::Occupied(mut entry) => {
-                match entry.get().tx_status {
-                    TransactionStatus::Mined(_) => {
-                        // If the transaction is already mined, we don't need to update it
-                        return;
-                    }
-                    _ => {
-                        // If there was no info about the tx being mined we can update it if we have it
-                        entry.get_mut().tx_status = mined_height
-                            .map(|h| TransactionStatus::Mined(h))
-                            .unwrap_or(TransactionStatus::NotInMainChain);
-                    }
-                }
+                entry.get_mut().tx_status = mined_height
+                    .map(|h| TransactionStatus::Mined(h))
+                    .unwrap_or(TransactionStatus::NotInMainChain);
                 // replace the block if it's not already set
                 entry.get_mut().block = (*block).or(entry.get().block);
             }

@@ -1,5 +1,6 @@
-use zcash_client_backend::data_api::{InputSource, WalletRead};
+use zcash_client_backend::data_api::{InputSource, TransactionStatus, WalletRead};
 use zcash_client_backend::wallet::{Note, ReceivedNote};
+use zcash_primitives::transaction::components::OutPoint;
 use zcash_protocol::{
     consensus,
     consensus::BlockHeight,
@@ -12,6 +13,7 @@ use {
     zcash_primitives::legacy::TransparentAddress,
 };
 
+use crate::transparent::{ReceivedTransparentOutput, TransparentReceivedOutputs};
 use crate::{error::Error, to_spendable_notes, AccountId, MemoryWalletDb, NoteId};
 
 impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
@@ -99,6 +101,14 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
         )
     }
 
+    /// Returns the list of spendable transparent outputs received by this wallet at `address`
+    /// such that, at height `target_height`:
+    /// * the transaction that produced the output had or will have at least `min_confirmations`
+    ///   confirmations; and
+    /// * the output is unspent as of the current chain tip.
+    ///
+    /// An output that is potentially spent by an unmined transaction in the mempool is excluded
+    /// iff the spending transaction will not be expired at `target_height`.
     #[cfg(feature = "transparent-inputs")]
     fn get_spendable_transparent_outputs(
         &self,
@@ -111,13 +121,34 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             .iter()
             .filter(|(_, txo)| txo.address == *address)
             .map(|(outpoint, txo)| (outpoint, txo, self.tx_table.get(&txo.transaction_id)))
-            // TODO: Only include confirmed transactions, etc
+            .filter(|(outpoint, _, _)| {
+                self.utxo_is_spendable(outpoint, target_height, min_confirmations)
+                    .unwrap()
+            })
             .filter_map(|(outpoint, txo, tx)| {
                 txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
             })
             .collect();
-
         Ok(txos)
+    }
+
+    /// Fetches the transparent output corresponding to the provided `outpoint`.
+    ///
+    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
+    /// spendable as of the chain tip height.
+    #[cfg(feature = "transparent-inputs")]
+    fn get_unspent_transparent_output(
+        &self,
+        outpoint: &OutPoint,
+    ) -> Result<Option<WalletTransparentOutput>, Self::Error> {
+        Ok(self
+            .transparent_received_outputs
+            .get(outpoint)
+            .map(|txo| (txo, self.tx_table.get(&txo.transaction_id)))
+            .map(|(txo, tx)| {
+                txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
+            })
+            .flatten())
     }
 
     #[cfg(any(test, feature = "test-dependencies"))]
@@ -181,5 +212,48 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             .collect();
 
         Ok(selection)
+    }
+
+    pub fn utxo_is_spendable(
+        &self,
+        outpoint: &OutPoint,
+        target_height: BlockHeight,
+        min_confirmations: u32,
+    ) -> Result<bool, Error> {
+        let confirmed_height = target_height - min_confirmations;
+        let utxo = self.transparent_received_outputs.get(outpoint).ok_or(Error::NoteNotFound)?;
+        if let Some(tx) = self.tx_table.get(&utxo.transaction_id) {
+            Ok(
+                tx.is_mined_or_unexpired_at(confirmed_height) // tx that created it is mined
+                && !self.utxo_is_spent(outpoint, min_confirmations)? // not spent
+            )
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn utxo_is_spent(&self, outpoint: &OutPoint, min_confirmations: u32) -> Result<bool, Error> {
+        let spend = self.transparent_received_output_spends.get(outpoint);
+
+        let spent = match spend {
+            Some(txid) => {
+                let spending_tx = self
+                    .tx_table
+                    .get(txid)
+                    .ok_or_else(|| Error::TransactionNotFound(*txid))?;
+                match spending_tx.status() {
+                    TransactionStatus::Mined(_height) => true,
+                    TransactionStatus::TxidNotRecognized => unreachable!(),
+                    TransactionStatus::NotInMainChain => {
+                        // check the expiry
+                        spending_tx.expiry_height().is_none() // no expiry, tx could be mined any time so we consider it spent
+                            // expiry is in the future so it could still be mined
+                            || spending_tx.expiry_height() > self.summary_height(min_confirmations)?
+                    }
+                }
+            }
+            None => false,
+        };
+        Ok(spent)
     }
 }

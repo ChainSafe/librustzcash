@@ -6,6 +6,7 @@ use shardtree::store::ShardStore as _;
 use std::{
     collections::{hash_map::Entry, HashMap},
     num::NonZeroU32,
+    ops::Add,
 };
 use zcash_keys::keys::UnifiedIncomingViewingKey;
 use zip32::fingerprint::SeedFingerprint;
@@ -28,7 +29,7 @@ use zcash_primitives::{
 use zcash_protocol::{
     consensus::{self, BranchId},
     memo::Memo,
-    value::ZatBalance,
+    value::{ZatBalance, Zatoshis},
     PoolType, ShieldedProtocol,
 };
 
@@ -681,15 +682,31 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         &self,
         account_id: Self::AccountId,
         summary_height: BlockHeight,
-    ) -> Result<HashMap<TransparentAddress, zcash_protocol::value::Zatoshis>, Self::Error> {
+    ) -> Result<HashMap<TransparentAddress, Zatoshis>, Self::Error> {
         tracing::debug!("get_transparent_balances");
 
-        let balances = HashMap::new();
+        let mut balances = HashMap::new();
 
-        // TODO: Finish implementing this
-
-        for (outpoint, txo) in self.transparent_received_outputs.iter() {
-            let tx = self.tx_table.get(&txo.transaction_id);
+        for (outpoint, txo) in self.transparent_received_outputs.iter().filter(|(_, txo)| {
+            if let Ok(Some(txo_account_id)) =
+                self.find_account_for_transparent_address(&txo.address)
+            {
+                txo_account_id == account_id
+            } else {
+                false
+            }
+        }) {
+            let tx = self
+                .tx_table
+                .get(&txo.transaction_id)
+                .ok_or(Error::TransactionNotFound(txo.transaction_id))?;
+            if tx.is_mined_or_unexpired_at(summary_height)
+                && self.utxo_is_spendable(outpoint, summary_height, 0)?
+            {
+                let address = txo.address.clone();
+                let balance = balances.entry(address).or_insert(Zatoshis::ZERO);
+                *balance = balance.add(txo.txout.value).expect("balance overflow");
+            }
         }
 
         Ok(balances)
@@ -840,15 +857,15 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                 };
 
                 zcash_client_backend::data_api::testing::TransactionSummary::new(
-                    account_id,                                                   // account_id
-                    *txid,                                                        // txid
-                    tx.expiry_height(),                                           // expiry_height
-                    tx.mined_height(),                                            // mined_height
+                    account_id,                                                                  // account_id
+                    *txid,              // txid
+                    tx.expiry_height(), // expiry_height
+                    tx.mined_height(),  // mined_height
                     ZatBalance::const_from_i64((balance_gained as i64) - (balance_lost as i64)), // account_value_delta
-                    tx.fee(),                                                  // fee_paid
-                    spent_notes.len() + spent_utxos.len(),                     // spent_note_count
-                    received_notes.iter().any(|note| note.is_change),          // has_change
-                    sent_notes.len(), // sent_note_count (excluding change)
+                    tx.fee(),                                                     // fee_paid
+                    spent_notes.len() + spent_utxos.len(), // spent_note_count
+                    received_notes.iter().any(|note| note.is_change), // has_change
+                    sent_notes.len(),                      // sent_note_count (excluding change)
                     received_notes.iter().filter(|note| !note.is_change).count(), // received_note_count (excluding change)
                     0,            // TODO: memo_count
                     false,        // TODO: expired_unmined

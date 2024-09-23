@@ -24,6 +24,10 @@ impl TransparentReceivedOutputs {
     pub fn new() -> Self {
         Self(BTreeMap::new())
     }
+
+    pub fn get(&self, outpoint: &OutPoint) -> Option<&ReceivedTransparentOutput> {
+        self.0.get(outpoint)
+    }
 }
 
 impl IntoIterator for TransparentReceivedOutputs {
