@@ -87,6 +87,8 @@ use {
 pub mod orchard;
 pub mod pool;
 pub mod sapling;
+#[cfg(feature = "transparent-inputs")]
+pub mod transparent;
 
 pub struct TransactionSummary<AccountId> {
     account_id: AccountId,
