@@ -6,18 +6,20 @@ use shardtree::store::ShardStore as _;
 use std::{
     collections::{hash_map::Entry, HashMap},
     num::NonZeroU32,
+    ops::Add,
 };
 use zcash_keys::keys::UnifiedIncomingViewingKey;
 use zip32::fingerprint::SeedFingerprint;
+use zip32::Scope;
 
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, Ratio,
-        SeedRelevance, TransactionDataRequest, TransactionStatus,
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, InputSource,
+        Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
-    wallet::NoteId,
+    wallet::{NoteId, Recipient},
 };
 use zcash_primitives::{
     block::BlockHash,
@@ -27,6 +29,7 @@ use zcash_primitives::{
 use zcash_protocol::{
     consensus::{self, BranchId},
     memo::Memo,
+    value::{ZatBalance, Zatoshis},
     PoolType, ShieldedProtocol,
 };
 
@@ -41,7 +44,7 @@ use {
 };
 
 use super::{Account, AccountId, MemoryWalletDb};
-use crate::{error::Error, MemoryWalletBlock};
+use crate::{error::Error, MemoryWalletBlock, SentNoteId};
 
 impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     type Error = Error;
@@ -287,6 +290,15 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                     account_balance.with_orchard_balance_mut(update_balance_with_note)?;
                 }
                 _ => unimplemented!("Unknown pool type"),
+            }
+        }
+
+        #[cfg(feature = "transparent-inputs")]
+        for (account, balance) in account_balances.iter_mut() {
+            let transparent_balances =
+                self.get_transparent_balances(*account, fully_scanned_height)?;
+            for (_, value) in transparent_balances {
+                balance.add_unshielded_value(value)?;
             }
         }
 
@@ -537,6 +549,10 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .get(&txid)
             .map(|tx| (tx.status(), tx.expiry_height(), tx.raw()))
             .map(|(status, expiry_height, raw)| {
+                let raw = raw.ok_or_else(|| {
+                    Self::Error::CorruptedData("Transaction raw data not found".to_string())
+                })?;
+
                 // We need to provide a consensus branch ID so that pre-v5 `Transaction` structs
                 // (which don't commit directly to one) can store it internally.
                 // - If the transaction is mined, we use the block height to get the correct one.
@@ -642,25 +658,77 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_receivers(
         &self,
-        _account: Self::AccountId,
+        account_id: Self::AccountId,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
-        tracing::debug!("get_transparent_receivers");
-        Ok(HashMap::new())
+        let account = self
+            .get_account(account_id)?
+            .ok_or(Error::AccountUnknown(account_id))?;
+
+        let t_addresses = account
+            .addresses()
+            .iter()
+            .filter_map(|(diversifier_index, ua)| {
+                ua.transparent().map(|ta| {
+                    let metadata =
+                        zcash_primitives::legacy::keys::NonHardenedChildIndex::from_index(
+                            (*diversifier_index).try_into().unwrap(),
+                        )
+                        .map(|i| TransparentAddressMetadata::new(Scope::External.into(), i));
+                    (ta.clone(), metadata)
+                })
+            })
+            .collect();
+        Ok(t_addresses)
     }
 
+    /// Returns a mapping from each transparent receiver associated with the specified account
+    /// to its not-yet-shielded UTXO balance, including only the effects of transactions mined
+    /// at a block height less than or equal to `summary_height`.
+    ///
+    /// Only non-ephemeral transparent receivers with a non-zero balance at the summary height
+    /// will be included.
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_balances(
         &self,
-        _account: Self::AccountId,
-        _max_height: BlockHeight,
-    ) -> Result<HashMap<TransparentAddress, zcash_protocol::value::Zatoshis>, Self::Error> {
+        account_id: Self::AccountId,
+        summary_height: BlockHeight,
+    ) -> Result<HashMap<TransparentAddress, Zatoshis>, Self::Error> {
         tracing::debug!("get_transparent_balances");
-        todo!()
+
+        let mut balances = HashMap::new();
+
+        for (outpoint, txo) in self.transparent_received_outputs.iter().filter(|(_, txo)| {
+            if let Ok(Some(txo_account_id)) =
+                self.find_account_for_transparent_address(&txo.address)
+            {
+                txo_account_id == account_id
+            } else {
+                false
+            }
+        }) {
+            let tx = self
+                .tx_table
+                .get(&txo.transaction_id)
+                .ok_or(Error::TransactionNotFound(txo.transaction_id))?;
+            if tx.is_mined_or_unexpired_at(summary_height)
+                && self.utxo_is_spendable(outpoint, summary_height, 0)?
+            {
+                let address = txo.address.clone();
+                let balance = balances.entry(address).or_insert(Zatoshis::ZERO);
+                *balance = balance.add(txo.txout.value).expect("balance overflow");
+            }
+        }
+
+        Ok(balances)
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
         tracing::debug!("transaction_data_requests");
-        todo!()
+        Ok(self
+            .transaction_data_request_queue
+            .iter()
+            .cloned()
+            .collect())
     }
 }
 

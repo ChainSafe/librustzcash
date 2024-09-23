@@ -4,6 +4,7 @@ use std::fmt;
 use std::ops::Range;
 
 use zcash_primitives::consensus::BlockHeight;
+use crate::data_api::Ratio;
 
 #[cfg(feature = "unstable-spanning-tree")]
 pub mod spanning_tree;
@@ -124,6 +125,12 @@ impl ScanRange {
             },
         ))
     }
+}
+
+#[derive(Debug)]
+pub struct Progress {
+    pub scan: Option<Ratio<u64>>,
+    pub recover: Option<Ratio<u64>>,
 }
 
 #[cfg(test)]

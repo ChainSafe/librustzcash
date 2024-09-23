@@ -139,14 +139,17 @@ impl ScanQueue {
         }
         Ok(())
     }
-}
 
-impl IntoIterator for ScanQueue {
-    type Item = (BlockHeight, BlockHeight, ScanPriority);
-    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
+    pub fn delete_starts_greater_than_equal_to(&mut self, height: BlockHeight) {
+        self.0.retain(|(start, _, _)| *start < height);
+    }
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+    pub fn truncate_ends_to(&mut self, height: BlockHeight) {
+        self.0.iter_mut().for_each(|(_, end, _)| {
+            if *end > height {
+                *end = height;
+            }
+        });
     }
 }
 

@@ -4,6 +4,7 @@ use incrementalmerkletree::Position;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::{FromInto, TryFromInto};
+use zcash_protocol::ShieldedProtocol;
 
 use std::{
     collections::BTreeMap,
@@ -45,6 +46,14 @@ impl ReceievdNoteSpends {
     }
     pub fn get(&self, note_id: &NoteId) -> Option<&TxId> {
         self.0.get(note_id)
+    }
+}
+
+impl Deref for ReceievdNoteSpends {
+    type Target = BTreeMap<NoteId, TxId>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -227,15 +236,6 @@ impl ReceivedNoteTable {
     }
 }
 
-impl IntoIterator for ReceivedNoteTable {
-    type Item = ReceivedNote;
-    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
 // We deref to slice so that we can reuse the slice impls
 impl Deref for ReceivedNoteTable {
     type Target = [ReceivedNote];
@@ -303,10 +303,39 @@ pub(crate) fn to_spendable_notes(
 }
 
 #[serde_as]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
+pub enum SentNoteId {
+    Shielded(#[serde_as(as = "NoteIdDef")] NoteId),
+    Transparent {
+        #[serde_as(as = "ByteArray<32>")]
+        txid: TxId,
+        output_index: u32,
+    },
+}
+
+impl From<NoteId> for SentNoteId {
+    fn from(note_id: NoteId) -> Self {
+        SentNoteId::Shielded(note_id)
+    }
+}
+
+impl From<&NoteId> for SentNoteId {
+    fn from(note_id: &NoteId) -> Self {
+        SentNoteId::Shielded(note_id.clone())
+    }
+}
+
+impl SentNoteId {
+    pub fn txid(&self) -> &TxId {
+        match self {
+            SentNoteId::Shielded(note_id) => note_id.txid(),
+            SentNoteId::Transparent { txid, .. } => txid,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
-pub(crate) struct SentNoteTable(
-    #[serde_as(as = "BTreeMap<NoteIdDef, _>")] BTreeMap<NoteId, SentNote>,
-);
+pub(crate) struct SentNoteTable(BTreeMap<SentNoteId, SentNote>);
 
 impl SentNoteTable {
     pub fn new() -> Self {
@@ -325,7 +354,21 @@ impl SentNoteTable {
         };
         match pool_type {
             PoolType::Transparent => {
-                tracing::warn!("Transparent protocols not yet supported");
+                // we kind of are in a tricky spot here since NoteId cannot represent a transparent note..
+                // just make it a sapling one for now until we figure out a better way to represent this
+                let note_id = SentNoteId::Transparent {
+                    txid: tx.tx().txid(),
+                    output_index: output.output_index().try_into().unwrap(),
+                };
+                self.0.insert(
+                    note_id,
+                    SentNote {
+                        from_account_id: *tx.account_id(),
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: Memo::Empty, // transparent notes don't have memos
+                    },
+                );
             }
             PoolType::Shielded(protocol) => {
                 let note_id = NoteId::new(
@@ -334,7 +377,7 @@ impl SentNoteTable {
                     output.output_index().try_into().unwrap(),
                 );
                 self.0.insert(
-                    note_id,
+                    note_id.into(),
                     SentNote {
                         from_account_id: *tx.account_id(),
                         to: output.recipient().clone(),
@@ -347,21 +390,12 @@ impl SentNoteTable {
     }
 
     pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {
-        self.0.get(note_id)
-    }
-}
-
-impl IntoIterator for SentNoteTable {
-    type Item = (NoteId, SentNote);
-    type IntoIter = std::collections::btree_map::IntoIter<NoteId, SentNote>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.0.get(&note_id.into())
     }
 }
 
 impl Deref for SentNoteTable {
-    type Target = BTreeMap<NoteId, SentNote>;
+    type Target = BTreeMap<SentNoteId, SentNote>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

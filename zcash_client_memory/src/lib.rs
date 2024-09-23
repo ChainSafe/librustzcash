@@ -13,6 +13,9 @@ use std::{
     num::NonZeroU32,
     ops::{Range, RangeInclusive},
 };
+use transparent::{
+    TransparentReceivedOutputSpends, TransparentReceivedOutputs, TransparentSpendCache,
+};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
@@ -21,7 +24,12 @@ use zcash_protocol::{
 
 use zip32::fingerprint::SeedFingerprint;
 
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_client_backend::wallet::WalletTransparentOutput;
+use zcash_primitives::{
+    consensus::BlockHeight,
+    legacy::TransparentAddress,
+    transaction::{components::OutPoint, TxId},
+};
 
 use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::{
@@ -98,6 +106,14 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     /// Stores the block height corresponding to the last note commitment in a shard
     #[serde_as(as = "BTreeMap<TreeAddressDef, FromInto<u32>>")]
     orchard_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
+
+    transparent_received_outputs: TransparentReceivedOutputs,
+
+    transparent_received_output_spends: TransparentReceivedOutputSpends,
+
+    transparent_spend_map: TransparentSpendCache,
+
+    transaction_data_request_queue: TransactionDataRequestQueue,
 }
 
 impl<P: consensus::Parameters> MemoryWalletDb<P> {
@@ -119,6 +135,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             tx_locator: TxLocatorMap::new(),
             received_note_spends: ReceievdNoteSpends::new(),
             scan_queue: ScanQueue::new(),
+            transparent_received_outputs: TransparentReceivedOutputs::new(),
+            transparent_received_output_spends: TransparentReceivedOutputSpends::new(),
+            transparent_spend_map: TransparentSpendCache::new(),
+            transaction_data_request_queue: TransactionDataRequestQueue::new(),
         }
     }
 
@@ -882,6 +902,124 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 },
             ))
         }
+    }
+
+    pub(crate) fn find_account_for_transparent_address(
+        &self,
+        address: &TransparentAddress,
+    ) -> Result<Option<AccountId>, Error> {
+        Ok(self
+            .accounts
+            .iter()
+            .find(|(_, account)| {
+                account
+                    .addresses()
+                    .iter()
+                    .any(|(_, unified_address)| unified_address.transparent() == Some(address))
+            })
+            .map(|(id, _)| id.clone()))
+    }
+
+    pub(crate) fn mark_transparent_output_spent(
+        &mut self,
+        spent_in_tx: &TxId,
+        outpoint: &OutPoint,
+    ) -> Result<bool, Error> {
+        // TODO: Remove it from the search queue
+
+        self.transparent_received_output_spends
+            .insert(outpoint.clone(), *spent_in_tx);
+
+        // TODO: Check if this is an update and therefore we need to add something to transparent_spend_map
+
+        Ok(false)
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub(crate) fn put_transparent_output(
+        &mut self,
+        output: &WalletTransparentOutput,
+        receiving_account: &AccountId,
+        known_unspent: bool,
+    ) -> Result<OutPoint, Error> {
+        use transparent::ReceivedTransparentOutput;
+
+        let address = output.recipient_address();
+        // get the block height of the block that mined the output only if we have it in the block table
+        // otherwise return None
+        let block = output
+            .mined_height()
+            .map(|h| self.blocks.get(&h).map(|b| b.height))
+            .flatten();
+        let txid = TxId::from_bytes(output.outpoint().hash().to_vec().try_into().unwrap());
+
+        // insert a new tx into the transactions table for the one that spent this output. If there is already one then do an update
+        self.tx_table
+            .put_tx_partial(&txid, &block, output.mined_height());
+
+        // look for a spent_height for this output by querying transparent_received_output_spends.
+        // If there isn't one then return None (this is an unspent output)
+        // otherwise return the height found by joining on the tx table
+        let spent_height = self
+            .transparent_received_output_spends
+            .get(&output.outpoint())
+            .map(|txid| {
+                self.tx_table
+                    .tx_status(txid)
+                    .map(|status| match status {
+                        TransactionStatus::Mined(height) => Some(height),
+                        _ => None,
+                    })
+                    .flatten()
+            })
+            .flatten();
+
+        // The max observed unspent height is either the spending transaction's mined height - 1, or
+        // the current chain tip height if the UTXO was received via a path that confirmed that it was
+        // unspent, such as by querying the UTXO set of the network.
+        let max_observed_unspent = match spent_height {
+            Some(h) => Some(h - 1),
+            None => {
+                if known_unspent {
+                    self.chain_height()?
+                } else {
+                    None
+                }
+            }
+        };
+
+        // insert into transparent_received_outputs table. Update if it exists
+        match self
+            .transparent_received_outputs
+            .entry(output.outpoint().clone())
+        {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().transaction_id = txid;
+                entry.get_mut().address = *address;
+                entry.get_mut().account_id = receiving_account.clone();
+                entry.get_mut().txout = output.txout().clone();
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(ReceivedTransparentOutput::new(
+                    txid,
+                    *receiving_account,
+                    *address,
+                    output.txout().clone(),
+                    max_observed_unspent.unwrap_or(BlockHeight::from(0)),
+                ));
+            }
+        }
+
+        // look in transparent_spend_map for a record of the output already having been spent, then mark it as spent using the
+        // stored reference to the spending transaction.
+        if self
+            .transparent_spend_map
+            .contains(&txid, output.outpoint())
+        {
+            self.mark_transparent_output_spent(&txid, output.outpoint())?;
+        }
+
+        Ok(output.outpoint().clone())
     }
 }
 

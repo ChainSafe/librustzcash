@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use shardtree::error::ShardTreeError;
 use zcash_keys::keys::{AddressGenerationError, DerivationError};
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
 use zcash_protocol::{consensus::BlockHeight, memo};
 
 use crate::AccountId;
@@ -15,7 +15,7 @@ pub enum Error {
     AccountUnknown(AccountId),
     #[error("Viewing key not found for account: {0:?}")]
     ViewingKeyNotFound(AccountId),
-    #[error("No address found for account: {0}")]
+    #[error("Memo decryption failed: {0}")]
     MemoDecryption(memo::Error),
     #[error("Error deriving key: {0}")]
     KeyDerivation(DerivationError),
@@ -55,6 +55,15 @@ pub enum Error {
     Missing(String),
     #[error("Orchard specific code was called without the 'orchard' feature enabled")]
     OrchardNotEnabled,
+    #[error("Address not recognized: {0:?}")]
+    AddressNotRecognized(TransparentAddress),
+    #[error(
+        "Requested rewind to invalid block height. Safe height: {0:?}, requested height {1:?}"
+    )]
+    RequestedRewindInvalid(BlockHeight, BlockHeight),
+    #[cfg(feature = "transparent-inputs")]
+    #[error("Requested gap limit {1} reached for account {0:?}")]
+    ReachedGapLimit(AccountId, u32),
 }
 
 impl From<DerivationError> for Error {

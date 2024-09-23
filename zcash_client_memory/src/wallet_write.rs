@@ -4,11 +4,17 @@ use secrecy::SecretVec;
 use shardtree::{error::ShardTreeError, store::ShardStore};
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{btree_map::Entry, BTreeMap, HashMap},
     ops::Range,
 };
 
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::{
+    consensus::BlockHeight,
+    transaction::{
+        components::{OutPoint, TxOut},
+        TxId,
+    },
+};
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
     ShieldedProtocol::{self, Sapling},
@@ -32,7 +38,9 @@ use zcash_client_backend::data_api::{
     AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, WalletRead, WalletWrite,
 };
 
-use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
+use crate::{
+    error::Error, transparent::ReceivedTransparentOutput, PRUNING_DEPTH, VERIFY_LOOKAHEAD,
+};
 use crate::{MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
 use rayon::prelude::*;
 
@@ -41,8 +49,14 @@ use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
 #[cfg(feature = "orchard")]
 use zcash_protocol::ShieldedProtocol::Orchard;
 
+#[cfg(feature = "transparent-inputs")]
+use {
+    zcash_client_backend::wallet::TransparentAddressMetadata,
+    zcash_primitives::legacy::TransparentAddress,
+};
+
 impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
-    type UtxoRef = u32;
+    type UtxoRef = OutPoint;
 
     fn create_account(
         &mut self,
@@ -578,10 +592,22 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
     /// Adds a transparent UTXO received by the wallet to the data store.
     fn put_received_transparent_utxo(
         &mut self,
-        _output: &WalletTransparentOutput,
+        output: &WalletTransparentOutput,
     ) -> Result<Self::UtxoRef, Self::Error> {
         tracing::debug!("put_received_transparent_utxo");
-        Ok(0)
+        #[cfg(feature = "transparent-inputs")]
+        {
+            let address = output.recipient_address();
+            if let Some(account_id) = self.find_account_for_transparent_address(address)? {
+                self.put_transparent_output(output, &account_id, false)
+            } else {
+                Err(Error::AddressNotRecognized(*address))
+            }
+        }
+        #[cfg(not(feature = "transparent-inputs"))]
+        panic!(
+            "The wallet must be compiled with the transparent-inputs feature to use this method."
+        );
     }
 
     fn store_decrypted_tx(
@@ -602,8 +628,88 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
     /// block, this function does nothing.
     ///
     /// This should only be executed inside a transactional context.
-    fn truncate_to_height(&mut self, _block_height: BlockHeight) -> Result<(), Self::Error> {
-        todo!()
+    fn truncate_to_height(&mut self, block_height: BlockHeight) -> Result<(), Self::Error> {
+        let sapling_activation_height = self
+            .params
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("Sapling activation height must be available.");
+
+        // Recall where we synced up to previously.
+        let last_scanned_height = self
+            .blocks
+            .keys()
+            .max()
+            .copied()
+            .unwrap_or(sapling_activation_height - 1);
+
+        if block_height < last_scanned_height - PRUNING_DEPTH {
+            if let Some(h) = self.get_min_unspent_height()? {
+                if block_height > h {
+                    return Err(Error::RequestedRewindInvalid(h, block_height));
+                }
+            }
+        }
+
+        // Delete from the scanning queue any range with a start height greater than the
+        // truncation height, and then truncate any remaining range by setting the end
+        // equal to the truncation height + 1. This sets our view of the chain tip back
+        // to the retained height.
+        self.scan_queue
+            .delete_starts_greater_than_equal_to(block_height + 1);
+        self.scan_queue.truncate_ends_to(block_height + 1);
+
+        // Mark transparent utxos as un-mined. Since the TXO is now not mined, it would ideally be
+        // considered to have been returned to the mempool; it _might_ be spendable in this state, but
+        // we must also set its max_observed_unspent_height field to NULL because the transaction may
+        // be rendered entirely invalid by a reorg that alters anchor(s) used in constructing shielded
+        // spends in the transaction.
+        self.transparent_received_outputs
+            .iter_mut()
+            .for_each(|(_, txo)| {
+                if let Some(mined_height) = self
+                    .tx_table
+                    .get(&txo.transaction_id)
+                    .map(|tx| tx.mined_height())
+                    .flatten()
+                {
+                    if mined_height <= block_height {
+                        txo.max_observed_unspent_height = Some(block_height)
+                    } else {
+                        txo.max_observed_unspent_height = None
+                    }
+                }
+            });
+
+        // Un-mine transactions. This must be done outside of the last_scanned_height check because
+        // transaction entries may be created as a consequence of receiving transparent TXOs.
+        self.tx_table.unmine_transactions_greater_than(block_height);
+
+        // If we're removing scanned blocks, we need to truncate the note commitment tree and remove
+        // affected block records from the database.
+        if block_height < last_scanned_height {
+            self.with_sapling_tree_mut(|tree| {
+                tree.truncate_removing_checkpoint(&block_height).map(|_| ())
+            })?;
+            #[cfg(feature = "orchard")]
+            self.with_orchard_tree_mut(|tree| {
+                tree.truncate_removing_checkpoint(&block_height).map(|_| ())
+            })?;
+
+            // Do not delete sent notes; this can contain data that is not recoverable
+            // from the chain. Wallets must continue to operate correctly in the
+            // presence of stale sent notes that link to unmined transactions.
+            // Also, do not delete received notes; they may contain memo data that is
+            // not recoverable; balance APIs must ensure that un-mined received notes
+            // do not count towards spendability or transaction balalnce.
+
+            // Now that they aren't depended on, delete un-mined blocks.
+            self.blocks.retain(|height, _| *height <= block_height);
+
+            // Delete from the nullifier map any entries with a locator referencing a block
+            // height greater than the truncation height.
+            // Willem: We don't need to do this I think..
+        }
+        Ok(())
     }
 
     fn import_account_hd(
@@ -645,8 +751,10 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 Some(sent_tx.fee_amount()),
                 Some(sent_tx.target_height()),
             );
+            let mut detectable_via_scanning = false;
             // Mark sapling notes as spent
             if let Some(bundle) = sent_tx.tx().sapling_bundle() {
+                detectable_via_scanning = true;
                 for spend in bundle.shielded_spends() {
                     self.mark_sapling_note_spent(*spend.nullifier(), sent_tx.tx().txid())?;
                 }
@@ -655,6 +763,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             if let Some(bundle) = sent_tx.tx().orchard_bundle() {
                 #[cfg(feature = "orchard")]
                 {
+                    detectable_via_scanning = true;
                     for action in bundle.actions() {
                         match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid())
                         {
@@ -673,8 +782,8 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             }
             // Mark transparent UTXOs as spent
             #[cfg(feature = "transparent-inputs")]
-            for _utxo_outpoint in sent_tx.utxos_spent() {
-                todo!()
+            for utxo_outpoint in sent_tx.utxos_spent() {
+                self.mark_transparent_output_spent(&sent_tx.tx().txid(), utxo_outpoint)?;
             }
 
             for output in sent_tx.outputs() {
@@ -686,18 +795,37 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                             ReceivedNote::from_sent_tx_output(sent_tx.tx().txid(), output)?,
                         );
                     }
+                    #[cfg(feature = "transparent-inputs")]
                     Recipient::EphemeralTransparent {
-                        receiving_account: _,
-                        ephemeral_address: _,
-                        outpoint_metadata: _,
+                        receiving_account,
+                        ephemeral_address,
+                        outpoint_metadata,
                     } => {
-                        // mark ephemeral address as used
+                        let txo = WalletTransparentOutput::from_parts(
+                            outpoint_metadata.clone(),
+                            TxOut {
+                                value: output.value(),
+                                script_pubkey: ephemeral_address.script(),
+                            },
+                            None,
+                        )
+                        .unwrap();
+                        self.put_transparent_output(&txo, receiving_account, true)?;
+                        // TODO: mark ephemeral address as used
                     }
-                    Recipient::External(_, _) => {}
+                    _ => {}
                 }
             }
-            // in sqlite they que
+
+            // Add the transaction to the set to be queried for transaction status. This is only necessary
+            // at present for fully transparent transactions, because any transaction with a shielded
+            // component will be detected via ordinary chain scanning and/or nullifier checking.
+            if !detectable_via_scanning {
+                self.transaction_data_request_queue
+                    .queue_status_retrieval(&sent_tx.tx().txid());
+            }
         }
+
         Ok(())
     }
 
@@ -708,6 +836,41 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     ) -> Result<(), Self::Error> {
         tracing::debug!("set_transaction_status");
         self.tx_table.set_transaction_status(&txid, status)
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    /// Returns a vector with the next `n` previously unreserved ephemeral addresses for
+    /// the given account.
+    fn reserve_next_n_ephemeral_addresses(
+        &mut self,
+        account_id: Self::AccountId,
+        n: usize,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
+        let mut addresses = Vec::new();
+        if let Some(account) = self.accounts.get_mut(account_id) {
+            for _ in 0..n {
+                if let Some(address) =
+                    account.next_available_address(UnifiedAddressRequest::all().unwrap())?
+                {
+                    let t_address = address.transparent().unwrap().clone();
+                    addresses.push(t_address);
+                } else {
+                    return Err(Error::UnknownZip32Derivation);
+                }
+            }
+        } else {
+            return Err(Error::AccountUnknown(account_id));
+        }
+        addresses
+            .into_iter()
+            .map(|t_address| {
+                Ok((
+                    t_address,
+                    self.get_transparent_address_metadata(account_id, &t_address)?
+                        .unwrap(),
+                ))
+            })
+            .collect()
     }
 }
 
