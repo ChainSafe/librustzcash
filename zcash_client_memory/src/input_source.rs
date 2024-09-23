@@ -123,7 +123,7 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             .map(|(outpoint, txo)| (outpoint, txo, self.tx_table.get(&txo.transaction_id)))
             .filter(|(outpoint, _, _)| {
                 self.utxo_is_spendable(outpoint, target_height, min_confirmations)
-                    .unwrap()
+                    .unwrap_or(false)
             })
             .filter_map(|(outpoint, txo, tx)| {
                 txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())

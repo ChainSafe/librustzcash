@@ -153,15 +153,6 @@ impl ScanQueue {
     }
 }
 
-impl IntoIterator for ScanQueue {
-    type Item = (BlockHeight, BlockHeight, ScanPriority);
-    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
 // We deref to slice so that we can reuse the slice impls
 impl Deref for ScanQueue {
     type Target = [(BlockHeight, BlockHeight, ScanPriority)];

@@ -236,15 +236,6 @@ impl ReceivedNoteTable {
     }
 }
 
-impl IntoIterator for ReceivedNoteTable {
-    type Item = ReceivedNote;
-    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
 // We deref to slice so that we can reuse the slice impls
 impl Deref for ReceivedNoteTable {
     type Target = [ReceivedNote];
@@ -400,15 +391,6 @@ impl SentNoteTable {
 
     pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {
         self.0.get(&note_id.into())
-    }
-}
-
-impl IntoIterator for SentNoteTable {
-    type Item = (SentNoteId, SentNote);
-    type IntoIter = std::collections::btree_map::IntoIter<SentNoteId, SentNote>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
     }
 }
 

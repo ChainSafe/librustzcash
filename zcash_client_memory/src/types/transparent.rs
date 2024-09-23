@@ -35,15 +35,6 @@ impl TransparentReceivedOutputs {
     }
 }
 
-impl IntoIterator for TransparentReceivedOutputs {
-    type Item = (OutPoint, ReceivedTransparentOutput);
-    type IntoIter = <BTreeMap<OutPoint, ReceivedTransparentOutput> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
 impl Deref for TransparentReceivedOutputs {
     type Target = BTreeMap<OutPoint, ReceivedTransparentOutput>;
 
@@ -164,15 +155,6 @@ impl TransparentSpendCache {
 
     pub fn insert(&mut self, txid: TxId, outpoint: OutPoint) {
         self.0.insert((txid, outpoint));
-    }
-}
-
-impl IntoIterator for TransparentSpendCache {
-    type Item = (TxId, OutPoint);
-    type IntoIter = <BTreeSet<(TxId, OutPoint)> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
     }
 }
 
