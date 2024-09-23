@@ -13,6 +13,10 @@ use crate::{Account, AccountId, Error, MemoryWalletDb};
 
 pub mod pool;
 
+#[cfg(test)]
+#[cfg(feature = "transparent-inputs")]
+mod transparent;
+
 /// A test data store factory for in-memory databases
 /// Very simple implementation just creates a new MemoryWalletDb
 pub(crate) struct TestMemDbFactory;
