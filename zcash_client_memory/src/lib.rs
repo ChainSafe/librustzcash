@@ -68,7 +68,7 @@ use types::serialization::*;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[serde_as]
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
     #[serde(skip)]
     params: P,
@@ -81,7 +81,6 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     nullifiers: NullifierMap,
 
     /// Stores the outputs of transactions created by the wallet.
-    #[serde(skip)]
     sent_notes: SentNoteTable,
 
     tx_locator: TxLocatorMap,
@@ -108,16 +107,12 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     #[serde_as(as = "BTreeMap<TreeAddressDef, FromInto<u32>>")]
     orchard_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 
-    #[serde(skip)]
     transparent_received_outputs: TransparentReceivedOutputs,
 
-    #[serde(skip)]
     transparent_received_output_spends: TransparentReceivedOutputSpends,
 
-    #[serde(skip)]
     transparent_spend_map: TransparentSpendCache,
 
-    #[serde(skip)]
     transaction_data_request_queue: TransactionDataRequestQueue,
 }
 
