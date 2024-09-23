@@ -150,20 +150,6 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             })
             .flatten())
     }
-
-    #[cfg(any(test, feature = "test-dependencies"))]
-    fn get_notes(
-        &self,
-        protocol: zcash_protocol::ShieldedProtocol,
-    ) -> Result<Vec<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
-        Ok(self
-            .received_notes
-            .iter()
-            .filter(|rn| rn.note.protocol() == protocol)
-            .cloned()
-            .map(Into::into)
-            .collect())
-    }
 }
 
 impl<P: consensus::Parameters> MemoryWalletDb<P> {

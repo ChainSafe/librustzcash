@@ -2,19 +2,22 @@
 //!
 //! Generalised for sharing across the Sapling and Orchard implementations.
 
-use zcash_client_backend::data_api::testing::{
-    pool::ShieldedPoolTester, sapling::SaplingPoolTester,
-};
-#[cfg(feature = "orchard")]
-use zcash_client_backend::data_api::testing::orchard::OrchardPoolTester;
-
 use crate::{
     testing::{db::TestDbFactory, BlockCache},
     SAPLING_TABLES_PREFIX,
 };
+use zcash_client_backend::data_api::testing::{
+    pool::ShieldedPoolTester, sapling::SaplingPoolTester,
+};
 
 #[cfg(feature = "orchard")]
-use crate::ORCHARD_TABLES_PREFIX;
+use {
+    crate::ORCHARD_TABLES_PREFIX,
+    zcash_client_backend::data_api::testing::orchard::OrchardPoolTester,
+};
+
+#[cfg(feature = "transparent-inputs")]
+use crate::error::SqliteClientError;
 
 pub(crate) trait ShieldedPoolPersistence {
     const TABLES_PREFIX: &'static str;
@@ -41,12 +44,18 @@ pub(crate) fn send_multi_step_proposed_transfer<T: ShieldedPoolTester>() {
     zcash_client_backend::data_api::testing::pool::send_multi_step_proposed_transfer::<T, _>(
         TestDbFactory,
         BlockCache::new(),
+        |e, account_id, expected_bad_index| {
+            matches!(
+                e,
+                SqliteClientError::ReachedGapLimit(acct, bad_index)
+                if acct == &account_id && bad_index == &expected_bad_index)
+        },
     )
 }
 
 #[cfg(feature = "transparent-inputs")]
 pub(crate) fn proposal_fails_if_not_all_ephemeral_outputs_consumed<T: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::proposal_fails_if_not_all_ephemeral_outputs_consumed::<T>(
+    zcash_client_backend::data_api::testing::pool::proposal_fails_if_not_all_ephemeral_outputs_consumed::<T, _>(
         TestDbFactory,
         BlockCache::new(),
     )
@@ -95,7 +104,7 @@ pub(crate) fn spend_succeeds_to_t_addr_zero_change<T: ShieldedPoolTester>() {
 }
 
 pub(crate) fn change_note_spends_succeed<T: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::change_note_spends_succeed::<T, _>(
+    zcash_client_backend::data_api::testing::pool::change_note_spends_succeed::<T>(
         TestDbFactory,
         BlockCache::new(),
     )
@@ -141,40 +150,43 @@ pub(crate) fn checkpoint_gaps<T: ShieldedPoolTester>() {
 }
 
 #[cfg(feature = "orchard")]
-pub(crate) fn pool_crossing_required<T: ShieldedPoolTester, TT: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::pool_crossing_required::<T, TT>(
+pub(crate) fn pool_crossing_required<P0: ShieldedPoolTester, P1: ShieldedPoolTester>() {
+    zcash_client_backend::data_api::testing::pool::pool_crossing_required::<P0, P1>(
         TestDbFactory,
         BlockCache::new(),
     )
 }
 
 #[cfg(feature = "orchard")]
-pub(crate) fn fully_funded_fully_private<T: ShieldedPoolTester, TT: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::fully_funded_fully_private::<T, TT>(
+pub(crate) fn fully_funded_fully_private<P0: ShieldedPoolTester, P1: ShieldedPoolTester>() {
+    zcash_client_backend::data_api::testing::pool::fully_funded_fully_private::<P0, P1>(
         TestDbFactory,
         BlockCache::new(),
     )
 }
 
 #[cfg(all(feature = "orchard", feature = "transparent-inputs"))]
-pub(crate) fn fully_funded_send_to_t<T: ShieldedPoolTester, TT: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::fully_funded_send_to_t::<T, TT>(
+pub(crate) fn fully_funded_send_to_t<P0: ShieldedPoolTester, P1: ShieldedPoolTester>() {
+    zcash_client_backend::data_api::testing::pool::fully_funded_send_to_t::<P0, P1>(
         TestDbFactory,
         BlockCache::new(),
     )
 }
 
 #[cfg(feature = "orchard")]
-pub(crate) fn multi_pool_checkpoint<T: ShieldedPoolTester, TT: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::multi_pool_checkpoint::<T, TT>(
+pub(crate) fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>() {
+    zcash_client_backend::data_api::testing::pool::multi_pool_checkpoint::<P0, P1>(
         TestDbFactory,
         BlockCache::new(),
     )
 }
 
 #[cfg(feature = "orchard")]
-pub(crate) fn multi_pool_checkpoints_with_pruning<T: ShieldedPoolTester, TT: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::multi_pool_checkpoints_with_pruning::<T, TT>(
+pub(crate) fn multi_pool_checkpoints_with_pruning<
+    P0: ShieldedPoolTester,
+    P1: ShieldedPoolTester,
+>() {
+    zcash_client_backend::data_api::testing::pool::multi_pool_checkpoints_with_pruning::<P0, P1>(
         TestDbFactory,
         BlockCache::new(),
     )

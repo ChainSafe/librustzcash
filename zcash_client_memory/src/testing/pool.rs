@@ -21,12 +21,18 @@ pub(crate) fn send_multi_step_proposed_transfer<T: ShieldedPoolTester>() {
     zcash_client_backend::data_api::testing::pool::send_multi_step_proposed_transfer::<T, _>(
         TestMemDbFactory,
         MemBlockCache::new(),
+        |e, account_id, expected_bad_index| {
+            matches!(
+                e,
+                crate::Error::ReachedGapLimit(acct, bad_index)
+                if acct == &account_id && bad_index == &expected_bad_index)
+        }
     )
 }
 
 #[cfg(feature = "transparent-inputs")]
 pub(crate) fn proposal_fails_if_not_all_ephemeral_outputs_consumed<T: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::proposal_fails_if_not_all_ephemeral_outputs_consumed::<T>(
+    zcash_client_backend::data_api::testing::pool::proposal_fails_if_not_all_ephemeral_outputs_consumed::<T, _>(
         TestMemDbFactory,
         MemBlockCache::new(),
     )
@@ -75,7 +81,7 @@ pub(crate) fn spend_succeeds_to_t_addr_zero_change<T: ShieldedPoolTester>() {
 }
 
 pub(crate) fn change_note_spends_succeed<T: ShieldedPoolTester>() {
-    zcash_client_backend::data_api::testing::pool::change_note_spends_succeed::<T, _>(
+    zcash_client_backend::data_api::testing::pool::change_note_spends_succeed::<T>(
         TestMemDbFactory,
         MemBlockCache::new(),
     )

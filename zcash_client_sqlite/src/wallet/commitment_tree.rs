@@ -199,6 +199,13 @@ impl<'conn, 'a: 'conn, H: HashSer, const SHARD_HEIGHT: u8> ShardStore
         update_checkpoint_with(self.conn, self.table_prefix, *checkpoint_id, update)
     }
 
+    fn for_each_checkpoint<F>(&self, limit: usize, callback: F) -> Result<(), Self::Error>
+    where
+        F: FnMut(&Self::CheckpointId, &Checkpoint) -> Result<(), Self::Error>,
+    {
+        unimplemented!()
+    }
+
     fn remove_checkpoint(&mut self, checkpoint_id: &Self::CheckpointId) -> Result<(), Self::Error> {
         remove_checkpoint(self.conn, self.table_prefix, *checkpoint_id)
     }
@@ -296,6 +303,13 @@ impl<H: HashSer, const SHARD_HEIGHT: u8> ShardStore
         let tx = self.conn.transaction().map_err(Error::Query)?;
         with_checkpoints(&tx, self.table_prefix, limit, callback)?;
         tx.commit().map_err(Error::Query)
+    }
+
+    fn for_each_checkpoint<F>(&self, _limit: usize, _callback: F) -> Result<(), Self::Error>
+    where
+        F: FnMut(&Self::CheckpointId, &Checkpoint) -> Result<(), Self::Error>,
+    {
+        unimplemented!()
     }
 
     fn update_checkpoint_with<F>(
