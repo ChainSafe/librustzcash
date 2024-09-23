@@ -26,7 +26,7 @@ pub(crate) fn send_multi_step_proposed_transfer<T: ShieldedPoolTester>() {
                 e,
                 crate::Error::ReachedGapLimit(acct, bad_index)
                 if acct == &account_id && bad_index == &expected_bad_index)
-        }
+        },
     )
 }
 

@@ -86,12 +86,10 @@ impl TransactionEntry {
 
     pub(crate) fn is_mined_or_unexpired_at(&self, height: BlockHeight) -> bool {
         match self.tx_status {
-            TransactionStatus::Mined(tx_height) => {
-                tx_height <= height
-            },
-            TransactionStatus::NotInMainChain => {
-                self.expiry_height.map_or(false, |expiry_height| expiry_height > height)
-            },
+            TransactionStatus::Mined(tx_height) => tx_height <= height,
+            TransactionStatus::NotInMainChain => self
+                .expiry_height
+                .map_or(false, |expiry_height| expiry_height > height),
             _ => false,
         }
     }

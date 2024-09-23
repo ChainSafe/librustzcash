@@ -15,7 +15,8 @@ use zip32::Scope;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, InputSource, Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, InputSource,
+        Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     wallet::{NoteId, Recipient},
@@ -294,7 +295,8 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
 
         #[cfg(feature = "transparent-inputs")]
         for (account, balance) in account_balances.iter_mut() {
-            let transparent_balances = self.get_transparent_balances(*account, fully_scanned_height)?;
+            let transparent_balances =
+                self.get_transparent_balances(*account, fully_scanned_height)?;
             for (_, value) in transparent_balances {
                 balance.add_unshielded_value(value)?;
             }
@@ -335,7 +337,6 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .or(sapling_scan_progress)
             .or(orchard_scan_progress);
 
-            
         let summary = WalletSummary::new(
             account_balances,
             chain_tip_height,

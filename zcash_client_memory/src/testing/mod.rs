@@ -219,10 +219,8 @@ where
     /// use.⁄
     fn get_tx_history(
         &self,
-    ) -> Result<
-        Vec<zcash_client_backend::data_api::testing::TransactionSummary<AccountId>>,
-        Error,
-    > {
+    ) -> Result<Vec<zcash_client_backend::data_api::testing::TransactionSummary<AccountId>>, Error>
+    {
         Ok(self
             .tx_table
             .iter()

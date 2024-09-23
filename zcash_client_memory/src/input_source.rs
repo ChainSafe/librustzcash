@@ -207,11 +207,14 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         min_confirmations: u32,
     ) -> Result<bool, Error> {
         let confirmed_height = target_height - min_confirmations;
-        let utxo = self.transparent_received_outputs.get(outpoint).ok_or(Error::NoteNotFound)?;
+        let utxo = self
+            .transparent_received_outputs
+            .get(outpoint)
+            .ok_or(Error::NoteNotFound)?;
         if let Some(tx) = self.tx_table.get(&utxo.transaction_id) {
             Ok(
                 tx.is_mined_or_unexpired_at(confirmed_height) // tx that created it is mined
-                && !self.utxo_is_spent(outpoint, min_confirmations)? // not spent
+                && !self.utxo_is_spent(outpoint, min_confirmations)?, // not spent
             )
         } else {
             Ok(false)

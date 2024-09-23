@@ -69,7 +69,7 @@ use rusqlite::{self, named_params, params, OptionalExtension};
 use secrecy::{ExposeSecret, SecretVec};
 use shardtree::{error::ShardTreeError, store::ShardStore, ShardTree};
 use zcash_client_backend::data_api::{
-    AccountPurpose, DecryptedTransaction, TransactionDataRequest, TransactionStatus,
+    AccountPurpose, DecryptedTransaction, TransactionDataRequest, TransactionStatus, scanning::Progress,
 };
 use zip32::fingerprint::SeedFingerprint;
 
@@ -802,12 +802,6 @@ pub(crate) fn get_derived_account<P: consensus::Parameters>(
     )?;
 
     accounts.next().transpose()
-}
-
-#[derive(Debug)]
-pub(crate) struct Progress {
-    scan: Option<Ratio<u64>>,
-    recover: Option<Ratio<u64>>,
 }
 
 pub(crate) trait ScanProgress {
