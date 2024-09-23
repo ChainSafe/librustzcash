@@ -628,8 +628,88 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
     /// block, this function does nothing.
     ///
     /// This should only be executed inside a transactional context.
-    fn truncate_to_height(&mut self, _block_height: BlockHeight) -> Result<(), Self::Error> {
-        todo!()
+    fn truncate_to_height(&mut self, block_height: BlockHeight) -> Result<(), Self::Error> {
+        let sapling_activation_height = self
+            .params
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("Sapling activation height must be available.");
+
+        // Recall where we synced up to previously.
+        let last_scanned_height = self
+            .blocks
+            .keys()
+            .max()
+            .copied()
+            .unwrap_or(sapling_activation_height - 1);
+
+        if block_height < last_scanned_height - PRUNING_DEPTH {
+            if let Some(h) = self.get_min_unspent_height()? {
+                if block_height > h {
+                    return Err(Error::RequestedRewindInvalid(h, block_height));
+                }
+            }
+        }
+
+        // Delete from the scanning queue any range with a start height greater than the
+        // truncation height, and then truncate any remaining range by setting the end
+        // equal to the truncation height + 1. This sets our view of the chain tip back
+        // to the retained height.
+        self.scan_queue
+            .delete_starts_greater_than_equal_to(block_height + 1);
+        self.scan_queue.truncate_ends_to(block_height + 1);
+
+        // Mark transparent utxos as un-mined. Since the TXO is now not mined, it would ideally be
+        // considered to have been returned to the mempool; it _might_ be spendable in this state, but
+        // we must also set its max_observed_unspent_height field to NULL because the transaction may
+        // be rendered entirely invalid by a reorg that alters anchor(s) used in constructing shielded
+        // spends in the transaction.
+        self.transparent_received_outputs
+            .iter_mut()
+            .for_each(|(_, txo)| {
+                if let Some(mined_height) = self
+                    .tx_table
+                    .get(&txo.transaction_id)
+                    .map(|tx| tx.mined_height())
+                    .flatten()
+                {
+                    if mined_height <= block_height {
+                        txo.max_observed_unspent_height = Some(block_height)
+                    } else {
+                        txo.max_observed_unspent_height = None
+                    }
+                }
+            });
+
+        // Un-mine transactions. This must be done outside of the last_scanned_height check because
+        // transaction entries may be created as a consequence of receiving transparent TXOs.
+        self.tx_table.unmine_transactions_greater_than(block_height);
+
+        // If we're removing scanned blocks, we need to truncate the note commitment tree and remove
+        // affected block records from the database.
+        if block_height < last_scanned_height {
+            self.with_sapling_tree_mut(|tree| {
+                tree.truncate_removing_checkpoint(&block_height).map(|_| ())
+            })?;
+            #[cfg(feature = "orchard")]
+            self.with_orchard_tree_mut(|tree| {
+                tree.truncate_removing_checkpoint(&block_height).map(|_| ())
+            })?;
+
+            // Do not delete sent notes; this can contain data that is not recoverable
+            // from the chain. Wallets must continue to operate correctly in the
+            // presence of stale sent notes that link to unmined transactions.
+            // Also, do not delete received notes; they may contain memo data that is
+            // not recoverable; balance APIs must ensure that un-mined received notes
+            // do not count towards spendability or transaction balalnce.
+
+            // Now that they aren't depended on, delete un-mined blocks.
+            self.blocks.retain(|height, _| *height <= block_height);
+
+            // Delete from the nullifier map any entries with a locator referencing a block
+            // height greater than the truncation height.
+            // Willem: We don't need to do this I think..
+        }
+        Ok(())
     }
 
     fn import_account_hd(

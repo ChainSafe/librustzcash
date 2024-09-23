@@ -15,8 +15,7 @@ use zip32::Scope;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, Ratio,
-        SeedRelevance, TransactionDataRequest, TransactionStatus,
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, InputSource, Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     wallet::{NoteId, Recipient},
@@ -290,6 +289,14 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                     account_balance.with_orchard_balance_mut(update_balance_with_note)?;
                 }
                 _ => unimplemented!("Unknown pool type"),
+            }
+        }
+
+        #[cfg(feature = "transparent-inputs")]
+        for (account, balance) in account_balances.iter_mut() {
+            let transparent_balances = self.get_transparent_balances(*account, fully_scanned_height)?;
+            for (_, value) in transparent_balances {
+                balance.add_unshielded_value(value)?;
             }
         }
 

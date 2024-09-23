@@ -195,6 +195,7 @@ impl TransactionTable {
             }
         }
     }
+
     pub(crate) fn set_transaction_status(
         &mut self,
         txid: &TxId,
@@ -207,11 +208,24 @@ impl TransactionTable {
             Err(Error::TransactionNotFound(*txid))
         }
     }
+
     pub(crate) fn get_tx_raw(&self, txid: &TxId) -> Option<&[u8]> {
         self.0
             .get(txid)
             .map(|entry| entry.raw.as_ref().map(|v| v.as_slice()))
             .flatten()
+    }
+
+    pub(crate) fn unmine_transactions_greater_than(&mut self, height: BlockHeight) {
+        self.0.iter_mut().for_each(|(_, entry)| {
+            if let TransactionStatus::Mined(tx_height) = entry.tx_status {
+                if tx_height > height {
+                    entry.tx_status = TransactionStatus::NotInMainChain;
+                    entry.block = None;
+                    entry.tx_index = None;
+                }
+            }
+        });
     }
 }
 

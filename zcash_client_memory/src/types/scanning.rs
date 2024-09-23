@@ -139,6 +139,18 @@ impl ScanQueue {
         }
         Ok(())
     }
+
+    pub fn delete_starts_greater_than_equal_to(&mut self, height: BlockHeight) {
+        self.0.retain(|(start, _, _)| *start < height);
+    }
+
+    pub fn truncate_ends_to(&mut self, height: BlockHeight) {
+        self.0.iter_mut().for_each(|(_, end, _)| {
+            if *end > height {
+                *end = height;
+            }
+        });
+    }
 }
 
 impl IntoIterator for ScanQueue {

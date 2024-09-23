@@ -98,7 +98,7 @@ pub struct ReceivedTransparentOutput {
     /// to be an output of a transaction mined in the block. This is intended to be used to
     /// determine when the TXO is no longer a part of the UTXO set, in the case that the
     /// transaction that spends it is not detected by the wallet.
-    pub(crate) max_observed_unspent_height: BlockHeight,
+    pub(crate) max_observed_unspent_height: Option<BlockHeight>,
 }
 
 impl ReceivedTransparentOutput {
@@ -114,7 +114,7 @@ impl ReceivedTransparentOutput {
             account_id,
             address,
             txout,
-            max_observed_unspent_height,
+            max_observed_unspent_height: Some(max_observed_unspent_height),
         }
     }
 

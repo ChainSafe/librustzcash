@@ -57,6 +57,8 @@ pub enum Error {
     OrchardNotEnabled,
     #[error("Address not recognized: {0:?}")]
     AddressNotRecognized(TransparentAddress),
+    #[error("Requested rewind to invalid block height. Safe height: {0:?}, requested height {1:?}")]
+    RequestedRewindInvalid(BlockHeight, BlockHeight),
 }
 
 impl From<DerivationError> for Error {
