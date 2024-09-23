@@ -1,4 +1,7 @@
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::{
+    collections::{btree_map::Entry, BTreeMap},
+    ops::Deref,
+};
 
 use serde::{Deserialize, Serialize};
 use zcash_primitives::{
@@ -28,13 +31,15 @@ pub(crate) struct TxLocatorMap(
 #[derive(Serialize, Deserialize)]
 pub(crate) struct TransactionEntry {
     // created: String,
-    /// Combines block height and mined_height into a txn status
+    /// mined_height is rolled into into a txn status
     #[serde(with = "TransactionStatusDef")]
     tx_status: TransactionStatus,
+    #[serde_as(as = "Option<FromInto<u32>>")]
+    block: Option<BlockHeight>,
     tx_index: Option<u32>,
     #[serde_as(as = "Option<FromInto<u32>>")]
     expiry_height: Option<BlockHeight>,
-    raw: Vec<u8>,
+    raw: Option<Vec<u8>>,
     #[serde_as(as = "Option<TryFromInto<u64>>")]
     fee: Option<Zatoshis>,
     /// - `target_height`: stores the target height for which the transaction was constructed, if
@@ -50,8 +55,9 @@ impl TransactionEntry {
         Self {
             tx_status: TransactionStatus::Mined(height),
             tx_index: Some(tx_meta.block_index() as u32),
+            block: Some(height),
             expiry_height: None,
-            raw: Vec::new(),
+            raw: None,
             fee: None,
             _target_height: None,
         }
@@ -70,8 +76,22 @@ impl TransactionEntry {
         }
     }
 
-    pub(crate) fn raw(&self) -> &[u8] {
-        self.raw.as_slice()
+    pub(crate) fn fee(&self) -> Option<Zatoshis> {
+        self.fee
+    }
+
+    pub(crate) fn raw(&self) -> Option<&[u8]> {
+        self.raw.as_ref().map(|v| v.as_slice())
+    }
+
+    pub(crate) fn is_mined_or_unexpired_at(&self, height: BlockHeight) -> bool {
+        match self.tx_status {
+            TransactionStatus::Mined(tx_height) => tx_height <= height,
+            TransactionStatus::NotInMainChain => self
+                .expiry_height
+                .map_or(false, |expiry_height| expiry_height > height),
+            _ => false,
+        }
     }
 }
 #[serde_as]
@@ -94,6 +114,7 @@ impl TransactionTable {
     pub(crate) fn _get_transaction(&self, txid: TxId) -> Option<&TransactionEntry> {
         self.0.get(&txid)
     }
+
     /// Inserts information about a MINED transaction that was observed to
     /// contain a note related to this wallet
     pub(crate) fn put_tx_meta(&mut self, tx_meta: WalletTx<AccountId>, height: BlockHeight) {
@@ -107,6 +128,40 @@ impl TransactionTable {
             }
         }
     }
+
+    #[cfg(feature = "transparent-inputs")]
+    /// Insert partial transaction data ontained from a received transparent output
+    /// Will update an existing transaction if it already exists with new date (e.g. will replace Nones with newer Some value)
+    pub(crate) fn put_tx_partial(
+        &mut self,
+        txid: &TxId,
+        block: &Option<BlockHeight>,
+        mined_height: Option<BlockHeight>,
+    ) {
+        match self.0.entry(*txid) {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().tx_status = mined_height
+                    .map(|h| TransactionStatus::Mined(h))
+                    .unwrap_or(TransactionStatus::NotInMainChain);
+                // replace the block if it's not already set
+                entry.get_mut().block = (*block).or(entry.get().block);
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(TransactionEntry {
+                    tx_status: mined_height
+                        .map(|h| TransactionStatus::Mined(h))
+                        .unwrap_or(TransactionStatus::NotInMainChain),
+                    block: *block,
+                    tx_index: None,
+                    expiry_height: None,
+                    raw: None,
+                    fee: None,
+                    _target_height: None,
+                });
+            }
+        }
+    }
+
     /// Inserts full transaction data
     pub(crate) fn put_tx_data(
         &mut self,
@@ -118,8 +173,10 @@ impl TransactionTable {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().fee = fee;
                 entry.get_mut().expiry_height = Some(tx.expiry_height());
-                entry.get_mut().raw = Vec::new();
-                tx.write(&mut entry.get_mut().raw).unwrap();
+
+                let mut raw = Vec::new();
+                tx.write(&mut raw).unwrap();
+                entry.get_mut().raw = Some(raw);
             }
             Entry::Vacant(entry) => {
                 let mut raw = Vec::new();
@@ -127,14 +184,16 @@ impl TransactionTable {
                 entry.insert(TransactionEntry {
                     tx_status: TransactionStatus::NotInMainChain,
                     tx_index: None,
+                    block: None,
                     expiry_height: Some(tx.expiry_height()),
-                    raw,
+                    raw: Some(raw),
                     fee,
                     _target_height: target_height,
                 });
             }
         }
     }
+
     pub(crate) fn set_transaction_status(
         &mut self,
         txid: &TxId,
@@ -147,8 +206,24 @@ impl TransactionTable {
             Err(Error::TransactionNotFound(*txid))
         }
     }
+
     pub(crate) fn get_tx_raw(&self, txid: &TxId) -> Option<&[u8]> {
-        self.0.get(txid).map(|entry| entry.raw.as_slice())
+        self.0
+            .get(txid)
+            .map(|entry| entry.raw.as_ref().map(|v| v.as_slice()))
+            .flatten()
+    }
+
+    pub(crate) fn unmine_transactions_greater_than(&mut self, height: BlockHeight) {
+        self.0.iter_mut().for_each(|(_, entry)| {
+            if let TransactionStatus::Mined(tx_height) = entry.tx_status {
+                if tx_height > height {
+                    entry.tx_status = TransactionStatus::NotInMainChain;
+                    entry.block = None;
+                    entry.tx_index = None;
+                }
+            }
+        });
     }
 }
 
@@ -163,6 +238,14 @@ impl TransactionTable {
 
     pub(crate) fn _remove(&mut self, txid: &TxId) -> Option<TransactionEntry> {
         self.0.remove(txid)
+    }
+}
+
+impl Deref for TransactionTable {
+    type Target = BTreeMap<TxId, TransactionEntry>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
