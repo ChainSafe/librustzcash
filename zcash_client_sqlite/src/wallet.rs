@@ -69,7 +69,8 @@ use rusqlite::{self, named_params, params, OptionalExtension};
 use secrecy::{ExposeSecret, SecretVec};
 use shardtree::{error::ShardTreeError, store::ShardStore, ShardTree};
 use zcash_client_backend::data_api::{
-    AccountPurpose, DecryptedTransaction, TransactionDataRequest, TransactionStatus, scanning::Progress,
+    scanning::Progress, AccountPurpose, DecryptedTransaction, TransactionDataRequest,
+    TransactionStatus,
 };
 use zip32::fingerprint::SeedFingerprint;
 

@@ -259,7 +259,7 @@ where
                     received_notes.iter().filter(|note| !note.is_change).count(), // received_note_count (excluding change)
                     0,            // TODO: memo_count
                     false,        // TODO: expired_unmined
-                    is_shielding, // TODO: is_shielding
+                    is_shielding, // is_shielding
                 )
             })
             .collect())
