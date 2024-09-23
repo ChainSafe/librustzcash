@@ -330,6 +330,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             chain_tip_height,
             fully_scanned_height,
             scan_progress,
+            None, // TODO: Unimplemented
             next_sapling_subtree_index,
             #[cfg(feature = "orchard")]
             next_orchard_subtree_index,
@@ -660,97 +661,6 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
         tracing::debug!("transaction_data_requests");
         todo!()
-    }
-
-    /// Returns the note IDs for shielded notes sent by the wallet in a particular
-    /// transaction.
-    #[cfg(any(test, feature = "test-dependencies"))]
-    fn get_sent_note_ids(
-        &self,
-        txid: &TxId,
-        protocol: ShieldedProtocol,
-    ) -> Result<Vec<NoteId>, Self::Error> {
-        Ok(self
-            .get_sent_notes()
-            .iter()
-            .filter_map(|(id, _)| {
-                if id.txid() == txid && id.protocol() == protocol {
-                    Some(*id)
-                } else {
-                    None
-                }
-            })
-            .collect())
-    }
-
-    /// Returns a vector of transaction summaries.
-    ///
-    /// Currently test-only, as production use could return a very large number of results; either
-    /// pagination or a streaming design will be necessary to stabilize this feature for production
-    /// use.⁄
-    #[cfg(any(test, feature = "test-dependencies"))]
-    fn get_tx_history(
-        &self,
-    ) -> Result<
-        Vec<zcash_client_backend::data_api::testing::TransactionSummary<Self::AccountId>>,
-        Self::Error,
-    > {
-        // TODO: This is only looking at sent notes, we need to look at received notes as well
-        // TODO: Need to actually implement a bunch of these fields
-        Ok(self
-            .sent_notes
-            .iter()
-            .map(|(note_id, note)| {
-                zcash_client_backend::data_api::testing::TransactionSummary::new(
-                    note.from_account_id,  // account_id
-                    *note_id.txid(),       // txid
-                    None,                  // expiry_height
-                    None,                  // mined_height
-                    0.try_into().unwrap(), // account_value_delta
-                    None,                  // fee_paid
-                    0,                     // spent_note_count
-                    false,                 // has_change
-                    0,                     // sent_note_count
-                    0,                     // received_note_count
-                    0,                     // memo_count
-                    false,                 // expired_unmined
-                    false,                 // is_shielding
-                )
-            })
-            .collect::<Vec<_>>())
-    }
-
-    #[cfg(any(test, feature = "test-dependencies"))]
-    fn get_checkpoint_history(
-        &self,
-    ) -> Result<
-        Vec<(
-            BlockHeight,
-            ShieldedProtocol,
-            Option<incrementalmerkletree::Position>,
-        )>,
-        Self::Error,
-    > {
-        let mut checkpoints = Vec::new();
-
-        self.sapling_tree
-            .store()
-            .for_each_checkpoint(usize::MAX, |id, cp| {
-                checkpoints.push((id.clone(), ShieldedProtocol::Sapling, cp.position()));
-                Ok(())
-            })?;
-
-        #[cfg(feature = "orchard")]
-        self.orchard_tree
-            .store()
-            .for_each_checkpoint(usize::MAX, |id, cp| {
-                checkpoints.push((id.clone(), ShieldedProtocol::Orchard, cp.position()));
-                Ok(())
-            })?;
-
-        checkpoints.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
-
-        Ok(checkpoints)
     }
 }
 

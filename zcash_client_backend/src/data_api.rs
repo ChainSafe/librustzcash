@@ -129,6 +129,10 @@ pub const SAPLING_SHARD_HEIGHT: u8 = sapling::NOTE_COMMITMENT_TREE_DEPTH / 2;
 #[cfg(feature = "orchard")]
 pub const ORCHARD_SHARD_HEIGHT: u8 = { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 } / 2;
 
+/// The number of ephemeral addresses that can be safely reserved without observing any
+/// of them to be mined. This is the same as the gap limit in Bitcoin.
+pub const GAP_LIMIT: u32 = 20;
+
 /// An enumeration of constraints that can be applied when querying for nullifiers for notes
 /// belonging to the wallet.
 pub enum NullifierQuery {
@@ -471,6 +475,7 @@ pub struct WalletSummary<AccountId: Eq + Hash> {
     chain_tip_height: BlockHeight,
     fully_scanned_height: BlockHeight,
     scan_progress: Option<Ratio<u64>>,
+    recovery_progress: Option<Ratio<u64>>,
     next_sapling_subtree_index: u64,
     #[cfg(feature = "orchard")]
     next_orchard_subtree_index: u64,
@@ -483,6 +488,7 @@ impl<AccountId: Eq + Hash> WalletSummary<AccountId> {
         chain_tip_height: BlockHeight,
         fully_scanned_height: BlockHeight,
         scan_progress: Option<Ratio<u64>>,
+        recovery_progress: Option<Ratio<u64>>,
         next_sapling_subtree_index: u64,
         #[cfg(feature = "orchard")] next_orchard_subtree_index: u64,
     ) -> Self {
@@ -491,6 +497,7 @@ impl<AccountId: Eq + Hash> WalletSummary<AccountId> {
             chain_tip_height,
             fully_scanned_height,
             scan_progress,
+            recovery_progress,
             next_sapling_subtree_index,
             #[cfg(feature = "orchard")]
             next_orchard_subtree_index,
@@ -513,14 +520,45 @@ impl<AccountId: Eq + Hash> WalletSummary<AccountId> {
         self.fully_scanned_height
     }
 
-    /// Returns the progress of scanning shielded outputs, in terms of the ratio between notes
-    /// scanned and the total number of notes added to the chain since the wallet birthday.
+    /// Returns the progress of scanning the chain to bring the wallet up to date.
     ///
-    /// This ratio should only be used to compute progress percentages, and the numerator and
-    /// denominator should not be treated as authoritative note counts. Returns `None` if the
-    /// wallet is unable to determine the size of the note commitment tree.
+    /// This progress metric is intended as an indicator of how close the wallet is to
+    /// general usability, including the ability to spend existing funds that were
+    /// previously spendable.
+    ///
+    /// The window over which progress is computed spans from the wallet's recovery height
+    /// to the current chain tip. This may be adjusted in future updates to better match
+    /// the intended semantics.
+    ///
+    /// Progress is represented in terms of the ratio between notes scanned and the total
+    /// number of notes added to the chain in the relevant window. This ratio should only
+    /// be used to compute progress percentages, and the numerator and denominator should
+    /// not be treated as authoritative note counts.
+    ///
+    /// Returns `None` if the wallet is unable to determine the size of the note
+    /// commitment tree.
     pub fn scan_progress(&self) -> Option<Ratio<u64>> {
         self.scan_progress
+    }
+
+    /// Returns the progress of recovering the wallet from seed.
+    ///
+    /// This progress metric is intended as an indicator of how close the wallet is to
+    /// having a complete history.
+    ///
+    /// The window over which progress is computed spans from the wallet birthday to the
+    /// wallet's recovery height. This may be adjusted in future updates to better match
+    /// the intended semantics.
+    ///
+    /// Progress is represented in terms of the ratio between notes scanned and the total
+    /// number of notes added to the chain in the relevant window. This ratio should only
+    /// be used to compute progress percentages, and the numerator and denominator should
+    /// not be treated as authoritative note counts.
+    ///
+    /// Returns `None` if the wallet is unable to determine the size of the note
+    /// commitment tree.
+    pub fn recovery_progress(&self) -> Option<Ratio<u64>> {
+        self.recovery_progress
     }
 
     /// Returns the Sapling subtree index that should start the next range of subtree
@@ -823,14 +861,6 @@ pub trait InputSource {
     ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
         Ok(vec![])
     }
-
-    #[cfg(any(test, feature = "test-dependencies"))]
-    fn get_notes(
-        &self,
-        _protocol: ShieldedProtocol,
-    ) -> Result<Vec<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
-        Ok(vec![])
-    }
 }
 
 /// Read-only operations required for light wallet functions.
@@ -1101,7 +1131,7 @@ pub trait WalletRead {
 
     /// Returns a vector of ephemeral transparent addresses associated with the given
     /// account controlled by this wallet, along with their metadata. The result includes
-    /// reserved addresses, and addresses for `GAP_LIMIT` additional indices (capped to
+    /// reserved addresses, and addresses for [`GAP_LIMIT`] additional indices (capped to
     /// the maximum index).
     ///
     /// If `index_range` is some `Range`, it limits the result to addresses with indices
@@ -1188,44 +1218,70 @@ pub trait WalletRead {
     /// transaction data requests, such as when it is necessary to fill in purely-transparent
     /// transaction history by walking the chain backwards via transparent inputs.
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error>;
+}
 
+/// Read-only operations required for testing light wallet functions.
+///
+/// These methods expose internal details or unstable interfaces, primarily to enable use
+/// of the [`testing`] framework. They should not be used in production software.
+#[cfg(any(test, feature = "test-dependencies"))]
+#[cfg_attr(feature = "test-dependencies", delegatable_trait)]
+pub trait WalletTest: InputSource + WalletRead {
     /// Returns a vector of transaction summaries.
     ///
     /// Currently test-only, as production use could return a very large number of results; either
     /// pagination or a streaming design will be necessary to stabilize this feature for production
     /// use.
-    #[cfg(any(test, feature = "test-dependencies"))]
     fn get_tx_history(
         &self,
-    ) -> Result<Vec<testing::TransactionSummary<Self::AccountId>>, Self::Error> {
-        Ok(vec![])
-    }
+    ) -> Result<
+        Vec<testing::TransactionSummary<<Self as WalletRead>::AccountId>>,
+        <Self as WalletRead>::Error,
+    >;
 
     /// Returns the note IDs for shielded notes sent by the wallet in a particular
     /// transaction.
-    #[cfg(any(test, feature = "test-dependencies"))]
     fn get_sent_note_ids(
         &self,
         _txid: &TxId,
         _protocol: ShieldedProtocol,
-    ) -> Result<Vec<NoteId>, Self::Error> {
-        Ok(vec![])
-    }
+    ) -> Result<Vec<NoteId>, <Self as WalletRead>::Error>;
 
-    #[cfg(any(test, feature = "test-dependencies"))]
+    #[allow(clippy::type_complexity)]
     fn get_confirmed_sends(
         &self,
-        _txid: &TxId,
-    ) -> Result<Vec<(u64, Option<String>, Option<String>, Option<u32>)>, Self::Error> {
-        Ok(vec![])
-    }
+        txid: &TxId,
+    ) -> Result<Vec<(u64, Option<String>, Option<String>, Option<u32>)>, <Self as WalletRead>::Error>;
 
-    #[cfg(any(test, feature = "test-dependencies"))]
+    #[allow(clippy::type_complexity)]
     fn get_checkpoint_history(
         &self,
-    ) -> Result<Vec<(BlockHeight, ShieldedProtocol, Option<incrementalmerkletree::Position>)>, Self::Error> {
-        Ok(vec![])
-    }
+    ) -> Result<
+        Vec<(
+            BlockHeight,
+            ShieldedProtocol,
+            Option<incrementalmerkletree::Position>,
+        )>,
+        <Self as WalletRead>::Error,
+    >;
+
+    /// Fetches the transparent output corresponding to the provided `outpoint`.
+    /// Allows selecting unspendable outputs for testing purposes.
+    ///
+    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
+    /// spendable as of the chain tip height.
+    #[cfg(feature = "transparent-inputs")]
+    fn get_transparent_output(
+        &self,
+        outpoint: &OutPoint,
+        allow_unspendable: bool,
+    ) -> Result<Option<WalletTransparentOutput>, <Self as InputSource>::Error>;
+
+    /// Returns all the notes that have been received by the wallet.
+    fn get_notes(
+        &self,
+        protocol: ShieldedProtocol,
+    ) -> Result<Vec<ReceivedNote<Self::NoteRef, Note>>, <Self as InputSource>::Error>;
 }
 
 /// The relevance of a seed to a given wallet.
