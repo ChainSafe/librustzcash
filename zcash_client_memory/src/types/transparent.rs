@@ -3,9 +3,10 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, FromInto};
 use zcash_client_backend::wallet::WalletTransparentOutput;
 use zcash_primitives::{
-    block::BlockHeader,
     legacy::TransparentAddress,
     transaction::{
         components::{OutPoint, TxOut},
@@ -15,10 +16,14 @@ use zcash_primitives::{
 use zcash_protocol::consensus::BlockHeight;
 
 use super::AccountId;
+use crate::{ByteArray, OutPointDef, TransparentAddressDef, TxOutDef};
 
 /// Stores the transparent outputs received by the wallet.
-#[derive(Default)]
-pub struct TransparentReceivedOutputs(BTreeMap<OutPoint, ReceivedTransparentOutput>);
+#[serde_as]
+#[derive(Default, Serialize, Deserialize)]
+pub struct TransparentReceivedOutputs(
+    #[serde_as(as = "BTreeMap<OutPointDef, _>")] BTreeMap<OutPoint, ReceivedTransparentOutput>,
+);
 
 impl TransparentReceivedOutputs {
     pub fn new() -> Self {
@@ -54,8 +59,11 @@ impl DerefMut for TransparentReceivedOutputs {
 }
 
 /// A junction table between received transparent outputs and the transactions that spend them.
-#[derive(Default)]
-pub struct TransparentReceivedOutputSpends(BTreeMap<OutPoint, TxId>);
+#[serde_as]
+#[derive(Default, Serialize, Deserialize)]
+pub struct TransparentReceivedOutputSpends(
+    #[serde_as(as = "BTreeMap<OutPointDef, ByteArray<32>>")] BTreeMap<OutPoint, TxId>,
+);
 
 impl TransparentReceivedOutputSpends {
     pub fn new() -> Self {
@@ -84,20 +92,26 @@ impl Deref for TransparentReceivedOutputSpends {
 }
 
 // transparent_received_outputs
+#[serde_as]
+#[derive(Serialize, Deserialize)]
 pub struct ReceivedTransparentOutput {
     // Reference to the transaction in which this TXO was created
+    #[serde_as(as = "ByteArray<32>")]
     pub(crate) transaction_id: TxId,
     // The account that controls spend authority for this TXO
     pub(crate) account_id: AccountId,
     // The address to which this TXO was sent
+    #[serde_as(as = "TransparentAddressDef")]
     pub(crate) address: TransparentAddress,
     // script, value_zat
+    #[serde_as(as = "TxOutDef")]
     pub(crate) txout: TxOut,
     /// The maximum block height at which this TXO was either
     /// observed to be a member of the UTXO set at the start of the block, or observed
     /// to be an output of a transaction mined in the block. This is intended to be used to
     /// determine when the TXO is no longer a part of the UTXO set, in the case that the
     /// transaction that spends it is not detected by the wallet.
+    #[serde_as(as = "Option<FromInto<u32>>")]
     pub(crate) max_observed_unspent_height: Option<BlockHeight>,
 }
 
@@ -132,8 +146,11 @@ impl ReceivedTransparentOutput {
 ///
 /// Output may be attempted to be spent in multiple transactions, even though only one will ever be mined
 /// which is why can cannot just rely on TransparentReceivedOutputSpends or implement this as as map
-#[derive(Default)]
-pub struct TransparentSpendCache(BTreeSet<(TxId, OutPoint)>);
+#[serde_as]
+#[derive(Default, Serialize, Deserialize)]
+pub struct TransparentSpendCache(
+    #[serde_as(as = "BTreeSet<(ByteArray<32>, OutPointDef)>")] BTreeSet<(TxId, OutPoint)>,
+);
 
 impl TransparentSpendCache {
     pub fn new() -> Self {

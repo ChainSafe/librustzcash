@@ -1,10 +1,15 @@
 use std::{collections::VecDeque, ops::Deref};
 
+use crate::TransactionDataRequestDef;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use zcash_client_backend::data_api::TransactionDataRequest;
 use zcash_primitives::transaction::TxId;
-
-#[derive(Default)]
-pub struct TransactionDataRequestQueue(VecDeque<TransactionDataRequest>);
+#[serde_as]
+#[derive(Default, Serialize, Deserialize)]
+pub struct TransactionDataRequestQueue(
+    #[serde_as(as = "VecDeque<TransactionDataRequestDef>")] VecDeque<TransactionDataRequest>,
+);
 
 impl TransactionDataRequestQueue {
     pub fn new() -> Self {

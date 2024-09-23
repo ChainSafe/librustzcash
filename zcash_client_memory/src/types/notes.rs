@@ -311,10 +311,15 @@ pub(crate) fn to_spendable_notes(
     ))
 }
 
-#[derive(PartialEq, PartialOrd, Eq, Ord)]
+#[serde_as]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
 pub enum SentNoteId {
-    Shielded(NoteId),
-    Transparent { txid: TxId, output_index: u32 },
+    Shielded(#[serde_as(as = "NoteIdDef")] NoteId),
+    Transparent {
+        #[serde_as(as = "ByteArray<32>")]
+        txid: TxId,
+        output_index: u32,
+    },
 }
 
 impl From<NoteId> for SentNoteId {
@@ -338,6 +343,7 @@ impl SentNoteId {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub(crate) struct SentNoteTable(BTreeMap<SentNoteId, SentNote>);
 
 impl SentNoteTable {
