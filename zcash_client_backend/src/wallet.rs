@@ -247,6 +247,7 @@ impl<AccountId> WalletTx<AccountId> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct WalletTransparentOutput {
     outpoint: OutPoint,
     txout: TxOut,
@@ -461,13 +462,26 @@ impl Note {
 /// Information about a note that is tracked by the wallet that is available for spending,
 /// with sufficient information for use in note selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[serde_with::serde_as]
+#[derive(serde::Serialize)]
 pub struct ReceivedNote<NoteRef, NoteT> {
     note_id: NoteRef,
     txid: TxId,
     output_index: u16,
+    #[serde(skip)]
     note: NoteT,
+    #[serde(with = "ScopeDef")]
     spending_key_scope: Scope,
+    #[serde_as(as = "serde_with::FromInto<u64>")]
     note_commitment_tree_position: Position,
+}
+
+// reimplementation of Scope to allow serializing/deserializng without modifying the foreign type
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(remote = "Scope")]
+pub enum ScopeDef {
+    External,
+    Internal,
 }
 
 impl<NoteRef, NoteT> ReceivedNote<NoteRef, NoteT> {

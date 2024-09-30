@@ -25,9 +25,11 @@ pub mod zip317;
 /// (with an optional change memo), or if the "transparent-inputs" feature is
 /// enabled, an ephemeral output to the transparent pool.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct ChangeValue(ChangeValueInner);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 enum ChangeValueInner {
     Shielded {
         protocol: ShieldedProtocol,
@@ -115,6 +117,7 @@ impl ChangeValue {
 /// outputs balance under a specific fee rule, as computed by a particular
 /// [`ChangeStrategy`] that is aware of that rule.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct TransactionBalance {
     proposed_change: Vec<ChangeValue>,
     fee_required: NonNegativeAmount,

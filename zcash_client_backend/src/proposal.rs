@@ -131,6 +131,8 @@ impl std::error::Error for ProposalError {}
 
 /// The Sapling inputs to a proposed transaction.
 #[derive(Clone, PartialEq, Eq)]
+#[derive(serde::Serialize)]
+#[serde(bound(serialize = "NoteRef: serde::Serialize + Clone"))]
 pub struct ShieldedInputs<NoteRef> {
     anchor_height: BlockHeight,
     notes: NonEmpty<ReceivedNote<NoteRef, Note>>,
@@ -166,8 +168,12 @@ impl<NoteRef> ShieldedInputs<NoteRef> {
 /// transparent outputs of earlier steps may be spent in later steps; the ability to chain shielded
 /// transaction steps may be added in a future update.
 #[derive(Clone, PartialEq, Eq)]
+#[serde_with::serde_as]
+#[derive(serde::Serialize)]
+#[serde(bound(serialize = "FeeRuleT: serde::Serialize, NoteRef: serde::Serialize + Clone"))]
 pub struct Proposal<FeeRuleT, NoteRef> {
     fee_rule: FeeRuleT,
+    #[serde_as(as = "serde_with::FromInto<u32>")]
     min_target_height: BlockHeight,
     steps: NonEmpty<Step<NoteRef>>,
 }
@@ -326,6 +332,7 @@ impl<FeeRuleT: Debug, NoteRef> Debug for Proposal<FeeRuleT, NoteRef> {
 
 /// A reference to either a payment or change output within a step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum StepOutputIndex {
     Payment(usize),
     Change(usize),
@@ -333,6 +340,7 @@ pub enum StepOutputIndex {
 
 /// A reference to the output of a step in a proposal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct StepOutput {
     step_index: usize,
     output_index: StepOutputIndex,
@@ -361,6 +369,8 @@ impl StepOutput {
 
 /// The inputs to be consumed and outputs to be produced in a proposed transaction.
 #[derive(Clone, PartialEq, Eq)]
+#[derive(serde::Serialize)]
+#[serde(bound(serialize = "NoteRef: serde::Serialize + Clone"))]
 pub struct Step<NoteRef> {
     transaction_request: TransactionRequest,
     payment_pools: BTreeMap<usize, PoolType>,
