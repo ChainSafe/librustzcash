@@ -227,6 +227,7 @@ impl Mul<usize> for ZatBalance {
 /// A Zatoshis can only be constructed from an integer that is within the valid monetary
 /// range of `{0..MAX_MONEY}` (where `MAX_MONEY` = 21,000,000 × 10⁸ zatoshis).
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Zatoshis(u64);
 
 impl Zatoshis {

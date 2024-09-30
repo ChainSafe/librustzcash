@@ -23,6 +23,32 @@ use zcash_primitives::{
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use super::{ToArray, TryFromArray};
+
+
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+/// A wrapper for serializing and deserializing arrays as fixed byte sequences that can fail.
+pub struct TryByteArray<const N: usize>(#[serde_as(as = "Bytes")] pub [u8; N]);
+impl<T: TryToArray<u8, N>, const N: usize> SerializeAs<T> for TryByteArray<N> {
+    fn serialize_as<S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        ByteArray(value.try_to_array().map_err(serde::ser::Error::custom)?)
+            .serialize(serializer)
+    }
+}
+impl<'de, T: TryFromArray<u8, N>, const N: usize> DeserializeAs<'de, T> for TryByteArray<N> {
+    fn deserialize_as<D>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        T::try_from_array(ByteArray::<N>::deserialize(deserializer)?.0)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Note")]

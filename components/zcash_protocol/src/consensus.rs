@@ -5,7 +5,6 @@ use std::cmp::{Ord, Ordering};
 use std::convert::TryFrom;
 use std::fmt;
 use std::ops::{Add, Bound, RangeBounds, Sub};
-
 use crate::constants::{mainnet, regtest, testnet};
 
 /// A wrapper type representing blockchain heights.
@@ -14,6 +13,7 @@ use crate::constants::{mainnet, regtest, testnet};
 /// provided.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct BlockHeight(u32);
 
 memuse::impl_no_dynamic_usage!(BlockHeight);
@@ -190,6 +190,7 @@ pub trait NetworkConstants: Clone {
 
 /// The enumeration of known Zcash network types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum NetworkType {
     /// Zcash Mainnet.
     Main,
