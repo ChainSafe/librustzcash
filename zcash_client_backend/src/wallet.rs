@@ -2,6 +2,7 @@
 //! light client.
 
 use incrementalmerkletree::Position;
+use serde::de;
 use zcash_address::ZcashAddress;
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::{
@@ -29,6 +30,7 @@ use zcash_primitives::legacy::keys::{NonHardenedChildIndex, TransparentKeyScope}
 
 /// A unique identifier for a shielded transaction output
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct NoteId {
     txid: TxId,
     protocol: ShieldedProtocol,
