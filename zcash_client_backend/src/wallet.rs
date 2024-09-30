@@ -246,8 +246,7 @@ impl<AccountId> WalletTx<AccountId> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct WalletTransparentOutput {
     outpoint: OutPoint,
     txout: TxOut,

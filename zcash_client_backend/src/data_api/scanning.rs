@@ -3,8 +3,8 @@
 use std::fmt;
 use std::ops::Range;
 
-use zcash_primitives::consensus::BlockHeight;
 use crate::data_api::Ratio;
+use zcash_primitives::consensus::BlockHeight;
 
 #[cfg(feature = "unstable-spanning-tree")]
 pub mod spanning_tree;
