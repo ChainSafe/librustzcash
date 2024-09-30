@@ -54,7 +54,7 @@ shardtree = { workspace = true, features = ["legacy-api"] }
 thiserror = "1.0.61"
 
 rayon.workspace = true
-serde_with.workspace = true
+serde_with = "3.9.0"
 async-trait = { version = "0.1" }
 
 # - Test dependencies
