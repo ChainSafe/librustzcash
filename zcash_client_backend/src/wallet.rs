@@ -3,7 +3,7 @@
 
 use incrementalmerkletree::Position;
 use serde::de;
-use zcash_address::ZcashAddress;
+use zcash_address::{ToAddress, ZcashAddress};
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -431,11 +431,13 @@ pub type WalletOrchardOutput<AccountId> =
     WalletOutput<orchard::note::Note, orchard::note::Nullifier, AccountId>;
 
 /// An enumeration of supported shielded note types for use in [`ReceivedNote`]
+#[serde_with::serde_as]
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize)]
 pub enum Note {
-    Sapling(sapling::Note),
+    Sapling(#[serde_as(as = "serde_with::FromInto<NoteSummary>")] sapling::Note),
     #[cfg(feature = "orchard")]
-    Orchard(orchard::Note),
+    Orchard(#[serde_as(as = "serde_with::FromInto<NoteSummary>")] orchard::Note),
 }
 
 impl Note {
@@ -461,16 +463,48 @@ impl Note {
     }
 }
 
+#[serde_with::serde_as]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize)]
+pub struct NoteSummary {
+    #[serde_as(as = "[_; 43]")]
+    recipient_bytes: [u8; 43],
+    value: NonNegativeAmount,
+}
+
+impl From<sapling::Note> for NoteSummary {
+    fn from(note: sapling::Note) -> Self {
+        Self {
+            recipient_bytes: note.recipient().to_bytes(),
+            value: note.value().inner().try_into().expect(
+                "Sapling notes must have values in the range of valid non-negative ZEC values.",
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "orchard")]
+impl From<orchard::Note> for NoteSummary {
+    fn from(note: orchard::Note) -> Self {
+        Self {
+            recipient_bytes: note.recipient().to_raw_address_bytes(),
+            value: NonNegativeAmount::from_u64(note.value().inner()).expect(
+                "Orchard notes must have values in the range of valid non-negative ZEC values.",
+            ),
+        }
+    }
+}
+
 /// Information about a note that is tracked by the wallet that is available for spending,
 /// with sufficient information for use in note selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[serde_with::serde_as]
 #[derive(serde::Serialize)]
+#[serde(bound = "NoteRef: serde::Serialize, NoteT: serde::Serialize")]
 pub struct ReceivedNote<NoteRef, NoteT> {
     note_id: NoteRef,
     txid: TxId,
     output_index: u16,
-    #[serde(skip)]
     note: NoteT,
     #[serde(with = "ScopeDef")]
     spending_key_scope: Scope,
