@@ -60,7 +60,7 @@ pub trait FutureFeeRule: FeeRule {
 }
 
 /// An enumeration of the standard fee rules supported by the wallet.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum StandardFeeRule {
     #[deprecated(
         note = "Using this fee rule violates ZIP 317, and might cause transactions built with it to fail. Use `StandardFeeRule::Zip317` instead."

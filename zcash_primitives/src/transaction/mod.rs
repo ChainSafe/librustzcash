@@ -67,7 +67,9 @@ const ZFUTURE_TX_VERSION: u32 = 0x0000FFFF;
 ///   that have been mined.
 /// - For v5 transactions onwards, this identifier is derived only from "effecting" data,
 ///   and is non-malleable in all contexts.
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(
+    Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct TxId([u8; 32]);
 
 memuse::impl_no_dynamic_usage!(TxId);

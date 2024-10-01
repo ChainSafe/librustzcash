@@ -1,18 +1,15 @@
+use async_trait::async_trait;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use zcash_client_backend::data_api::chain::{
-    BlockCache,
-    BlockSource};
+use wasm_sync::RwLock;
+use zcash_client_backend::data_api::chain::{BlockCache, BlockSource};
 use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_protocol::consensus::BlockHeight;
-use wasm_sync::RwLock;
-use async_trait::async_trait;
 
 /// A block cache that just holds blocks in a map in memory
 #[derive(Default)]
 pub struct MemBlockCache(pub(crate) RwLock<BTreeMap<BlockHeight, CompactBlock>>);
-
 
 impl MemBlockCache {
     pub fn new() -> Self {
@@ -20,7 +17,11 @@ impl MemBlockCache {
     }
 
     pub fn find_block(&self, block_height: BlockHeight) -> Option<CompactBlock> {
-        self.0.read().unwrap().get(&block_height).map(CompactBlock::clone)
+        self.0
+            .read()
+            .unwrap()
+            .get(&block_height)
+            .map(CompactBlock::clone)
     }
 }
 
@@ -75,7 +76,6 @@ impl BlockCache for MemBlockCache {
                 }
             }
         } else {
-
             return Ok(inner.last_key_value().map(|(h, _)| *h));
         }
 

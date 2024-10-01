@@ -38,7 +38,7 @@ zip321.workspace = true
 # (Breaking upgrades to these require a breaking upgrade to this crate.)
 # - Data Access API
 time = { version = "0.3.22", default-features = false }
-nonempty.workspace = true
+nonempty = { workspace = true, features = ["serialize"] }
 
 # - CSPRNG
 rand_core.workspace = true
@@ -123,9 +123,10 @@ tower = { workspace = true, optional = true }
 http-body-util = { workspace = true, optional = true }
 hyper-util = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true }
 tokio-rustls = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
+serde_with = "3.9.0"
 
 [build-dependencies]
 tonic-build = { workspace = true, features = ["prost"] }
@@ -188,7 +189,6 @@ tor = [
     "dep:hyper-util",
     "dep:rand",
     "dep:rust_decimal",
-    "dep:serde",
     "dep:serde_json",
     "dep:tokio",
     "dep:tokio-rustls",
