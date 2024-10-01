@@ -92,7 +92,9 @@ impl<A: Authorization> Bundle<A> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct OutPoint {
     hash: TxId,
     n: u32,
@@ -180,7 +182,7 @@ impl TxIn<Authorized> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct TxOut {
     pub value: NonNegativeAmount,
     pub script_pubkey: Script,

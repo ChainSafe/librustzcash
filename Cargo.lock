@@ -2536,6 +2536,9 @@ name = "nonempty"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9e591e719385e6ebaeb5ce5d3887f7d5676fceca6411d1925ccc95745f3d6f7"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "nu-ansi-term"
@@ -5897,6 +5900,8 @@ dependencies = [
  "bs58",
  "f4jumble",
  "proptest",
+ "serde",
+ "serde_with",
  "zcash_encoding",
  "zcash_protocol",
 ]
@@ -5943,6 +5948,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "shardtree",
  "subtle",
  "time",
@@ -6162,6 +6168,7 @@ dependencies = [
  "ripemd",
  "sapling-crypto",
  "secp256k1",
+ "serde",
  "sha2 0.10.8",
  "subtle",
  "tracing",
@@ -6205,6 +6212,8 @@ dependencies = [
  "incrementalmerkletree",
  "memuse",
  "proptest",
+ "serde",
+ "serde_with",
 ]
 
 [[package]]
@@ -6274,6 +6283,8 @@ dependencies = [
  "nom",
  "percent-encoding",
  "proptest",
+ "serde",
+ "serde_with",
  "zcash_address",
  "zcash_protocol",
 ]

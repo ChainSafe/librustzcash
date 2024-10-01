@@ -24,6 +24,12 @@ use zcash_client_backend::{
 )]
 pub struct AccountId(u32);
 
+impl From<u32> for AccountId {
+    fn from(id: u32) -> Self {
+        AccountId(id)
+    }
+}
+
 impl Deref for AccountId {
     type Target = u32;
 
