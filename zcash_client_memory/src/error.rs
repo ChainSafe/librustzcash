@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 
 use shardtree::error::ShardTreeError;
+use zcash_address::ConversionError;
 use zcash_keys::keys::{AddressGenerationError, DerivationError};
 use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
 use zcash_protocol::{consensus::BlockHeight, memo};
@@ -60,10 +61,18 @@ pub enum Error {
     #[error(
         "Requested rewind to invalid block height. Safe height: {0:?}, requested height {1:?}"
     )]
-    RequestedRewindInvalid(BlockHeight, BlockHeight),
+    RequestedRewindInvalid(Option<BlockHeight>, BlockHeight),
     #[cfg(feature = "transparent-inputs")]
     #[error("Requested gap limit {1} reached for account {0:?}")]
     ReachedGapLimit(AccountId, u32),
+    #[error("Address Conversion error: {0}")]
+    ConversionError(ConversionError<&'static str>),
+}
+
+impl From<ConversionError<&'static str>> for Error {
+    fn from(value: ConversionError<&'static str>) -> Self {
+        Error::ConversionError(value)
+    }
 }
 
 impl From<DerivationError> for Error {

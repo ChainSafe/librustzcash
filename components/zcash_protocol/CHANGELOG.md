@@ -7,6 +7,7 @@ and this library adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.4.0] - 2024-10-02
 ### Added
 - `impl Sub<BlockHeight> for BlockHeight` unlike the implementation that was
   removed in version `0.3.0`, a saturating subtraction for block heights having
@@ -14,6 +15,7 @@ and this library adheres to Rust's notion of
   height from another yields the delta between them.
 
 ### Changed
+- Mainnet activation height has been set for `consensus::BranchId::Nu6`.
 - Adding a delta to a `BlockHeight` now uses saturating addition.
 - Subtracting a delta to a `BlockHeight` now uses saturating subtraction.
 

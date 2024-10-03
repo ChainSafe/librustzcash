@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
+use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::InputSource;
+use zcash_client_backend::data_api::OutputOfSentTx;
 use zcash_client_backend::wallet::Note;
 use zcash_client_backend::wallet::Recipient;
 use zcash_client_backend::wallet::WalletTransparentOutput;
@@ -13,6 +15,8 @@ use zcash_client_backend::{
     },
     proto::compact_formats::CompactBlock,
 };
+use zcash_keys::address::Address;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_protocol::value::ZatBalance;
 use zcash_protocol::ShieldedProtocol;
 
@@ -63,6 +67,10 @@ impl TestCache for MemBlockCache {
             .unwrap()
             .insert(cb.height().into(), cb.clone());
     }
+
+    fn truncate_to_height(&mut self, height: BlockHeight) {
+        self.0.write().unwrap().retain(|k, _| *k <= height);
+    }
 }
 
 impl<P> Reset for MemoryWalletDb<P>
@@ -82,34 +90,42 @@ where
     P: zcash_primitives::consensus::Parameters + Clone,
 {
     #[allow(clippy::type_complexity)]
-    fn get_confirmed_sends(
-        &self,
-        txid: &TxId,
-    ) -> Result<Vec<(u64, Option<String>, Option<String>, Option<u32>)>, Error> {
+    fn get_sent_outputs(&self, txid: &TxId) -> Result<Vec<OutputOfSentTx>, Error> {
         Ok(self
             .sent_notes
             .iter()
             .filter(|(note_id, _)| note_id.txid() == txid)
             .map(|(_, note)| match note.to.clone() {
-                Recipient::External(zcash_address, _) => (
+                Recipient::External(zcash_address, _) => Ok((
                     note.value.into_u64(),
-                    Some(zcash_address.to_string()),
+                    Some(
+                        Address::try_from_zcash_address(&self.params, zcash_address)
+                            .map_err(Error::from)?,
+                    ),
                     None,
-                    None,
-                ),
+                )),
                 Recipient::EphemeralTransparent {
-                    ephemeral_address, ..
-                } => (
+                    ephemeral_address,
+                    receiving_account,
+                    outpoint_metadata,
+                } => Ok((
                     // TODO: Use the ephemeral address index to look up the address
                     // and find the correct index
                     note.value.into_u64(),
-                    Some("".to_string()),
-                    Some("".to_string()),
-                    Some(0),
-                ),
-                Recipient::InternalAccount { .. } => (note.value.into_u64(), None, None, None),
+                    Some(Address::from(ephemeral_address)),
+                    Some((Address::from(ephemeral_address), 0)),
+                )),
+                Recipient::InternalAccount { .. } => Ok((note.value.into_u64(), None, None)),
             })
-            .collect())
+            .map(|res: Result<_, Error>| {
+                let (amount, external_recipient, ephemeral_address) = res?;
+                Ok::<_, <Self as WalletRead>::Error>(OutputOfSentTx::from_parts(
+                    NonNegativeAmount::from_u64(amount)?,
+                    external_recipient,
+                    ephemeral_address,
+                ))
+            })
+            .collect::<Result<_, Error>>()?)
     }
 
     #[doc = " Fetches the transparent output corresponding to the provided `outpoint`."]
@@ -267,32 +283,32 @@ where
 
     fn get_checkpoint_history(
         &self,
-    ) -> Result<
-        Vec<(
-            BlockHeight,
-            ShieldedProtocol,
-            Option<incrementalmerkletree::Position>,
-        )>,
-        Error,
-    > {
+        protocol: &ShieldedProtocol,
+    ) -> Result<Vec<(BlockHeight, Option<incrementalmerkletree::Position>)>, Error> {
         let mut checkpoints = Vec::new();
 
-        self.sapling_tree
-            .store()
-            .for_each_checkpoint(usize::MAX, |id, cp| {
-                checkpoints.push((id.clone(), ShieldedProtocol::Sapling, cp.position()));
-                Ok(())
-            })?;
+        match protocol {
+            ShieldedProtocol::Sapling => {
+                self.sapling_tree
+                    .store()
+                    .for_each_checkpoint(usize::MAX, |id, cp| {
+                        checkpoints.push((id.clone(), cp.position()));
+                        Ok(())
+                    })?;
+            }
+            #[cfg(feature = "orchard")]
+            ShieldedProtocol::Orchard => {
+                self.orchard_tree
+                    .store()
+                    .for_each_checkpoint(usize::MAX, |id, cp| {
+                        checkpoints.push((id.clone(), cp.position()));
+                        Ok(())
+                    })?;
+            }
+            _ => {}
+        }
 
-        #[cfg(feature = "orchard")]
-        self.orchard_tree
-            .store()
-            .for_each_checkpoint(usize::MAX, |id, cp| {
-                checkpoints.push((id.clone(), ShieldedProtocol::Orchard, cp.position()));
-                Ok(())
-            })?;
-
-        checkpoints.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+        checkpoints.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         Ok(checkpoints)
     }

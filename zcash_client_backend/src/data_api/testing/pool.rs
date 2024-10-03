@@ -6,8 +6,8 @@ use std::{
 };
 
 use assert_matches::assert_matches;
-use incrementalmerkletree::{frontier::Frontier, Level};
-use rand::RngCore;
+use incrementalmerkletree::{frontier::Frontier, Level, Position};
+use rand::{Rng, RngCore};
 use secrecy::Secret;
 use shardtree::error::ShardTreeError;
 
@@ -25,6 +25,7 @@ use zcash_primitives::{
 };
 use zcash_protocol::{
     consensus::{self, BlockHeight, NetworkUpgrade, Parameters},
+    local_consensus::LocalNetwork,
     memo::{Memo, MemoBytes},
     value::Zatoshis,
     ShieldedProtocol,
@@ -77,7 +78,7 @@ use {
 };
 
 #[cfg(feature = "orchard")]
-use {crate::PoolType, incrementalmerkletree::Position};
+use crate::PoolType;
 
 /// Trait that exposes the pool-specific types and operations necessary to run the
 /// single-shielded-pool tests on a given pool.
@@ -318,7 +319,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
     DSF: DataStoreFactory,
     <DSF as DataStoreFactory>::AccountId: std::fmt::Debug,
 {
-    use crate::data_api::GAP_LIMIT;
+    use crate::data_api::{OutputOfSentTx, GAP_LIMIT};
 
     let mut st = TestBuilder::new()
         .with_data_store_factory(ds_factory)
@@ -409,7 +410,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
         // Check that there are sent outputs with the correct values.
         let confirmed_sent: Vec<Vec<_>> = txids
             .iter()
-            .map(|sent_txid| st.wallet().get_confirmed_sends(sent_txid).unwrap())
+            .map(|sent_txid| st.wallet().get_sent_outputs(sent_txid).unwrap())
             .collect();
 
         // Verify that a status request has been generated for the second transaction of
@@ -420,21 +421,24 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
         assert!(expected_step0_change < expected_ephemeral);
         assert_eq!(confirmed_sent.len(), 2);
         assert_eq!(confirmed_sent[0].len(), 2);
-        assert_eq!(
-            confirmed_sent[0][0].0,
-            u64::try_from(expected_step0_change).unwrap()
-        );
-        let (ephemeral_v, to_addr, ephemeral_addr, index) = confirmed_sent[0][1].clone();
-        assert_eq!(ephemeral_v, u64::try_from(expected_ephemeral).unwrap());
+        assert_eq!(confirmed_sent[0][0].value, expected_step0_change);
+        let OutputOfSentTx {
+            value: ephemeral_v,
+            external_recipient: to_addr,
+            ephemeral_address,
+        } = confirmed_sent[0][1].clone();
+        assert_eq!(ephemeral_v, expected_ephemeral);
         assert!(to_addr.is_some());
-        assert_eq!(ephemeral_addr, to_addr);
-        assert_eq!(index, Some(expected_index));
+        assert_eq!(
+            ephemeral_address,
+            to_addr.map(|addr| (addr, expected_index)),
+        );
 
         assert_eq!(confirmed_sent[1].len(), 1);
         assert_matches!(
-            confirmed_sent[1][0].clone(),
-            (sent_v, sent_to_addr, None, None)
-            if sent_v == u64::try_from(transfer_amount).unwrap() && sent_to_addr == Some(tex_addr.encode(st.network())));
+            &confirmed_sent[1][0],
+            OutputOfSentTx { value: sent_v, external_recipient: sent_to_addr, ephemeral_address: None }
+            if sent_v == &transfer_amount && sent_to_addr == &Some(tex_addr));
 
         // Check that the transaction history matches what we expect.
         let tx_history = st.wallet().get_tx_history().unwrap();
@@ -466,7 +470,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
             -ZatBalance::from(expected_ephemeral),
         );
 
-        (ephemeral_addr.unwrap(), txids)
+        (ephemeral_address.unwrap().0, txids)
     };
 
     // Each transfer should use a different ephemeral address.
@@ -476,9 +480,8 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
 
     let height = add_funds(&mut st, value);
 
-    let ephemeral_taddr = Address::decode(st.network(), &ephemeral0).expect("valid address");
     assert_matches!(
-        ephemeral_taddr,
+        ephemeral0,
         Address::Transparent(TransparentAddress::PublicKeyHash(_))
     );
 
@@ -488,7 +491,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
             account_id,
             StandardFeeRule::Zip317,
             NonZeroU32::new(1).unwrap(),
-            &ephemeral_taddr,
+            &ephemeral0,
             transfer_amount,
             None,
             None,
@@ -503,7 +506,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
     );
     assert_matches!(
         &create_proposed_result,
-        Err(Error::PaysEphemeralTransparentAddress(address_str)) if address_str == &ephemeral0);
+        Err(Error::PaysEphemeralTransparentAddress(address_str)) if address_str == &ephemeral0.encode(st.network()));
 
     // Simulate another wallet sending to an ephemeral address with an index
     // within the current gap limit. The `PaysEphemeralTransparentAddress` error
@@ -2193,7 +2196,7 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     .unwrap();
     assert_eq!(st.get_total_balance(acct_id), expected_final);
 
-    let expected_checkpoints_p0: Vec<(BlockHeight, ShieldedProtocol, Option<Position>)> = [
+    let expected_checkpoints_p0: Vec<(BlockHeight, Option<Position>)> = [
         (99999, None),
         (100000, Some(0)),
         (100001, Some(1)),
@@ -2204,16 +2207,10 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
         (100020, Some(6)),
     ]
     .into_iter()
-    .map(|(h, pos)| {
-        (
-            BlockHeight::from(h),
-            P0::SHIELDED_PROTOCOL,
-            pos.map(Position::from),
-        )
-    })
+    .map(|(h, pos)| (BlockHeight::from(h), pos.map(Position::from)))
     .collect();
 
-    let expected_checkpoints_p1: Vec<(BlockHeight, ShieldedProtocol, Option<Position>)> = [
+    let expected_checkpoints_p1: Vec<(BlockHeight, Option<Position>)> = [
         (99999, None),
         (100000, None),
         (100001, None),
@@ -2224,33 +2221,20 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
         (100020, Some(2)),
     ]
     .into_iter()
-    .map(|(h, pos)| {
-        (
-            BlockHeight::from(h),
-            P1::SHIELDED_PROTOCOL,
-            pos.map(Position::from),
-        )
-    })
+    .map(|(h, pos)| (BlockHeight::from(h), pos.map(Position::from)))
     .collect();
 
-    let actual_checkpoints = st.wallet().get_checkpoint_history().unwrap();
+    let p0_checkpoints = st
+        .wallet()
+        .get_checkpoint_history(&P0::SHIELDED_PROTOCOL)
+        .unwrap();
+    assert_eq!(p0_checkpoints.to_vec(), expected_checkpoints_p0);
 
-    assert_eq!(
-        actual_checkpoints
-            .iter()
-            .filter(|(_, p, _)| p == &P0::SHIELDED_PROTOCOL)
-            .cloned()
-            .collect::<Vec<_>>(),
-        expected_checkpoints_p0
-    );
-    assert_eq!(
-        actual_checkpoints
-            .iter()
-            .filter(|(_, p, _)| p == &P1::SHIELDED_PROTOCOL)
-            .cloned()
-            .collect::<Vec<_>>(),
-        expected_checkpoints_p1
-    );
+    let p1_checkpoints = st
+        .wallet()
+        .get_checkpoint_history(&P1::SHIELDED_PROTOCOL)
+        .unwrap();
+    assert_eq!(p1_checkpoints.to_vec(), expected_checkpoints_p1);
 }
 
 #[cfg(feature = "orchard")]
@@ -2441,6 +2425,146 @@ where
         st.get_spendable_balance(account.id(), 1),
         (value + value2).unwrap()
     );
+}
+
+pub fn reorg_to_checkpoint<T: ShieldedPoolTester, DSF, C>(ds_factory: DSF, cache: C)
+where
+    DSF: DataStoreFactory,
+    <DSF as DataStoreFactory>::AccountId: std::fmt::Debug,
+    C: TestCache,
+{
+    let mut st = TestBuilder::new()
+        .with_data_store_factory(ds_factory)
+        .with_block_cache(cache)
+        .with_account_from_sapling_activation(BlockHash([0; 32]))
+        .build();
+
+    let account = st.test_account().cloned().unwrap();
+
+    // Create a sequence of blocks to serve as the foundation of our chain state.
+    let p0_fvk = T::random_fvk(st.rng_mut());
+    let gen_random_block = |st: &mut TestState<C, DSF::DataStore, LocalNetwork>,
+                            output_count: usize| {
+        let fake_outputs =
+            std::iter::repeat_with(|| FakeCompactOutput::random(st.rng_mut(), p0_fvk.clone()))
+                .take(output_count)
+                .collect::<Vec<_>>();
+        st.generate_next_block_multi(&fake_outputs[..]);
+        output_count
+    };
+
+    // The stable portion of the tree will contain 20 notes.
+    for _ in 0..10 {
+        gen_random_block(&mut st, 4);
+    }
+
+    // We will reorg to this height.
+    let reorg_height = account.birthday().height() + 4;
+    let reorg_position = Position::from(19);
+
+    // Scan the first 5 blocks. The last block in this sequence will be where we simulate a
+    // reorg.
+    st.scan_cached_blocks(account.birthday().height(), 5);
+    assert_eq!(
+        st.wallet()
+            .block_max_scanned()
+            .unwrap()
+            .unwrap()
+            .block_height(),
+        reorg_height
+    );
+
+    // There will be 6 checkpoints: one for the prior block frontier, and then one for each scanned
+    // block.
+    let checkpoints = st
+        .wallet()
+        .get_checkpoint_history(&T::SHIELDED_PROTOCOL)
+        .unwrap();
+    assert_eq!(checkpoints.len(), 6);
+    assert_eq!(
+        checkpoints.last(),
+        Some(&(reorg_height, Some(reorg_position)))
+    );
+
+    // Scan another block, then simulate a reorg.
+    st.scan_cached_blocks(reorg_height + 1, 1);
+    assert_eq!(
+        st.wallet()
+            .block_max_scanned()
+            .unwrap()
+            .unwrap()
+            .block_height(),
+        reorg_height + 1
+    );
+    let checkpoints = st
+        .wallet()
+        .get_checkpoint_history(&T::SHIELDED_PROTOCOL)
+        .unwrap();
+    assert_eq!(checkpoints.len(), 7);
+    assert_eq!(
+        checkpoints.last(),
+        Some(&(reorg_height + 1, Some(reorg_position + 4)))
+    );
+
+    //        /\  /\  /\
+    //  .... /\/\/\/\/\/\
+    //          c   d   e
+
+    // Truncate back to the reorg height, but retain the block cache.
+    st.truncate_to_height_retaining_cache(reorg_height);
+
+    // The following error-prone tree state is generated by the a previous (buggy) truncate
+    // implementation:
+    //        /\  /\
+    //  .... /\/\/\/\
+    //          c
+
+    // We have pruned back to the original checkpoints & tree state.
+    let checkpoints = st
+        .wallet()
+        .get_checkpoint_history(&T::SHIELDED_PROTOCOL)
+        .unwrap();
+    assert_eq!(checkpoints.len(), 6);
+    assert_eq!(
+        checkpoints.last(),
+        Some(&(reorg_height, Some(reorg_position)))
+    );
+
+    // Skip two blocks, then (re) scan the same block.
+    st.scan_cached_blocks(reorg_height + 2, 1);
+
+    // Given the buggy truncation, this would result in this the following tree state:
+    //        /\  /\   \  /\
+    //  .... /\/\/\/\   \/\/\
+    //          c       e   f
+
+    let checkpoints = st
+        .wallet()
+        .get_checkpoint_history(&T::SHIELDED_PROTOCOL)
+        .unwrap();
+    // Even though we only scanned one block, we get a checkpoint at both the start and the end of
+    // the block due to the insertion of the prior block frontier.
+    assert_eq!(checkpoints.len(), 8);
+    assert_eq!(
+        checkpoints.last(),
+        Some(&(reorg_height + 2, Some(reorg_position + 8)))
+    );
+
+    // Now, fully truncate back to the reorg height. This should leave the tree in a state
+    // where it can be added to with arbitrary notes.
+    st.truncate_to_height(reorg_height);
+
+    // Generate some new random blocks
+    for _ in 0..10 {
+        let output_count = st.rng_mut().gen_range(2..10);
+        gen_random_block(&mut st, output_count);
+    }
+
+    // The previous truncation retained the cache, so re-scanning the same blocks would have
+    // resulted in the same note commitment tree state, and hence no conflicts; could occur. Now
+    // that we have cleared the cache and generated a different sequence blocks, if truncation did
+    // not completely clear the tree state this would generates a note commitment tree conflict.
+    st.scan_cached_blocks(reorg_height + 1, 1);
 }
 
 pub fn scan_cached_blocks_allows_blocks_out_of_order<T: ShieldedPoolTester>(

@@ -33,22 +33,22 @@ categories = ["cryptography::cryptocurrencies"]
 [workspace.dependencies]
 # Intra-workspace dependencies
 equihash = { version = "0.2", path = "components/equihash" }
-zcash_address = { version = "0.5", path = "components/zcash_address" }
+zcash_address = { version = "0.6", path = "components/zcash_address" }
 zcash_client_backend = { version = "0.13", path = "zcash_client_backend" }
 zcash_encoding = { version = "0.2.1", path = "components/zcash_encoding" }
 zcash_keys = { version = "0.3", path = "zcash_keys" }
-zcash_protocol = { version = "0.3", path = "components/zcash_protocol" }
+zcash_protocol = { version = "0.4", path = "components/zcash_protocol" }
 zip321 = { version = "0.1", path = "components/zip321" }
 
 zcash_note_encryption = "0.4"
-zcash_primitives = { version = "0.17", path = "zcash_primitives", default-features = false }
-zcash_proofs = { version = "0.17", path = "zcash_proofs", default-features = false }
+zcash_primitives = { version = "0.19", path = "zcash_primitives", default-features = false }
+zcash_proofs = { version = "0.19", path = "zcash_proofs", default-features = false }
 
 # Shielded protocols
 bellman = { version = "0.14", default-features = false, features = ["groth16"] }
 ff = "0.13"
 group = "0.13"
-incrementalmerkletree = "0.6"
+incrementalmerkletree = "0.7"
 shardtree = "0.4"
 zcash_spec = "0.1"
 
@@ -58,11 +58,11 @@ bitvec = "1"
 blake2s_simd = "1"
 bls12_381 = "0.8"
 jubjub = "0.10"
-sapling = { package = "sapling-crypto", version = "0.2", default-features = false }
+sapling = { package = "sapling-crypto", version = "0.3", default-features = false }
 
 # - Orchard
 nonempty = "0.7"
-orchard = { version = "0.9", default-features = false }
+orchard = { version = "0.10", default-features = false }
 pasta_curves = "0.5"
 
 # - Transparent
@@ -141,6 +141,7 @@ criterion = "0.5"
 proptest = "1"
 rand_chacha = "0.3"
 rand_xorshift = "0.3"
+incrementalmerkletree-testing = "0.1"
 
 # Tor
 # - `arti-client` depends on `rusqlite`, and a version mismatch there causes a compilation
@@ -160,11 +161,10 @@ lto = true
 panic = 'abort'
 codegen-units = 1
 
-[patch.crates-io]
-zip32 = { git = "https://github.com/zcash/zip32.git", branch = "diversifier_index_ord"}
-# TODO: Remove these once the PRs are merged
-shardtree = { git = "https://github.com/ec2/incrementalmerkletree.git", rev = "16eff253ad2575d48feec04f7387e6507a7dd698" }
-incrementalmerkletree = { git = "https://github.com/ec2/incrementalmerkletree.git", rev = "16eff253ad2575d48feec04f7387e6507a7dd698" }
-
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(zcash_unstable, values("zfuture"))'] }
+
+[patch.crates-io]
+zip32 = { git = "https://github.com/zcash/zip32.git", branch = "diversifier_index_ord"}
+incrementalmerkletree-testing = { git = "https://github.com/zcash/incrementalmerkletree", rev = "336452152536dde5831c9a4029fd26b4ec310608" }
+shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "336452152536dde5831c9a4029fd26b4ec310608" }

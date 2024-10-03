@@ -67,6 +67,7 @@ use incrementalmerkletree::{frontier::Frontier, Retention};
 use nonempty::NonEmpty;
 use secrecy::SecretVec;
 use shardtree::{error::ShardTreeError, store::ShardStore, ShardTree};
+use zcash_keys::address::Address;
 use zip32::fingerprint::SeedFingerprint;
 
 use self::{
@@ -1021,9 +1022,6 @@ pub trait WalletRead {
         min_confirmations: NonZeroU32,
     ) -> Result<Option<(BlockHeight, BlockHeight)>, Self::Error>;
 
-    /// Returns the minimum block height corresponding to an unspent note in the wallet.
-    fn get_min_unspent_height(&self) -> Result<Option<BlockHeight>, Self::Error>;
-
     /// Returns the block height in which the specified transaction was mined, or `Ok(None)` if the
     /// transaction is not in the main chain.
     fn get_tx_height(&self, txid: TxId) -> Result<Option<BlockHeight>, Self::Error>;
@@ -1247,21 +1245,19 @@ pub trait WalletTest: InputSource + WalletRead {
         _protocol: ShieldedProtocol,
     ) -> Result<Vec<NoteId>, <Self as WalletRead>::Error>;
 
+    /// Returns the outputs for a transaction sent by the wallet.
     #[allow(clippy::type_complexity)]
-    fn get_confirmed_sends(
+    fn get_sent_outputs(
         &self,
         txid: &TxId,
-    ) -> Result<Vec<(u64, Option<String>, Option<String>, Option<u32>)>, <Self as WalletRead>::Error>;
+    ) -> Result<Vec<OutputOfSentTx>, <Self as WalletRead>::Error>;
 
     #[allow(clippy::type_complexity)]
     fn get_checkpoint_history(
         &self,
+        protocol: &ShieldedProtocol,
     ) -> Result<
-        Vec<(
-            BlockHeight,
-            ShieldedProtocol,
-            Option<incrementalmerkletree::Position>,
-        )>,
+        Vec<(BlockHeight, Option<incrementalmerkletree::Position>)>,
         <Self as WalletRead>::Error,
     >;
 
@@ -1282,6 +1278,37 @@ pub trait WalletTest: InputSource + WalletRead {
         &self,
         protocol: ShieldedProtocol,
     ) -> Result<Vec<ReceivedNote<Self::NoteRef, Note>>, <Self as InputSource>::Error>;
+}
+
+/// The output of a transaction sent by the wallet.
+///
+/// This type is opaque, and exists for use by tests defined in this crate.
+#[cfg(any(test, feature = "test-dependencies"))]
+#[derive(Clone, Debug)]
+pub struct OutputOfSentTx {
+    value: NonNegativeAmount,
+    external_recipient: Option<Address>,
+    ephemeral_address: Option<(Address, u32)>,
+}
+
+#[cfg(any(test, feature = "test-dependencies"))]
+impl OutputOfSentTx {
+    /// Constructs an output from its test-relevant parts.
+    ///
+    /// If the output is to an ephemeral address, `ephemeral_address` should contain the
+    /// address along with the `address_index` it was derived from under the BIP 32 path
+    /// `m/44'/<coin_type>'/<account>'/2/<address_index>`.
+    pub fn from_parts(
+        value: NonNegativeAmount,
+        external_recipient: Option<Address>,
+        ephemeral_address: Option<(Address, u32)>,
+    ) -> Self {
+        Self {
+            value,
+            external_recipient,
+            ephemeral_address,
+        }
+    }
 }
 
 /// The relevance of a seed to a given wallet.
@@ -2059,20 +2086,27 @@ pub trait WalletWrite: WalletRead {
         transactions: &[SentTransaction<Self::AccountId>],
     ) -> Result<(), Self::Error>;
 
-    /// Truncates the wallet database to the specified height.
+    /// Truncates the wallet database to at most the specified height.
     ///
-    /// This method assumes that the state of the underlying data store is
-    /// consistent up to a particular block height. Since it is possible that
-    /// a chain reorg might invalidate some stored state, this method must be
-    /// implemented in order to allow users of this API to "reset" the data store
-    /// to correctly represent chainstate as of a specified block height.
+    /// Implementations of this method may choose a lower block height to which the data store will
+    /// be truncated if it is not possible to truncate exactly to the specified height. Upon
+    /// successful truncation, this method returns the height to which the data store was actually
+    /// truncated.
     ///
-    /// After calling this method, the block at the given height will be the
-    /// most recent block and all other operations will treat this block
-    /// as the chain tip for balance determination purposes.
+    /// This method assumes that the state of the underlying data store is consistent up to a
+    /// particular block height. Since it is possible that a chain reorg might invalidate some
+    /// stored state, this method must be implemented in order to allow users of this API to
+    /// "reset" the data store to correctly represent chainstate as of at most the requested block
+    /// height.
     ///
-    /// There may be restrictions on heights to which it is possible to truncate.
-    fn truncate_to_height(&mut self, block_height: BlockHeight) -> Result<(), Self::Error>;
+    /// After calling this method, the block at the returned height will be the most recent block
+    /// and all other operations will treat this block as the chain tip for balance determination
+    /// purposes.
+    ///
+    /// There may be restrictions on heights to which it is possible to truncate. Specifically, it
+    /// will only be possible to truncate to heights at which is is possible to create a witness
+    /// given the current state of the wallet's note commitment tree.
+    fn truncate_to_height(&mut self, max_height: BlockHeight) -> Result<BlockHeight, Self::Error>;
 
     /// Reserves the next `n` available ephemeral addresses for the given account.
     /// This cannot be undone, so as far as possible, errors associated with transaction

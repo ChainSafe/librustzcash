@@ -4,7 +4,7 @@ use secrecy::SecretVec;
 use shardtree::{error::ShardTreeError, store::ShardStore};
 
 use std::{
-    collections::{btree_map::Entry, BTreeMap, HashMap},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap},
     ops::Range,
 };
 
@@ -628,35 +628,62 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
     /// block, this function does nothing.
     ///
     /// This should only be executed inside a transactional context.
-    fn truncate_to_height(&mut self, block_height: BlockHeight) -> Result<(), Self::Error> {
-        let sapling_activation_height = self
-            .params
-            .activation_height(NetworkUpgrade::Sapling)
-            .expect("Sapling activation height must be available.");
+    fn truncate_to_height(&mut self, max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
+        let truncation_height = {
+            // This is the intersection of all the checkpoint heights from the sapling and orchard tree.
+            let mut checkpoint_heights = BTreeSet::new();
+            self.sapling_tree.store().for_each_checkpoint(
+                self.sapling_tree.store().checkpoint_count()?,
+                |height, _| {
+                    checkpoint_heights.insert(u32::from(*height));
+                    Ok(())
+                },
+            )?;
+            #[cfg(feature = "orchard")]
+            {
+                let mut orchard_checkpoint_heights = BTreeSet::new();
+                self.orchard_tree.store().for_each_checkpoint(
+                    self.orchard_tree.store().checkpoint_count()?,
+                    |height, _| {
+                        orchard_checkpoint_heights.insert(u32::from(*height));
+                        Ok(())
+                    },
+                )?;
+
+                checkpoint_heights = checkpoint_heights
+                    .intersection(&orchard_checkpoint_heights)
+                    .copied()
+                    .collect();
+            }
+            // All the checkpoints that are greater than the truncation height
+            let over = checkpoint_heights.split_off(&u32::from(max_height));
+            if let Some(height) = checkpoint_heights.last().copied() {
+                Ok(BlockHeight::from(height))
+            } else {
+                // If there are no checkpoints that are less than or equal to the truncation height
+                // then we can't truncate the tree.
+                Err(Error::RequestedRewindInvalid(
+                    over.first().copied().map(Into::into),
+                    max_height,
+                ))
+            }
+        }?;
 
         // Recall where we synced up to previously.
-        let last_scanned_height = self
-            .blocks
-            .keys()
-            .max()
-            .copied()
-            .unwrap_or(sapling_activation_height - 1);
-
-        if block_height < last_scanned_height - PRUNING_DEPTH {
-            if let Some(h) = self.get_min_unspent_height()? {
-                if block_height > h {
-                    return Err(Error::RequestedRewindInvalid(h, block_height));
-                }
-            }
-        }
+        let last_scanned_height = self.blocks.keys().max().copied().unwrap_or_else(|| {
+            self.params
+                .activation_height(NetworkUpgrade::Sapling)
+                .expect("Sapling activation height must be available.")
+                - 1
+        });
 
         // Delete from the scanning queue any range with a start height greater than the
         // truncation height, and then truncate any remaining range by setting the end
         // equal to the truncation height + 1. This sets our view of the chain tip back
         // to the retained height.
         self.scan_queue
-            .delete_starts_greater_than_equal_to(block_height + 1);
-        self.scan_queue.truncate_ends_to(block_height + 1);
+            .delete_starts_greater_than_equal_to(truncation_height + 1);
+        self.scan_queue.truncate_ends_to(truncation_height + 1);
 
         // Mark transparent utxos as un-mined. Since the TXO is now not mined, it would ideally be
         // considered to have been returned to the mempool; it _might_ be spendable in this state, but
@@ -672,8 +699,8 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                     .map(|tx| tx.mined_height())
                     .flatten()
                 {
-                    if mined_height <= block_height {
-                        txo.max_observed_unspent_height = Some(block_height)
+                    if mined_height <= truncation_height {
+                        txo.max_observed_unspent_height = Some(truncation_height)
                     } else {
                         txo.max_observed_unspent_height = None
                     }
@@ -682,17 +709,18 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
 
         // Un-mine transactions. This must be done outside of the last_scanned_height check because
         // transaction entries may be created as a consequence of receiving transparent TXOs.
-        self.tx_table.unmine_transactions_greater_than(block_height);
+        self.tx_table
+            .unmine_transactions_greater_than(truncation_height);
 
         // If we're removing scanned blocks, we need to truncate the note commitment tree and remove
         // affected block records from the database.
-        if block_height < last_scanned_height {
+        if truncation_height < last_scanned_height {
             self.with_sapling_tree_mut(|tree| {
-                tree.truncate_removing_checkpoint(&block_height).map(|_| ())
+                tree.truncate_to_checkpoint(&truncation_height).map(|_| ())
             })?;
             #[cfg(feature = "orchard")]
             self.with_orchard_tree_mut(|tree| {
-                tree.truncate_removing_checkpoint(&block_height).map(|_| ())
+                tree.truncate_to_checkpoint(&truncation_height).map(|_| ())
             })?;
 
             // Do not delete sent notes; this can contain data that is not recoverable
@@ -703,13 +731,13 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             // do not count towards spendability or transaction balalnce.
 
             // Now that they aren't depended on, delete un-mined blocks.
-            self.blocks.retain(|height, _| *height <= block_height);
+            self.blocks.retain(|height, _| *height <= truncation_height);
 
             // Delete from the nullifier map any entries with a locator referencing a block
             // height greater than the truncation height.
             // Willem: We don't need to do this I think..
         }
-        Ok(())
+        Ok(truncation_height)
     }
 
     fn import_account_hd(

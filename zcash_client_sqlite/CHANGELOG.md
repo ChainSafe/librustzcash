@@ -7,18 +7,23 @@ and this library adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- Migrated to `orchard 0.10`, `sapling-crypto 0.3`, `zcash_address 0.6`,
+  `zcash_primitives 0.19`, `zcash_proofs 0.19`, `zcash_protocol 0.4`.
+- `zcash_client_sqlite::error::SqliteClientError::RequestedRewindInvalid`
+  is now a structured variant.
+
 ## [0.11.2] - 2024-08-21
 
 ### Changed
 - The `v_tx_outputs` view was modified slightly to support older versions of
   `sqlite`. Queries to the exposed `v_tx_outputs` and `v_transactions` views
-  are supported for SQLite versions back to `3.19.x`. 
+  are supported for SQLite versions back to `3.19.x`.
 - `zcash_client_sqlite::wallet::init::WalletMigrationError` has an additional
   variant, `DatabaseNotSupported`. The `init_wallet_db` function now checks
   that the sqlite version in use is compatible with the features required by
   the wallet and returns this error if not. SQLite version `3.35` or higher
   is required for use with `zcash_client_sqlite`.
-
 
 ## [0.11.1] - 2024-08-21
 
@@ -48,8 +53,6 @@ or not the transaction represents a wallet-internal shielding operation.
   - `zcash_protocol 0.2`
 - `zcash_client_sqlite::error::SqliteClientError` has a new `ReachedGapLimit` and
   `EphemeralAddressReuse` variants when the "transparent-inputs" feature is enabled.
-- The result of the `v_tx_outputs` SQL query could now include transparent outputs
-  with unknown height.
 - `zcash_client_sqlite::error::SqliteClientError` has changed variants:
   - Removed `HdwalletError`.
   - Added `AccountCollision`.
@@ -60,6 +63,15 @@ or not the transaction represents a wallet-internal shielding operation.
   - An `is_shielding` column has been added, which is true for transactions where the
     spends from the wallet are all transparent, and the outputs to the wallet are all
     shielded.
+- The `v_tx_outputs` view has been modified:
+  - The result can now include transparent outputs with unknown height.
+
+### Fixed
+- The `to_address` column of the `v_tx_outputs` view is now `NULL` for
+  transparent outputs received by the wallet. This column is only intended to
+  contain addresses for outputs sent to external recipients. The fix aligns
+  received transparent outputs with received shielded outputs (which have always
+  returned `NULL`).
 
 ## [0.10.3] - 2024-04-08
 

@@ -99,7 +99,10 @@ use maybe_rayon::{
 };
 
 #[cfg(any(test, feature = "test-dependencies"))]
-use zcash_client_backend::data_api::{testing::TransactionSummary, WalletTest};
+use {
+    zcash_client_backend::data_api::{testing::TransactionSummary, OutputOfSentTx, WalletTest},
+    zcash_keys::address::Address,
+};
 
 /// `maybe-rayon` doesn't provide this as a fallback, so we have to.
 #[cfg(not(feature = "multicore"))]
@@ -517,10 +520,6 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> WalletRead for W
             .map_err(SqliteClientError::from)
     }
 
-    fn get_min_unspent_height(&self) -> Result<Option<BlockHeight>, Self::Error> {
-        wallet::get_min_unspent_height(self.conn.borrow()).map_err(SqliteClientError::from)
-    }
-
     fn get_tx_height(&self, txid: TxId) -> Result<Option<BlockHeight>, Self::Error> {
         wallet::get_tx_height(self.conn.borrow(), txid).map_err(SqliteClientError::from)
     }
@@ -672,11 +671,10 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> WalletTest for W
         Ok(note_ids)
     }
 
-    fn get_confirmed_sends(
+    fn get_sent_outputs(
         &self,
         txid: &TxId,
-    ) -> Result<Vec<(u64, Option<String>, Option<String>, Option<u32>)>, <Self as WalletRead>::Error>
-    {
+    ) -> Result<Vec<OutputOfSentTx>, <Self as WalletRead>::Error> {
         let mut stmt_sent = self
             .conn.borrow()
             .prepare(
@@ -690,12 +688,24 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> WalletTest for W
 
         let sends = stmt_sent
             .query_map(rusqlite::params![txid.as_ref()], |row| {
-                let v: u32 = row.get(0)?;
-                let to_address: Option<String> = row.get(1)?;
-                let ephemeral_address: Option<String> = row.get(2)?;
+                let v = row.get(0)?;
+                let to_address = row
+                    .get::<_, Option<String>>(1)?
+                    .and_then(|s| Address::decode(&self.params, &s));
+                let ephemeral_address = row
+                    .get::<_, Option<String>>(2)?
+                    .and_then(|s| Address::decode(&self.params, &s));
                 let address_index: Option<u32> = row.get(3)?;
-                Ok((u64::from(v), to_address, ephemeral_address, address_index))
+                Ok((v, to_address, ephemeral_address.zip(address_index)))
             })?
+            .map(|res| {
+                let (amount, external_recipient, ephemeral_address) = res?;
+                Ok::<_, <Self as WalletRead>::Error>(OutputOfSentTx::from_parts(
+                    NonNegativeAmount::from_u64(amount)?,
+                    external_recipient,
+                    ephemeral_address,
+                ))
+            })
             .collect::<Result<_, _>>()?;
 
         Ok(sends)
@@ -703,15 +713,12 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> WalletTest for W
 
     fn get_checkpoint_history(
         &self,
+        protocol: &ShieldedProtocol,
     ) -> Result<
-        Vec<(
-            BlockHeight,
-            ShieldedProtocol,
-            Option<incrementalmerkletree::Position>,
-        )>,
+        Vec<(BlockHeight, Option<incrementalmerkletree::Position>)>,
         <Self as WalletRead>::Error,
     > {
-        wallet::testing::get_checkpoint_history(self.conn.borrow())
+        wallet::testing::get_checkpoint_history(self.conn.borrow(), protocol)
     }
 
     #[cfg(feature = "transparent-inputs")]
@@ -906,19 +913,27 @@ impl<P: consensus::Parameters> WalletWrite for WalletDb<rusqlite::Connection, P>
             orchard_start_position: Position,
         }
 
+        if blocks.is_empty() {
+            return Ok(());
+        }
+
         self.transactionally(|wdb| {
-            let start_positions = blocks.first().map(|block| BlockPositions {
-                height: block.height(),
+            let initial_block = blocks.first().expect("blocks is known to be nonempty");
+            assert!(from_state.block_height() + 1 == initial_block.height());
+
+            let start_positions = BlockPositions {
+                height: initial_block.height(),
                 sapling_start_position: Position::from(
-                    u64::from(block.sapling().final_tree_size())
-                        - u64::try_from(block.sapling().commitments().len()).unwrap(),
+                    u64::from(initial_block.sapling().final_tree_size())
+                        - u64::try_from(initial_block.sapling().commitments().len()).unwrap(),
                 ),
                 #[cfg(feature = "orchard")]
                 orchard_start_position: Position::from(
-                    u64::from(block.orchard().final_tree_size())
-                        - u64::try_from(block.orchard().commitments().len()).unwrap(),
+                    u64::from(initial_block.orchard().final_tree_size())
+                        - u64::try_from(initial_block.orchard().commitments().len()).unwrap(),
                 ),
-            });
+            };
+
             let mut sapling_commitments = vec![];
             #[cfg(feature = "orchard")]
             let mut orchard_commitments = vec![];
@@ -1073,9 +1088,7 @@ impl<P: consensus::Parameters> WalletWrite for WalletDb<rusqlite::Connection, P>
 
             // We will have a start position and a last scanned height in all cases where
             // `blocks` is non-empty.
-            if let Some((start_positions, last_scanned_height)) =
-                start_positions.zip(last_scanned_height)
-            {
+            if let Some(last_scanned_height) = last_scanned_height {
                 // Create subtrees from the note commitments in parallel.
                 const CHUNK_SIZE: usize = 1024;
                 let sapling_subtrees = sapling_commitments
@@ -1204,6 +1217,8 @@ impl<P: consensus::Parameters> WalletWrite for WalletDb<rusqlite::Connection, P>
                             from_state.block_height(),
                             from_state.final_sapling_tree().tree_size()
                         );
+                        // We insert the frontier with `Checkpoint` retention because we need to be
+                        // able to truncate the tree back to this point.
                         sapling_tree.insert_frontier(
                             from_state.final_sapling_tree().clone(),
                             Retention::Checkpoint {
@@ -1253,6 +1268,8 @@ impl<P: consensus::Parameters> WalletWrite for WalletDb<rusqlite::Connection, P>
                             from_state.block_height(),
                             from_state.final_orchard_tree().tree_size()
                         );
+                        // We insert the frontier with `Checkpoint` retention because we need to be
+                        // able to truncate the tree back to this point.
                         orchard_tree.insert_frontier(
                             from_state.final_orchard_tree().clone(),
                             Retention::Checkpoint {
@@ -1346,10 +1363,8 @@ impl<P: consensus::Parameters> WalletWrite for WalletDb<rusqlite::Connection, P>
         })
     }
 
-    fn truncate_to_height(&mut self, block_height: BlockHeight) -> Result<(), Self::Error> {
-        self.transactionally(|wdb| {
-            wallet::truncate_to_height(wdb.conn.0, &wdb.params, block_height)
-        })
+    fn truncate_to_height(&mut self, max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
+        self.transactionally(|wdb| wallet::truncate_to_height(wdb.conn.0, &wdb.params, max_height))
     }
 
     #[cfg(feature = "transparent-inputs")]

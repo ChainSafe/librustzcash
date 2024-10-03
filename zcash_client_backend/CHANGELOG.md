@@ -13,6 +13,8 @@ and this library adheres to Rust's notion of
   - `WalletSummary::recovery_progress`
 
 ### Changed
+- Migrated to `orchard 0.10`, `sapling-crypto 0.3`, `zcash_address 0.6`,
+  `zcash_primitives 0.19`, `zcash_proofs 0.19`, `zcash_protocol 0.4`.
 - The `Account` trait now uses an associated type for its `AccountId`
   type instead of a type parameter. This change allows for the simplification
   of some type signatures.
@@ -20,8 +22,14 @@ and this library adheres to Rust's notion of
   - `WalletSummary::scan_progress` now only reports progress for scanning blocks
     "near" the chain tip. Progress for scanning earlier blocks is now reported
     via `WalletSummary::recovery_progress`.
+  - `WalletRead::get_min_unspent_height` has been removed. This was added to make
+    it possible to obtain a "safe truncation" height in order to facilitate rewinds
+    to a greater depth than the available note commitment tree checkpoints provide,
+    but such rewinds are no longer supported.
 - `zcash_client_backend::sync::run`:
   - Transparent outputs are now refreshed in addition to shielded notes.
+- `zcash_client_backend::proposal::ProposalError` has a new `AnchorNotFound`
+  variant.
 
 ### Fixed
 - `zcash_client_backend::tor::grpc` now needs the `lightwalletd-tonic-tls-webpki-roots`

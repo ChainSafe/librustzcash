@@ -12,6 +12,10 @@ and this library adheres to Rust's notion of
 - `impl std::error::Error for DecodingError`
 - `impl std::error::Error for DerivationError`
 
+### Changed
+- Migrated to `orchard 0.10`, `sapling-crypto 0.3`, `zcash_address 0.6`,
+  `zcash_primitives 0.19`, `zcash_protocol 0.4`.
+
 ## [0.3.0] - 2024-08-19
 ### Notable changes
 - `zcash_keys`:
