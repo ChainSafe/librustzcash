@@ -450,7 +450,6 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
             .iter()
             .find(|tx| tx.txid() == *txids.last())
             .unwrap();
-        println!("Tx0: {:#?}", tx_0);
         assert_eq!(tx_0.account_id(), &account_id);
         assert!(!tx_0.expired_unmined());
         assert_eq!(tx_0.has_change(), expected_step0_change.is_positive());
@@ -472,12 +471,9 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
         (ephemeral_address.unwrap().0, txids)
     };
 
-    println!("One!");
     // Each transfer should use a different ephemeral address.
     let (ephemeral0, txids0) = run_test(&mut st, 0);
-    println!("Two!");
     let (ephemeral1, txids1) = run_test(&mut st, 1);
-    println!("Three!");
     assert_ne!(ephemeral0, ephemeral1);
     let height = add_funds(&mut st, value);
 

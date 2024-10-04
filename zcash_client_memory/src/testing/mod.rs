@@ -17,7 +17,7 @@ use zcash_client_backend::{
 };
 use zcash_keys::address::Address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_protocol::value::{ZatBalance, Zatoshis};
+use zcash_protocol::value::ZatBalance;
 use zcash_protocol::ShieldedProtocol;
 
 use shardtree::store::ShardStore;
@@ -107,10 +107,9 @@ where
                 Recipient::EphemeralTransparent {
                     ephemeral_address,
                     receiving_account,
-                    outpoint_metadata,
+                    ..
                 } => {
                     let account = self.get_account(receiving_account)?.unwrap();
-                    println!("account id: {:?}, addresses: {:#?}", receiving_account, account.addresses());
                     let idx = *account.addresses().iter().find(|(_, addr)| addr.transparent() == Some(&ephemeral_address)).unwrap().0;
                     let idx = idx.try_into().unwrap();
 
