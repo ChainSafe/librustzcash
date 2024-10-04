@@ -890,7 +890,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     }
 }
 
-pub(crate) fn range_from(i: u32, n: u32) -> Range<u32> {
+ fn range_from(i: u32, n: u32) -> Range<u32> {
     let first = min(1 << 31, i);
     let last = min(1 << 31, i.saturating_add(n));
     first..last

@@ -640,9 +640,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         account_id: Self::AccountId,
         index_range: Option<Range<u32>>,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
-        Ok(self.accounts.get(account_id).map(|account| {
-            account.ephemeral_addresses()
-        }).unwrap_or_else(|| Ok(vec![]))?.into_iter()
+        Ok(self.accounts.get(account_id).map(Account::ephemeral_addresses).unwrap_or_else(|| Ok(vec![]))?.into_iter()
             .filter(|(_addr, meta)| {
                 index_range.as_ref().map(|range| {
                     range.contains(&meta.address_index().index())

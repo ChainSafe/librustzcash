@@ -24,6 +24,7 @@ use {
     zcash_primitives::legacy::keys::{AccountPubKey, EphemeralIvk, NonHardenedChildIndex, TransparentKeyScope},
 };
 use zcash_primitives::legacy::TransparentAddress;
+use zcash_primitives::transaction::TxId;
 
 /// Internal representation of ID type for accounts. Will be unique for each account.
 #[derive(
@@ -287,6 +288,23 @@ impl Account {
             }).collect::<Result<Vec<_>, _>>();
         }
         Ok(Vec::new())
+    }
+    
+   pub fn mark_ephemeral_address_as_used(
+       &mut self,
+       address: TransparentAddress,
+       tx_id: TxId,
+   ) -> Result<(), Error>{
+       todo!()
+   }
+    
+    pub fn mark_ephemeral_address_as_seen(
+        &mut self,
+        address: TransparentAddress,
+        tx_id: TxId,
+        
+    ) -> Result<(), Error>{
+        todo!()
     }
 }
 
