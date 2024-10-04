@@ -207,7 +207,7 @@ pub fn send_single_step_proposed_transfer<T: ShieldedPoolTester>(
         to.to_zcash_address(st.network()),
         Zatoshis::const_from_u64(10000),
     )])
-    .unwrap();
+        .unwrap();
 
     let fee_rule = StandardFeeRule::Zip317;
 
@@ -442,7 +442,6 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
 
         // Check that the transaction history matches what we expect.
         let tx_history = st.wallet().get_tx_history().unwrap();
-
         let tx_0 = tx_history
             .iter()
             .find(|tx| tx.txid() == *txids.first())
@@ -451,7 +450,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
             .iter()
             .find(|tx| tx.txid() == *txids.last())
             .unwrap();
-
+        println!("Tx0: {:#?}", tx_0);
         assert_eq!(tx_0.account_id(), &account_id);
         assert!(!tx_0.expired_unmined());
         assert_eq!(tx_0.has_change(), expected_step0_change.is_positive());
@@ -473,11 +472,13 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
         (ephemeral_address.unwrap().0, txids)
     };
 
+    println!("One!");
     // Each transfer should use a different ephemeral address.
     let (ephemeral0, txids0) = run_test(&mut st, 0);
+    println!("Two!");
     let (ephemeral1, txids1) = run_test(&mut st, 1);
+    println!("Three!");
     assert_ne!(ephemeral0, ephemeral1);
-
     let height = add_funds(&mut st, value);
 
     assert_matches!(
@@ -772,7 +773,7 @@ pub fn proposal_fails_if_not_all_ephemeral_outputs_consumed<T: ShieldedPoolTeste
         proposal.min_target_height(),
         NonEmpty::singleton(proposal.steps().first().clone()),
     )
-    .unwrap();
+        .unwrap();
 
     let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
         account.usk(),
@@ -1019,7 +1020,7 @@ pub fn spend_fails_on_unverified_notes<T: ShieldedPoolTester>(
         st.get_total_balance(account_id),
         ((value * 11).unwrap()
             - (amount_sent + NonNegativeAmount::from_u64(10000).unwrap()).unwrap())
-        .unwrap()
+            .unwrap()
     );
 }
 
@@ -1195,10 +1196,10 @@ pub fn ovk_policy_prevents_recovery_from_chain<T: ShieldedPoolTester, DSF>(
     #[allow(clippy::type_complexity)]
     let send_and_recover_with_policy = |st: &mut TestState<_, DSF::DataStore, _>,
                                         ovk_policy|
-     -> Result<
-        Option<(Note, Address, MemoBytes)>,
-        Error<_, _, GreedyInputSelectorError<Zip317FeeError, _>, Zip317FeeError>,
-    > {
+                                        -> Result<
+                                            Option<(Note, Address, MemoBytes)>,
+                                            Error<_, _, GreedyInputSelectorError<Zip317FeeError, _>, Zip317FeeError>,
+                                        > {
         let min_confirmations = NonZeroU32::new(1).unwrap();
         let proposal = st.propose_standard_transfer(
             account_id,
@@ -1402,7 +1403,7 @@ pub fn external_address_change_spends_detected_in_restore_from_seed<T: ShieldedP
         // payment back to the originating wallet, simulating legacy change
         Payment::without_memo(addr.to_zcash_address(st.network()), amount_legacy_change),
     ])
-    .unwrap();
+        .unwrap();
 
     #[allow(deprecated)]
     let fee_rule = FixedFeeRule::standard();
@@ -1501,7 +1502,7 @@ pub fn zip317_spend<T: ShieldedPoolTester>(
         T::fvk_default_address(&dfvk).to_zcash_address(st.network()),
         NonNegativeAmount::const_from_u64(50000),
     )])
-    .unwrap();
+        .unwrap();
 
     assert_matches!(
         st.spend(
@@ -1522,7 +1523,7 @@ pub fn zip317_spend<T: ShieldedPoolTester>(
         T::fvk_default_address(&dfvk).to_zcash_address(st.network()),
         NonNegativeAmount::const_from_u64(41000),
     )])
-    .unwrap();
+        .unwrap();
 
     let txid = st
         .spend(
@@ -1584,7 +1585,7 @@ where
         },
         Some(h),
     )
-    .unwrap();
+        .unwrap();
 
     let res0 = st.wallet_mut().put_received_transparent_utxo(&utxo);
     assert_matches!(res0, Ok(_));
@@ -1714,7 +1715,7 @@ pub fn birthday_in_anchor_shard<T: ShieldedPoolTester>(
         received_tx_height + 10,
         &[],
     )
-    .unwrap();
+        .unwrap();
 
     assert_eq!(spendable.len(), 0);
 
@@ -1729,7 +1730,7 @@ pub fn birthday_in_anchor_shard<T: ShieldedPoolTester>(
         received_tx_height + 10,
         &[],
     )
-    .unwrap();
+        .unwrap();
 
     assert_eq!(spendable.len(), 1);
 }
@@ -1783,7 +1784,7 @@ pub fn checkpoint_gaps<T: ShieldedPoolTester>(
         account.birthday().height() + 5,
         &[],
     )
-    .unwrap();
+        .unwrap();
     assert_eq!(spendable.len(), 1);
 
     // Attempt to spend the note with 5 confirmations
@@ -1835,7 +1836,7 @@ pub fn pool_crossing_required<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
         p1_to.to_zcash_address(st.network()),
         transfer_amount,
     )])
-    .unwrap();
+        .unwrap();
 
     let fee_rule = StandardFeeRule::Zip317;
     let input_selector = GreedyInputSelector::new(
@@ -1926,7 +1927,7 @@ pub fn fully_funded_fully_private<P0: ShieldedPoolTester, P1: ShieldedPoolTester
         p1_to.to_zcash_address(st.network()),
         transfer_amount,
     )])
-    .unwrap();
+        .unwrap();
 
     let fee_rule = StandardFeeRule::Zip317;
     let input_selector = GreedyInputSelector::new(
@@ -2017,7 +2018,7 @@ pub fn fully_funded_send_to_t<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
         Address::Transparent(p1_to).to_zcash_address(st.network()),
         transfer_amount,
     )])
-    .unwrap();
+        .unwrap();
 
     let fee_rule = StandardFeeRule::Zip317;
     let input_selector = GreedyInputSelector::new(
@@ -2132,7 +2133,7 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
         P0::random_address(st.rng_mut()).to_zcash_address(st.network()),
         transfer_amount,
     )])
-    .unwrap();
+        .unwrap();
     let res = st
         .spend(
             &input_selector,
@@ -2163,7 +2164,7 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
             transfer_amount,
         ),
     ])
-    .unwrap();
+        .unwrap();
     let res = st
         .spend(
             &input_selector,
@@ -2193,7 +2194,7 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     let expected_final = (initial_balance + note_value
         - (transfer_amount * 3).unwrap()
         - (expected_fee * 3).unwrap())
-    .unwrap();
+        .unwrap();
     assert_eq!(st.get_total_balance(acct_id), expected_final);
 
     let expected_checkpoints_p0: Vec<(BlockHeight, Option<Position>)> = [
@@ -2206,9 +2207,9 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
         (100014, Some(5)),
         (100020, Some(6)),
     ]
-    .into_iter()
-    .map(|(h, pos)| (BlockHeight::from(h), pos.map(Position::from)))
-    .collect();
+        .into_iter()
+        .map(|(h, pos)| (BlockHeight::from(h), pos.map(Position::from)))
+        .collect();
 
     let expected_checkpoints_p1: Vec<(BlockHeight, Option<Position>)> = [
         (99999, None),
@@ -2220,9 +2221,9 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
         (100014, Some(2)),
         (100020, Some(2)),
     ]
-    .into_iter()
-    .map(|(h, pos)| (BlockHeight::from(h), pos.map(Position::from)))
-    .collect();
+        .into_iter()
+        .map(|(h, pos)| (BlockHeight::from(h), pos.map(Position::from)))
+        .collect();
 
     let p0_checkpoints = st
         .wallet()
@@ -2604,7 +2605,7 @@ pub fn scan_cached_blocks_allows_blocks_out_of_order<T: ShieldedPoolTester>(
         T::fvk_default_address(&dfvk).to_zcash_address(st.network()),
         NonNegativeAmount::const_from_u64(110_000),
     )])
-    .unwrap();
+        .unwrap();
 
     #[allow(deprecated)]
     let input_selector = GreedyInputSelector::new(

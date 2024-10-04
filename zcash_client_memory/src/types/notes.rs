@@ -186,7 +186,7 @@ impl ReceivedNote {
 }
 
 impl From<ReceivedNote>
-    for zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>
+for zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>
 {
     fn from(value: ReceivedNote) -> Self {
         zcash_client_backend::wallet::ReceivedNote::from_parts(
@@ -207,7 +207,7 @@ impl ReceivedNoteTable {
 
     pub fn get_sapling_nullifiers(
         &self,
-    ) -> impl Iterator<Item = (AccountId, TxId, sapling::Nullifier)> + '_ {
+    ) -> impl Iterator<Item=(AccountId, TxId, sapling::Nullifier)> + '_ {
         self.0.iter().filter_map(|entry| {
             if let Some(Nullifier::Sapling(nf)) = entry.nullifier() {
                 Some((entry.account_id(), entry.txid(), *nf))
@@ -219,7 +219,7 @@ impl ReceivedNoteTable {
     #[cfg(feature = "orchard")]
     pub fn get_orchard_nullifiers(
         &self,
-    ) -> impl Iterator<Item = (AccountId, TxId, orchard::note::Nullifier)> + '_ {
+    ) -> impl Iterator<Item=(AccountId, TxId, orchard::note::Nullifier)> + '_ {
         self.0.iter().filter_map(|entry| {
             if let Some(Nullifier::Orchard(nf)) = entry.nullifier() {
                 Some((entry.account_id(), entry.txid(), *nf))
@@ -303,7 +303,7 @@ pub(crate) fn to_spendable_notes(
 }
 
 #[serde_as]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize, Debug)]
 pub enum SentNoteId {
     Shielded(#[serde_as(as = "NoteIdDef")] NoteId),
     Transparent {
@@ -403,7 +403,7 @@ impl Deref for SentNoteTable {
 }
 
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct SentNote {
     pub(crate) from_account_id: AccountId,
     #[serde_as(as = "RecipientDef<AccountId, Note, OutPoint>")]
