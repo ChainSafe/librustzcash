@@ -38,7 +38,8 @@ pub enum Error {
     Io(std::io::Error),
     #[error("Corrupted Data: {0}")]
     CorruptedData(String),
-    #[error("An error occurred while processing an account due to a failure in deriving the account's keys: {0}")]
+    #[error("An error occurred while processing an account due to a failure in deriving the account's keys: {0}"
+    )]
     BadAccountData(String),
     #[error("Blocks are non sequental")]
     NonSequentialBlocks,
@@ -65,10 +66,19 @@ pub enum Error {
     #[cfg(feature = "transparent-inputs")]
     #[error("Requested gap limit {1} reached for account {0:?}")]
     ReachedGapLimit(AccountId, u32),
+    #[cfg(feature = "transparent-inputs")]
+    #[error("Transparent derivation: {0}")]
+    TransparentDerivation(bip32::Error),
     #[error("Address Conversion error: {0}")]
     ConversionError(ConversionError<&'static str>),
 }
+#[cfg(feature = "transparent-inputs")]
 
+impl From<bip32::Error> for Error {
+    fn from(value: bip32::Error) -> Self {
+        Error::TransparentDerivation(value)
+    }
+}
 impl From<ConversionError<&'static str>> for Error {
     fn from(value: ConversionError<&'static str>) -> Self {
         Error::ConversionError(value)

@@ -11,13 +11,20 @@ use zip32::DiversifierIndex;
 use crate::error::Error;
 use crate::serialization::*;
 
-use zcash_client_backend::data_api::AccountBirthday;
+use zcash_client_backend::data_api::{AccountBirthday, GAP_LIMIT};
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{Account as _, AccountPurpose, AccountSource},
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey},
     wallet::NoteId,
 };
+#[cfg(feature = "transparent-inputs")]
+use {
+    zcash_client_backend::wallet::TransparentAddressMetadata,
+    zcash_primitives::legacy::keys::{AccountPubKey, EphemeralIvk, NonHardenedChildIndex, TransparentKeyScope},
+};
+use zcash_primitives::legacy::TransparentAddress;
+
 /// Internal representation of ID type for accounts. Will be unique for each account.
 #[derive(
     Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord, Serialize, Deserialize,
@@ -90,7 +97,7 @@ impl Accounts {
         self.accounts.get_mut(&account_id)
     }
     /// Gets the account ids of all accounts
-    pub(crate) fn account_ids(&self) -> impl Iterator<Item = &AccountId> {
+    pub(crate) fn account_ids(&self) -> impl Iterator<Item=&AccountId> {
         self.accounts.keys()
     }
 }
@@ -131,6 +138,9 @@ pub struct Account {
     #[serde(skip)]
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
 
+    #[cfg(feature = "transparent-inputs")]
+    ephemeral_addresses: BTreeMap<u32, TransparentAddress>, // NonHardenedChildIndex (< 1 << 31)
+
     #[serde_as(as = "BTreeSet<NoteIdDef>")]
     _notes: BTreeSet<NoteId>,
 }
@@ -148,6 +158,8 @@ impl Account {
             kind,
             viewing_key,
             birthday,
+            #[cfg(feature = "transparent-inputs")]
+            ephemeral_addresses: BTreeMap::new(),
             _purpose: purpose,
             addresses: BTreeMap::new(),
             _notes: BTreeSet::new(),
@@ -164,9 +176,11 @@ impl Account {
             })?;
         let (ua, diversifier_index) = acc.default_address(ua_request)?;
         acc.addresses.insert(diversifier_index, ua);
-
+        #[cfg(feature = "transparent-inputs")]
+        acc.reserve_until(0)?;
         Ok(acc)
     }
+
 
     pub fn addresses(&self) -> &BTreeMap<DiversifierIndex, UnifiedAddress> {
         &self.addresses
@@ -228,6 +242,51 @@ impl Account {
 
     pub(crate) fn account_id(&self) -> AccountId {
         self.account_id
+    }
+}
+#[cfg(feature = "transparent-inputs")]
+impl Account {
+    pub fn ephemeral_addresses(&self) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Error> {
+        Ok(self.ephemeral_addresses.iter().map(|(idx, addr)| {
+            (addr.clone(), TransparentAddressMetadata::new(TransparentKeyScope::EPHEMERAL, NonHardenedChildIndex::from_index(*idx).unwrap()))
+        }).collect())
+    }
+    pub fn ephemeral_ivk(&self) -> Result<Option<EphemeralIvk>, Error> {
+        self.viewing_key.transparent().map(AccountPubKey::derive_ephemeral_ivk).transpose().map_err(Into::into)
+    }
+
+    pub fn first_unstored_index(&self) -> Result<u32, Error> {
+        let idx = self.ephemeral_addresses.last_key_value().map(|(index, _)| index.checked_add(1).unwrap()).unwrap_or(0);
+        if idx >= (1 << 31) + GAP_LIMIT + 1 {
+            unreachable!("violates constraint index_range_and_address_nullity")
+        }
+        Ok(idx)
+    }
+
+    pub fn first_unreserved_index(&self) -> Result<u32, Error> {
+        self.first_unstored_index()?.checked_sub(GAP_LIMIT).ok_or(Error::CorruptedData(
+            "ephemeral_addresses corrupted".to_owned(),
+        ))
+    }
+
+    pub fn reserve_until(
+        &mut self,
+        next_to_reserve: u32,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Error> {
+        if let Some(ephemeral_ivk) = self.ephemeral_ivk()? {
+            let first_unstored = self.first_unstored_index()?;
+            let range_to_store = first_unstored..(next_to_reserve.checked_add(GAP_LIMIT).unwrap());
+            if range_to_store.is_empty() { return Ok(Vec::new()); }
+            return range_to_store.map(|raw_index| {
+                NonHardenedChildIndex::from_index(raw_index).map(|address_index| {
+                    ephemeral_ivk.derive_ephemeral_address(address_index).map(|addr| {
+                        self.ephemeral_addresses.insert(raw_index, addr);
+                        (addr, TransparentAddressMetadata::new(TransparentKeyScope::EPHEMERAL, address_index))
+                    })
+                }).unwrap().map_err(Into::into)
+            }).collect::<Result<Vec<_>, _>>();
+        }
+        Ok(Vec::new())
     }
 }
 

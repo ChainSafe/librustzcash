@@ -7,7 +7,7 @@ use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap},
     ops::Range,
 };
-
+use std::cmp::min;
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{
@@ -874,32 +874,26 @@ Instead derive the ufvk in the calling code and import it using `import_account_
         account_id: Self::AccountId,
         n: usize,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
-        let mut addresses = Vec::new();
-        if let Some(account) = self.accounts.get_mut(account_id) {
-            for _ in 0..n {
-                if let Some(address) =
-                    account.next_available_address(UnifiedAddressRequest::all().unwrap())?
-                {
-                    let t_address = address.transparent().unwrap().clone();
-                    addresses.push(t_address);
-                } else {
-                    return Err(Error::UnknownZip32Derivation);
-                }
-            }
+        // TODO: We need to implement first_unsafe_index to make sure we dont violate gap invarient
+        if let Some(account) = self.accounts.get_mut(account_id){
+            let first_unreserved = account.first_unreserved_index()?;
+
+            let allocation = range_from(
+                first_unreserved,
+                u32::try_from(n).unwrap(),
+            );
+            let reserved = account.reserve_until(n as u32)?;
+            self.get_known_ephemeral_addresses(account_id, Some(allocation))
         } else {
-            return Err(Error::AccountUnknown(account_id));
+            Err(Self::Error::AccountUnknown(account_id))
         }
-        addresses
-            .into_iter()
-            .map(|t_address| {
-                Ok((
-                    t_address,
-                    self.get_transparent_address_metadata(account_id, &t_address)?
-                        .unwrap(),
-                ))
-            })
-            .collect()
     }
+}
+
+pub(crate) fn range_from(i: u32, n: u32) -> Range<u32> {
+    let first = min(1 << 31, i);
+    let last = min(1 << 31, i.saturating_add(n));
+    first..last
 }
 
 #[cfg(feature = "orchard")]
