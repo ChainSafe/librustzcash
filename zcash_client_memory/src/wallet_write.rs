@@ -611,8 +611,17 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             self.set_transaction_status(d_tx.tx().txid(), TransactionStatus::Mined(height))?
         }
 
-        // TODO: Implement function account;
-        let funding_account: Option<Self::AccountId> = None;
+        let funding_accounts = self.get_funding_accounts(d_tx.tx())?;
+        // TODO(#1305): Correctly track accounts that fund each transaction output.
+        let funding_account = funding_accounts.iter().next().copied();
+        if funding_accounts.len() > 1 {
+            tracing::warn!(
+            "More than one wallet account detected as funding transaction {:?}, selecting {:?}",
+            d_tx.tx().txid(),
+            funding_account.unwrap()
+            )
+        }
+
 
         // A flag used to determine whether it is necessary to query for transactions that
         // provided transparent inputs to this transaction, in order to be able to correctly

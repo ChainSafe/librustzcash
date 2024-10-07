@@ -67,6 +67,7 @@ pub(crate) const PRUNING_DEPTH: u32 = 100;
 pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 
 use types::serialization::*;
+use zcash_primitives::transaction::Transaction;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[serde_as]
@@ -230,6 +231,37 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
 
         Ok((id, account))
+    }
+
+    pub fn get_funding_accounts(
+        &self,
+        tx: &Transaction,
+    ) -> Result<BTreeSet<AccountId>, Error> {
+        let mut funding_accounts = BTreeSet::new();
+        #[cfg(feature = "transparent-inputs")]
+        funding_accounts.extend(self.transparent_received_outputs.detect_spending_accounts(
+            tx.transparent_bundle()
+                .iter()
+                .flat_map(|bundle| bundle.vin.iter().map(|txin| &txin.prevout)),
+        )?);
+
+        funding_accounts.extend(self.received_notes.detect_sapling_spending_accounts(
+            tx.sapling_bundle().iter().flat_map(|bundle| {
+                bundle
+                    .shielded_spends()
+                    .iter()
+                    .map(|spend| spend.nullifier())
+            }),
+        )?);
+
+        #[cfg(feature = "orchard")]
+        funding_accounts.extend(self.received_notes.detect_orchard_spending_accounts(
+            tx.orchard_bundle()
+                .iter()
+                .flat_map(|bundle| bundle.actions().iter().map(|action| action.nullifier())),
+        )?);
+
+        Ok(funding_accounts)
     }
 
     pub(crate) fn get_received_notes(&self) -> &ReceivedNoteTable {
@@ -910,7 +942,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         &self,
         address: &TransparentAddress,
     ) -> Result<Option<AccountId>, Error> {
-       self.accounts.find_account_for_transparent_address(address) 
+        self.accounts.find_account_for_transparent_address(address)
     }
 
     pub(crate) fn mark_transparent_output_spent(

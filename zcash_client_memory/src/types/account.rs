@@ -159,12 +159,7 @@ impl Accounts {
         tx_id: TxId,
     ) -> Result<(), Error> {
         for (_, account) in self.accounts.iter_mut() {
-            for (_, eph) in account.ephemeral_addresses.iter_mut() {
-                if &eph.address == address {
-                    eph.mark_seen(tx_id);
-                    return Ok(());
-                }
-            }
+           account.mark_ephemeral_address_as_seen(address,tx_id)? 
         }
         Ok(())
     }

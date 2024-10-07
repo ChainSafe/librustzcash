@@ -10,7 +10,7 @@ use std::{
     collections::BTreeMap,
     ops::{Deref, DerefMut},
 };
-
+use std::collections::BTreeSet;
 use zip32::Scope;
 
 use zcash_primitives::transaction::{components::OutPoint, TxId};
@@ -233,6 +233,40 @@ impl ReceivedNoteTable {
         // ensure note_id is unique. Replace any note with a matching note_id
         self.0.retain(|n| n.note_id != note.note_id);
         self.0.push(note);
+    }
+
+
+    #[cfg(feature = "orchard")]
+    pub fn detect_orchard_spending_accounts<'a>(&self, nfs: impl Iterator<Item=&'a orchard::note::Nullifier>) -> Result<BTreeSet<AccountId>, Error> {
+        let mut acc = BTreeSet::new();
+        let nfs = nfs.collect::<Vec<_>>();
+        for (nf, id) in self.0.iter().filter_map(|n| match (n.nf, n.account_id) {
+            (Some(Nullifier::Orchard(nf)), account_id) => {
+                Some((nf, account_id))
+            }
+            _ => None,
+        }) {
+            if nfs.contains(&&nf) {
+                acc.insert(id);
+            }
+        }
+        Ok(acc)
+    }
+
+    pub fn detect_sapling_spending_accounts<'a>(&self, nfs: impl Iterator<Item=&'a sapling::Nullifier>) -> Result<BTreeSet<AccountId>, Error> {
+        let mut acc = BTreeSet::new();
+        let nfs = nfs.collect::<Vec<_>>();
+        for (nf, id) in self.0.iter().filter_map(|n| match (n.nf, n.account_id) {
+            (Some(Nullifier::Sapling(nf)), account_id) => {
+                Some((nf, account_id))
+            }
+            _ => None,
+        }) {
+            if nfs.contains(&&nf) {
+                acc.insert(id);
+            }
+        }
+        Ok(acc)
     }
 }
 

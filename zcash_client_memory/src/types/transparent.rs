@@ -16,7 +16,7 @@ use zcash_primitives::{
 use zcash_protocol::consensus::BlockHeight;
 
 use super::AccountId;
-use crate::{ByteArray, OutPointDef, TransparentAddressDef, TxOutDef};
+use crate::{ByteArray, Error, OutPointDef, TransparentAddressDef, TxOutDef};
 
 /// Stores the transparent outputs received by the wallet.
 #[serde_as]
@@ -32,6 +32,16 @@ impl TransparentReceivedOutputs {
 
     pub fn get(&self, outpoint: &OutPoint) -> Option<&ReceivedTransparentOutput> {
         self.0.get(outpoint)
+    }
+
+    pub fn detect_spending_accounts<'a>(&self, spent: impl Iterator<Item=&'a OutPoint>) -> Result<BTreeSet<AccountId>, Error> {
+        let mut acc = BTreeSet::new();
+        for prevout in spent {
+            if let Some(output) = self.0.get(prevout) {
+                acc.insert(output.account_id);
+            }
+        }
+        Ok(acc)
     }
 }
 
