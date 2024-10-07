@@ -209,7 +209,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                     ignored_range.clone(),
                     ScanPriority::Ignored,
                 ))
-                .into_iter(),
+                    .into_iter(),
                 false,
             )?;
         };
@@ -224,7 +224,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                     rescan_range.clone(),
                     ScanPriority::Historic,
                 ))
-                .into_iter(),
+                    .into_iter(),
                 true, // force rescan
             )?;
         }
@@ -910,16 +910,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         &self,
         address: &TransparentAddress,
     ) -> Result<Option<AccountId>, Error> {
-        Ok(self
-            .accounts
-            .iter()
-            .find(|(_, account)| {
-                account
-                    .addresses()
-                    .iter()
-                    .any(|(_, unified_address)| unified_address.transparent() == Some(address))
-            })
-            .map(|(id, _)| id.clone()))
+       self.accounts.find_account_for_transparent_address(address) 
     }
 
     pub(crate) fn mark_transparent_output_spent(
@@ -1027,7 +1018,6 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
 #[cfg(test)]
 mod test {
-
     use ciborium::into_writer;
 
     use crate::MemoryWalletDb;

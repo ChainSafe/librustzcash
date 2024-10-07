@@ -265,7 +265,6 @@ where
                     .map(|(_, sent_note)| sent_note.value.into_u64())
                     .sum::<u64>() + tx.fee().map(u64::from).unwrap_or(0);
 
-                println!("balance_gained:{}, sent_txo_value: {}, balance_lost:{}", balance_gained, sent_txo_value, balance_lost);
                 let is_shielding = {
                     //All of the wallet-spent and wallet-received notes are consistent with a shielding transaction.
                     // e.g. only transparent outputs are spend and only shielded notes are received

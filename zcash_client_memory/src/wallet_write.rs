@@ -839,7 +839,12 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                         )
                             .unwrap();
                         self.put_transparent_output(&txo, receiving_account, true)?;
-                        // TODO: mark ephemeral address as used
+                        if let Some(account) = self.accounts.get_mut(*receiving_account) {
+                            account.mark_ephemeral_address_as_used(
+                                ephemeral_address,
+                                sent_tx.tx().txid(),
+                            )?
+                        }
                     }
                     _ => {}
                 }
