@@ -159,7 +159,7 @@ impl Accounts {
         tx_id: TxId,
     ) -> Result<(), Error> {
         for (_, account) in self.accounts.iter_mut() {
-           account.mark_ephemeral_address_as_seen(address,tx_id)? 
+            account.mark_ephemeral_address_as_seen(address, tx_id)?
         }
         Ok(())
     }
@@ -180,11 +180,11 @@ impl DerefMut for Accounts {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EphemeralAddress {
-    address: TransparentAddress,
+pub(crate) struct EphemeralAddress {
+    pub(crate) address: TransparentAddress,
     // Used implies seen
-    used: Option<TxId>,
-    seen: Option<TxId>,
+    pub(crate) used: Option<TxId>,
+    pub(crate) seen: Option<TxId>,
 }
 
 impl EphemeralAddress {
@@ -224,7 +224,7 @@ pub struct Account {
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
 
     #[cfg(feature = "transparent-inputs")]
-    ephemeral_addresses: BTreeMap<u32, EphemeralAddress>, // NonHardenedChildIndex (< 1 << 31)
+    pub(crate) ephemeral_addresses: BTreeMap<u32, EphemeralAddress>, // NonHardenedChildIndex (< 1 << 31)
 
     #[serde_as(as = "BTreeSet<NoteIdDef>")]
     _notes: BTreeSet<NoteId>,
@@ -358,11 +358,15 @@ impl Account {
     }
 
     pub fn first_unstored_index(&self) -> Result<u32, Error> {
-        let idx = self.ephemeral_addresses.last_key_value().map(|(index, _)| index.checked_add(1).unwrap()).unwrap_or(0);
-        if idx >= (1 << 31) + GAP_LIMIT + 1 {
-            unreachable!("violates constraint index_range_and_address_nullity")
+        if let Some((idx, _)) = self.ephemeral_addresses.last_key_value() {
+            if *idx >= (1 << 31) + GAP_LIMIT {
+                unreachable!("violates constraint index_range_and_address_nullity")
+            } else {
+                Ok(idx.checked_add(1).unwrap())
+            }
+        } else {
+            Ok(0)
         }
-        Ok(idx)
     }
 
     pub fn first_unreserved_index(&self) -> Result<u32, Error> {

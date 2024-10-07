@@ -13,6 +13,7 @@ use std::{
     num::NonZeroU32,
     ops::{Range, RangeInclusive},
 };
+use std::cmp::min;
 use transparent::{
     TransparentReceivedOutputSpends, TransparentReceivedOutputs, TransparentSpendCache,
 };
@@ -31,7 +32,7 @@ use zcash_primitives::{
     transaction::{components::OutPoint, TxId},
 };
 
-use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
+use zcash_client_backend::data_api::{GAP_LIMIT, SAPLING_SHARD_HEIGHT};
 use zcash_client_backend::{
     data_api::{
         scanning::{ScanPriority, ScanRange},
@@ -231,6 +232,30 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
 
         Ok((id, account))
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub fn first_unsafe_index(
+        &self,
+        account_id: AccountId,
+    ) -> Result<u32, Error> {
+        let first_unmined_index = if let Some(account) = self.accounts.get(account_id) {
+            let mut idx = 0;
+            for ((tidx, eph_addr)) in account.ephemeral_addresses.iter().rev() {
+                if let Some(_) = eph_addr.seen.and_then(|txid| self.tx_table.get(&txid)).and_then(|tx| { tx.mined_height() }) {
+                    idx = tidx.checked_add(1).unwrap();
+                    break;
+                }
+            }
+            idx
+        } else {
+            0
+        };
+
+        Ok(min(
+            1 << 31,
+            first_unmined_index.checked_add(GAP_LIMIT).unwrap(),
+        ))
     }
 
     pub fn get_funding_accounts(

@@ -643,7 +643,11 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         Ok(self.accounts.get(account_id).map(Account::ephemeral_addresses).unwrap_or_else(|| Ok(vec![]))?.into_iter()
             .filter(|(_addr, meta)| {
                 index_range.as_ref().map(|range| {
-                    range.contains(&meta.address_index().index())
+                    let x = range.contains(&meta.address_index().index());
+                    if x == true {
+                        println!("Idx: {}", meta.address_index().index());
+                    }
+                    x
                 }).unwrap_or(true)
             }).collect::<Vec<_>>())
     }

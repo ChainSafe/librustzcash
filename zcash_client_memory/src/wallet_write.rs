@@ -7,7 +7,7 @@ use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap},
     ops::Range,
 };
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::time::UNIX_EPOCH;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -1113,14 +1113,13 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     }
 
     #[cfg(feature = "transparent-inputs")]
-    /// Returns a vector with the next `n` previously unreserved ephemeral addresses for
-    /// the given account.
     fn reserve_next_n_ephemeral_addresses(
         &mut self,
         account_id: Self::AccountId,
         n: usize,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
         // TODO: We need to implement first_unsafe_index to make sure we dont violate gap invarient
+        let first_unsafe = self.first_unsafe_index(account_id)?;
         if let Some(account) = self.accounts.get_mut(account_id) {
             let first_unreserved = account.first_unreserved_index()?;
 
@@ -1128,7 +1127,17 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 first_unreserved,
                 u32::try_from(n).unwrap(),
             );
-            let reserved = account.reserve_until(n as u32)?;
+
+            if allocation.len() < n {
+                return Err(AddressGenerationError::DiversifierSpaceExhausted.into());
+            }
+            if allocation.end > first_unsafe {
+                return Err(Error::ReachedGapLimit(
+                    account_id,
+                    max(first_unreserved, first_unsafe),
+                ));
+            }
+            let _reserved = account.reserve_until(allocation.end)?;
             self.get_known_ephemeral_addresses(account_id, Some(allocation))
         } else {
             Err(Self::Error::AccountUnknown(account_id))
@@ -1147,6 +1156,7 @@ use {incrementalmerkletree::frontier::Frontier, shardtree::store::Checkpoint};
 use zcash_client_backend::wallet::{Note, WalletSaplingOutput};
 use zcash_keys::address::Receiver;
 use zcash_keys::encoding::AddressCodec;
+use zcash_keys::keys::AddressGenerationError;
 
 #[cfg(feature = "orchard")]
 fn ensure_checkpoints<'a, H, I: Iterator<Item=&'a BlockHeight>, const DEPTH: u8>(
