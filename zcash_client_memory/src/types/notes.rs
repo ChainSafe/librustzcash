@@ -389,6 +389,54 @@ impl SentNoteTable {
         }
     }
 
+    pub fn put_sent_output(
+        &mut self,
+        txid: TxId,
+        from_account_id: AccountId,
+        output: &SentTransactionOutput<AccountId>,
+    ) {
+        let pool_type = match output.recipient() {
+            Recipient::External(_, pool_type) => *pool_type,
+            Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
+            Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
+        };
+        match pool_type {
+            PoolType::Transparent => {
+                // we kind of are in a tricky spot here since NoteId cannot represent a transparent note..
+                // just make it a sapling one for now until we figure out a better way to represent this
+                let note_id = SentNoteId::Transparent {
+                    txid,
+                    output_index: output.output_index().try_into().unwrap(),
+                };
+                self.0.insert(
+                    note_id,
+                    SentNote {
+                        from_account_id,
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: Memo::Empty, // transparent notes don't have memos
+                    },
+                );
+            }
+            PoolType::Shielded(protocol) => {
+                let note_id = NoteId::new(
+                    txid,
+                    protocol,
+                    output.output_index().try_into().unwrap(),
+                );
+                self.0.insert(
+                    note_id.into(),
+                    SentNote {
+                        from_account_id,
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                    },
+                );
+            }
+        }
+    }
+
     pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {
         self.0.get(&note_id.into())
     }

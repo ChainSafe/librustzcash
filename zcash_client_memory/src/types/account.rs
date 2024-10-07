@@ -23,9 +23,12 @@ use {
     zcash_client_backend::wallet::TransparentAddressMetadata,
     zcash_primitives::legacy::keys::{AccountPubKey, EphemeralIvk, NonHardenedChildIndex, TransparentKeyScope},
 };
+use zcash_address::ZcashAddress;
+use zcash_keys::address::Receiver;
 use zcash_primitives::legacy::keys::IncomingViewingKey;
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::{Network, NetworkType};
 use crate::types::TransactionTable;
 
 /// Internal representation of ID type for accounts. Will be unique for each account.
@@ -125,7 +128,7 @@ impl Accounts {
             if let Some(id) = self.find_account_for_ephemeral_address(address)? {
                 Ok(Some(id))
             } else {
-                for (account_id,account) in self.accounts.iter () {
+                for (account_id, account) in self.accounts.iter() {
                     if let Some(_) = account.get_legacy_transparent_address()? {
                         return Ok(Some(account_id.clone()));
                     }
@@ -148,6 +151,22 @@ impl Accounts {
             }
         }
         Ok(None)
+    }
+
+    pub(crate) fn mark_ephemeral_address_as_seen(
+        &mut self,
+        address: &TransparentAddress,
+        tx_id: TxId,
+    ) -> Result<(), Error> {
+        for (_, account) in self.accounts.iter_mut() {
+            for (_, eph) in account.ephemeral_addresses.iter_mut() {
+                if &eph.address == address {
+                    eph.mark_seen(tx_id);
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -258,6 +277,16 @@ impl Account {
         &self.addresses
     }
 
+    pub fn select_receiving_address(
+        &self,
+        network: NetworkType,
+        receiver: &Receiver,
+    ) -> Result<Option<ZcashAddress>, Error> {
+        Ok(self.addresses.iter().map(|(_, ua)| ua.to_address(network)).find(|addr| {
+            receiver.corresponds(addr)
+        }))
+    }
+
     /// Returns the default Unified Address for the account,
     /// along with the diversifier index that generated it.
     ///
@@ -346,6 +375,7 @@ impl Account {
             "ephemeral_addresses corrupted".to_owned(),
         ))
     }
+
 
     pub fn reserve_until(
         &mut self,

@@ -8,6 +8,7 @@ use std::{
     ops::Range,
 };
 use std::cmp::min;
+use std::time::UNIX_EPOCH;
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{
@@ -15,28 +16,18 @@ use zcash_primitives::{
         TxId,
     },
 };
-use zcash_protocol::{
-    consensus::{self, NetworkUpgrade},
-    ShieldedProtocol::{self, Sapling},
-};
+use zcash_protocol::{consensus::{self, NetworkUpgrade}, PoolType, ShieldedProtocol::{self, Sapling}};
 
 #[cfg(feature = "orchard")]
 use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
-use zcash_client_backend::{
-    address::UnifiedAddress,
-    data_api::{
-        chain::ChainState,
-        scanning::{ScanPriority, ScanRange},
-        AccountPurpose, AccountSource, TransactionStatus, WalletCommitmentTrees as _,
-        SAPLING_SHARD_HEIGHT,
-    },
-    keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
-    wallet::{NoteId, Recipient, WalletTransparentOutput},
-};
+use zcash_client_backend::{address::UnifiedAddress, data_api::{
+    chain::ChainState,
+    scanning::{ScanPriority, ScanRange},
+    AccountPurpose, AccountSource, TransactionStatus, WalletCommitmentTrees as _,
+    SAPLING_SHARD_HEIGHT,
+}, keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey}, wallet::{NoteId, Recipient, WalletTransparentOutput}, TransferType};
 
-use zcash_client_backend::data_api::{
-    AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, WalletRead, WalletWrite,
-};
+use zcash_client_backend::data_api::{AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, SentTransactionOutput, WalletRead, WalletWrite};
 
 use crate::{
     error::Error, transparent::ReceivedTransparentOutput, PRUNING_DEPTH, VERIFY_LOOKAHEAD,
@@ -619,6 +610,247 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         if let Some(height) = d_tx.mined_height() {
             self.set_transaction_status(d_tx.tx().txid(), TransactionStatus::Mined(height))?
         }
+
+        // TODO: Implement function account;
+        let funding_account: Option<Self::AccountId> = None;
+
+        // A flag used to determine whether it is necessary to query for transactions that
+        // provided transparent inputs to this transaction, in order to be able to correctly
+        // recover transparent transaction history.
+        #[cfg(feature = "transparent-inputs")]
+        let mut tx_has_wallet_outputs = false;
+
+        for output in d_tx.sapling_outputs() {
+            #[cfg(feature = "transparent-inputs")]
+            {
+                tx_has_wallet_outputs = true;
+            }
+
+            match output.transfer_type() {
+                TransferType::Outgoing => {
+                    let recipient = {
+                        let receiver = Receiver::Sapling(output.note().recipient());
+                        let wallet_address =
+                            self.accounts.get(*output.account()).map(|acc| acc.select_receiving_address(self.params.network_type(), &receiver)).transpose()?.flatten()
+                                .unwrap_or_else(|| receiver.to_zcash_address(self.params.network_type()));
+
+                        Recipient::External(wallet_address, PoolType::SAPLING)
+                    };
+
+                    let sent_tx_output = SentTransactionOutput::from_parts(output.index(), recipient, output.note_value(), Some(output.memo().clone()));
+                    self.sent_notes.put_sent_output(d_tx.tx().txid(), *output.account(), &sent_tx_output);
+                }
+                TransferType::WalletInternal => {
+                    let recipient = Recipient::InternalAccount {
+                        receiving_account: *output.account(),
+                        external_address: None,
+                        note: Note::Sapling(output.note().clone()),
+                    };
+                    let sent_tx_output = SentTransactionOutput::from_parts(output.index(), recipient, output.note_value(), Some(output.memo().clone()));
+
+                    self.received_notes.insert_received_note(ReceivedNote::from_sent_tx_output(d_tx.tx().txid(), &sent_tx_output)?);
+
+                    self.sent_notes.put_sent_output(
+                        d_tx.tx().txid(),
+                        *output.account(),
+                        &sent_tx_output,
+                    );
+                }
+                TransferType::Incoming => {
+                    todo!("store decrypted tx sapling incoming")
+                }
+            }
+        }
+
+        #[cfg(feature = "orchard")]
+        for output in d_tx.orchard_outputs() {
+            #[cfg(feature = "transparent-inputs")]
+            {
+                tx_has_wallet_outputs = true;
+            }
+            match output.transfer_type() {
+                TransferType::Outgoing => {
+                    let recipient = {
+                        let receiver = Receiver::Orchard(output.note().recipient());
+                        let wallet_address =
+                            self.accounts.get(*output.account()).map(|acc| acc.select_receiving_address(self.params.network_type(), &receiver)).transpose()?.flatten()
+                                .unwrap_or_else(|| receiver.to_zcash_address(self.params.network_type()));
+
+                        Recipient::External(wallet_address, PoolType::ORCHARD)
+                    };
+
+                    let sent_tx_output = SentTransactionOutput::from_parts(output.index(), recipient, output.note_value(), Some(output.memo().clone()));
+                    self.sent_notes.put_sent_output(d_tx.tx().txid(), *output.account(), &sent_tx_output);
+                }
+                TransferType::WalletInternal => {
+                    let recipient = Recipient::InternalAccount {
+                        receiving_account: *output.account(),
+                        external_address: None,
+                        note: Note::Orchard(output.note().clone()),
+                    };
+                    let sent_tx_output = SentTransactionOutput::from_parts(output.index(), recipient, output.note_value(), Some(output.memo().clone()));
+
+                    self.received_notes.insert_received_note(ReceivedNote::from_sent_tx_output(d_tx.tx().txid(), &sent_tx_output)?);
+
+                    self.sent_notes.put_sent_output(
+                        d_tx.tx().txid(),
+                        *output.account(),
+                        &sent_tx_output,
+                    );
+                }
+                TransferType::Incoming => {
+                    todo!("store decrypted tx orchard incoming")
+                }
+            }
+        }
+
+        // If any of the utxos spent in the transaction are ours, mark them as spent.
+        #[cfg(feature = "transparent-inputs")]
+        for txin in d_tx
+            .tx()
+            .transparent_bundle()
+            .iter()
+            .flat_map(|b| b.vin.iter())
+        {
+            self.mark_transparent_output_spent(&d_tx.tx().txid(), &txin.prevout)?;
+        }
+
+        // This `if` is just an optimization for cases where we would do nothing in the loop.
+        if funding_account.is_some() || cfg!(feature = "transparent-inputs") {
+            for (output_index, txout) in d_tx
+                .tx()
+                .transparent_bundle()
+                .iter()
+                .flat_map(|b| b.vout.iter())
+                .enumerate()
+            {
+                if let Some(address) = txout.recipient_address() {
+                    tracing::debug!(
+                    "{:?} output {} has recipient {}",
+                    d_tx.tx().txid(),
+                    output_index,
+                    address.encode(self.params())
+                );
+
+                    // The transaction is not necessarily mined yet, but we want to record
+                    // that an output to the address was seen in this tx anyway. This will
+                    // advance the gap regardless of whether it is mined, but an output in
+                    // an unmined transaction won't advance the range of safe indices.
+                    #[cfg(feature = "transparent-inputs")]
+                    self.accounts.mark_ephemeral_address_as_seen(
+                        &address, d_tx.tx().txid(),
+                    )?;
+
+                    // If the output belongs to the wallet, add it to `transparent_received_outputs`.
+                    #[cfg(feature = "transparent-inputs")]
+                    if let Some(account_id) =
+                        self.accounts.find_account_for_transparent_address(&address)?
+                    {
+                        tracing::debug!(
+                        "{:?} output {} belongs to account {:?}",
+                        d_tx.tx().txid(),
+                        output_index,
+                        account_id
+                    );
+                        let wallet_transparent_output = WalletTransparentOutput::from_parts(
+                            OutPoint::new(d_tx.tx().txid().into(),
+                                          u32::try_from(output_index).unwrap(), ), txout.clone(), d_tx.mined_height(),
+                        ).unwrap();
+                        self.put_transparent_output(
+                            &wallet_transparent_output,
+                            &account_id,
+                            false,
+                        )?;
+
+                        // Since the wallet created the transparent output, we need to ensure
+                        // that any transparent inputs belonging to the wallet will be
+                        // discovered.
+                        tx_has_wallet_outputs = true;
+
+                        // When we receive transparent funds (particularly as ephemeral outputs
+                        // in transaction pairs sending to a ZIP 320 address) it becomes
+                        // possible that the spend of these outputs is not then later detected
+                        // if the transaction that spends them is purely transparent. This is
+                        // especially a problem in wallet recovery.
+                        // transparent::queue_transparent_spend_detection(
+                        //     conn,
+                        //     params,
+                        //     address,
+                        //     tx_ref,
+                        //     output_index.try_into().unwrap(),
+                        // )?;
+                    } else {
+                        tracing::debug!(
+                        "Address {} is not recognized as belonging to any of our accounts.",
+                        address.encode(self.params())
+                    );
+                    }
+
+                    // If a transaction we observe contains spends from our wallet, we will
+                    // store its transparent outputs in the same way they would be stored by
+                    // create_spend_to_address.
+                    if let Some(account_id) = funding_account {
+                        let receiver = Receiver::Transparent(address);
+
+                        #[cfg(feature = "transparent-inputs")]
+                        let recipient_addr =
+                            self.accounts.get(account_id).map(|acc| { acc.select_receiving_address(self.params.network_type(), &receiver) }).transpose()?.flatten()
+                                .unwrap_or_else(|| receiver.to_zcash_address(self.params.network_type()));
+
+                        #[cfg(not(feature = "transparent-inputs"))]
+                        let recipient_addr = receiver.to_zcash_address(params.network_type());
+
+                        let recipient = Recipient::External(recipient_addr, PoolType::TRANSPARENT);
+
+                        let sent_tx_output = SentTransactionOutput::from_parts(output_index, recipient, txout.value, None);
+                        self.sent_notes.put_sent_output(d_tx.tx().txid(), account_id, &sent_tx_output);
+                        // Even though we know the funding account, we don't know that we have
+                        // information for all of the transparent inputs to the transaction.
+                        #[cfg(feature = "transparent-inputs")]
+                        {
+                            tx_has_wallet_outputs = true;
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                    "Unable to determine recipient address for tx {:?} output {}",
+                    d_tx.tx().txid(),
+                    output_index
+                );
+                }
+            }
+        }
+
+        // If the transaction has outputs that belong to the wallet as well as transparent
+        // inputs, we may need to download the transactions corresponding to the transparent
+        // prevout references to determine whether the transaction was created (at least in
+        // part) by this wallet.
+        // #[cfg(feature = "transparent-inputs")]
+        // if tx_has_wallet_outputs {
+        //     if let Some(b) = d_tx.tx().transparent_bundle() {
+        //         // queue the transparent inputs for enhancement
+        //         self.transaction_data_request_queue.queue_status_retrieval(
+        //             b.vin.iter().map(|txin| *txin.prevout.txid()),
+        //             Some(tx_ref),
+        //         )?;
+        //     }
+        // }
+        //
+        // notify_tx_retrieved(conn, d_tx.tx().txid())?;
+
+
+        #[cfg(feature = "transparent-inputs")]
+        {
+            let detectable_via_scanning = d_tx.tx().sapling_bundle().is_some();
+            #[cfg(feature = "orchard")]
+            let detectable_via_scanning =
+                detectable_via_scanning | d_tx.tx().orchard_bundle().is_some();
+
+            if d_tx.mined_height().is_none() && !detectable_via_scanning {
+                self.transaction_data_request_queue
+                    .queue_status_retrieval(&d_tx.tx().txid());
+            }
+        }
         Ok(())
     }
 
@@ -880,7 +1112,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
         n: usize,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
         // TODO: We need to implement first_unsafe_index to make sure we dont violate gap invarient
-        if let Some(account) = self.accounts.get_mut(account_id){
+        if let Some(account) = self.accounts.get_mut(account_id) {
             let first_unreserved = account.first_unreserved_index()?;
 
             let allocation = range_from(
@@ -895,7 +1127,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     }
 }
 
- fn range_from(i: u32, n: u32) -> Range<u32> {
+fn range_from(i: u32, n: u32) -> Range<u32> {
     let first = min(1 << 31, i);
     let last = min(1 << 31, i.saturating_add(n));
     first..last
@@ -903,6 +1135,9 @@ Instead derive the ufvk in the calling code and import it using `import_account_
 
 #[cfg(feature = "orchard")]
 use {incrementalmerkletree::frontier::Frontier, shardtree::store::Checkpoint};
+use zcash_client_backend::wallet::{Note, WalletSaplingOutput};
+use zcash_keys::address::Receiver;
+use zcash_keys::encoding::AddressCodec;
 
 #[cfg(feature = "orchard")]
 fn ensure_checkpoints<'a, H, I: Iterator<Item=&'a BlockHeight>, const DEPTH: u8>(

@@ -60,6 +60,7 @@ async-trait = { version = "0.1" }
 # - Test dependencies
 proptest = { workspace = true, optional = true }
 wasm_sync = "0.1.2"
+time.workspace = true
 
 [dev-dependencies]
 ciborium = "0.2.2"
