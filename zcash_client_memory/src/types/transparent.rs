@@ -34,7 +34,10 @@ impl TransparentReceivedOutputs {
         self.0.get(outpoint)
     }
 
-    pub fn detect_spending_accounts<'a>(&self, spent: impl Iterator<Item=&'a OutPoint>) -> Result<BTreeSet<AccountId>, Error> {
+    pub fn detect_spending_accounts<'a>(
+        &self,
+        spent: impl Iterator<Item = &'a OutPoint>,
+    ) -> Result<BTreeSet<AccountId>, Error> {
         let mut acc = BTreeSet::new();
         for prevout in spent {
             if let Some(output) = self.0.get(prevout) {

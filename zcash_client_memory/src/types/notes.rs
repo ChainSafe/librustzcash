@@ -6,11 +6,11 @@ use serde_with::serde_as;
 use serde_with::{FromInto, TryFromInto};
 use zcash_protocol::ShieldedProtocol;
 
+use std::collections::BTreeSet;
 use std::{
     collections::BTreeMap,
     ops::{Deref, DerefMut},
 };
-use std::collections::BTreeSet;
 use zip32::Scope;
 
 use zcash_primitives::transaction::{components::OutPoint, TxId};
@@ -186,7 +186,7 @@ impl ReceivedNote {
 }
 
 impl From<ReceivedNote>
-for zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>
+    for zcash_client_backend::wallet::ReceivedNote<NoteId, zcash_client_backend::wallet::Note>
 {
     fn from(value: ReceivedNote) -> Self {
         zcash_client_backend::wallet::ReceivedNote::from_parts(
@@ -207,7 +207,7 @@ impl ReceivedNoteTable {
 
     pub fn get_sapling_nullifiers(
         &self,
-    ) -> impl Iterator<Item=(AccountId, TxId, sapling::Nullifier)> + '_ {
+    ) -> impl Iterator<Item = (AccountId, TxId, sapling::Nullifier)> + '_ {
         self.0.iter().filter_map(|entry| {
             if let Some(Nullifier::Sapling(nf)) = entry.nullifier() {
                 Some((entry.account_id(), entry.txid(), *nf))
@@ -219,7 +219,7 @@ impl ReceivedNoteTable {
     #[cfg(feature = "orchard")]
     pub fn get_orchard_nullifiers(
         &self,
-    ) -> impl Iterator<Item=(AccountId, TxId, orchard::note::Nullifier)> + '_ {
+    ) -> impl Iterator<Item = (AccountId, TxId, orchard::note::Nullifier)> + '_ {
         self.0.iter().filter_map(|entry| {
             if let Some(Nullifier::Orchard(nf)) = entry.nullifier() {
                 Some((entry.account_id(), entry.txid(), *nf))
@@ -235,15 +235,15 @@ impl ReceivedNoteTable {
         self.0.push(note);
     }
 
-
     #[cfg(feature = "orchard")]
-    pub fn detect_orchard_spending_accounts<'a>(&self, nfs: impl Iterator<Item=&'a orchard::note::Nullifier>) -> Result<BTreeSet<AccountId>, Error> {
+    pub fn detect_orchard_spending_accounts<'a>(
+        &self,
+        nfs: impl Iterator<Item = &'a orchard::note::Nullifier>,
+    ) -> Result<BTreeSet<AccountId>, Error> {
         let mut acc = BTreeSet::new();
         let nfs = nfs.collect::<Vec<_>>();
         for (nf, id) in self.0.iter().filter_map(|n| match (n.nf, n.account_id) {
-            (Some(Nullifier::Orchard(nf)), account_id) => {
-                Some((nf, account_id))
-            }
+            (Some(Nullifier::Orchard(nf)), account_id) => Some((nf, account_id)),
             _ => None,
         }) {
             if nfs.contains(&&nf) {
@@ -253,13 +253,14 @@ impl ReceivedNoteTable {
         Ok(acc)
     }
 
-    pub fn detect_sapling_spending_accounts<'a>(&self, nfs: impl Iterator<Item=&'a sapling::Nullifier>) -> Result<BTreeSet<AccountId>, Error> {
+    pub fn detect_sapling_spending_accounts<'a>(
+        &self,
+        nfs: impl Iterator<Item = &'a sapling::Nullifier>,
+    ) -> Result<BTreeSet<AccountId>, Error> {
         let mut acc = BTreeSet::new();
         let nfs = nfs.collect::<Vec<_>>();
         for (nf, id) in self.0.iter().filter_map(|n| match (n.nf, n.account_id) {
-            (Some(Nullifier::Sapling(nf)), account_id) => {
-                Some((nf, account_id))
-            }
+            (Some(Nullifier::Sapling(nf)), account_id) => Some((nf, account_id)),
             _ => None,
         }) {
             if nfs.contains(&&nf) {
@@ -453,11 +454,8 @@ impl SentNoteTable {
                 );
             }
             PoolType::Shielded(protocol) => {
-                let note_id = NoteId::new(
-                    txid,
-                    protocol,
-                    output.output_index().try_into().unwrap(),
-                );
+                let note_id =
+                    NoteId::new(txid, protocol, output.output_index().try_into().unwrap());
                 self.0.insert(
                     note_id.into(),
                     SentNote {

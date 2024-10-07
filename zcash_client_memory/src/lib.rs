@@ -8,12 +8,12 @@ use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},
     ShardTree,
 };
+use std::cmp::min;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     num::NonZeroU32,
     ops::{Range, RangeInclusive},
 };
-use std::cmp::min;
 use transparent::{
     TransparentReceivedOutputSpends, TransparentReceivedOutputs, TransparentSpendCache,
 };
@@ -211,7 +211,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                     ignored_range.clone(),
                     ScanPriority::Ignored,
                 ))
-                    .into_iter(),
+                .into_iter(),
                 false,
             )?;
         };
@@ -226,7 +226,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                     rescan_range.clone(),
                     ScanPriority::Historic,
                 ))
-                    .into_iter(),
+                .into_iter(),
                 true, // force rescan
             )?;
         }
@@ -235,14 +235,15 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     }
 
     #[cfg(feature = "transparent-inputs")]
-    pub fn first_unsafe_index(
-        &self,
-        account_id: AccountId,
-    ) -> Result<u32, Error> {
+    pub fn first_unsafe_index(&self, account_id: AccountId) -> Result<u32, Error> {
         let first_unmined_index = if let Some(account) = self.accounts.get(account_id) {
             let mut idx = 0;
             for ((tidx, eph_addr)) in account.ephemeral_addresses.iter().rev() {
-                if let Some(_) = eph_addr.seen.and_then(|txid| self.tx_table.get(&txid)).and_then(|tx| { tx.mined_height() }) {
+                if let Some(_) = eph_addr
+                    .seen
+                    .and_then(|txid| self.tx_table.get(&txid))
+                    .and_then(|tx| tx.mined_height())
+                {
                     idx = tidx.checked_add(1).unwrap();
                     break;
                 }
@@ -258,17 +259,16 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         ))
     }
 
-    pub fn get_funding_accounts(
-        &self,
-        tx: &Transaction,
-    ) -> Result<BTreeSet<AccountId>, Error> {
+    pub fn get_funding_accounts(&self, tx: &Transaction) -> Result<BTreeSet<AccountId>, Error> {
         let mut funding_accounts = BTreeSet::new();
         #[cfg(feature = "transparent-inputs")]
-        funding_accounts.extend(self.transparent_received_outputs.detect_spending_accounts(
-            tx.transparent_bundle()
-                .iter()
-                .flat_map(|bundle| bundle.vin.iter().map(|txin| &txin.prevout)),
-        )?);
+        funding_accounts.extend(
+            self.transparent_received_outputs.detect_spending_accounts(
+                tx.transparent_bundle()
+                    .iter()
+                    .flat_map(|bundle| bundle.vin.iter().map(|txin| &txin.prevout)),
+            )?,
+        );
 
         funding_accounts.extend(self.received_notes.detect_sapling_spending_accounts(
             tx.sapling_bundle().iter().flat_map(|bundle| {
@@ -280,11 +280,13 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         )?);
 
         #[cfg(feature = "orchard")]
-        funding_accounts.extend(self.received_notes.detect_orchard_spending_accounts(
-            tx.orchard_bundle()
-                .iter()
-                .flat_map(|bundle| bundle.actions().iter().map(|action| action.nullifier())),
-        )?);
+        funding_accounts.extend(
+            self.received_notes.detect_orchard_spending_accounts(
+                tx.orchard_bundle()
+                    .iter()
+                    .flat_map(|bundle| bundle.actions().iter().map(|action| action.nullifier())),
+            )?,
+        );
 
         Ok(funding_accounts)
     }

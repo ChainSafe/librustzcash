@@ -3,12 +3,12 @@ use nonempty::NonEmpty;
 use secrecy::{ExposeSecret, SecretVec};
 use shardtree::store::ShardStore as _;
 
+use std::ops::Range;
 use std::{
     collections::{hash_map::Entry, HashMap},
     num::NonZeroU32,
     ops::Add,
 };
-use std::ops::Range;
 use zcash_keys::keys::UnifiedIncomingViewingKey;
 use zip32::fingerprint::SeedFingerprint;
 use zip32::Scope;
@@ -640,18 +640,26 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         account_id: Self::AccountId,
         index_range: Option<Range<u32>>,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
-        Ok(self.accounts.get(account_id).map(Account::ephemeral_addresses).unwrap_or_else(|| Ok(vec![]))?.into_iter()
+        Ok(self
+            .accounts
+            .get(account_id)
+            .map(Account::ephemeral_addresses)
+            .unwrap_or_else(|| Ok(vec![]))?
+            .into_iter()
             .filter(|(_addr, meta)| {
-                index_range.as_ref().map(|range| {
-                    let x = range.contains(&meta.address_index().index());
-                    if x == true {
-                        println!("Idx: {}", meta.address_index().index());
-                    }
-                    x
-                }).unwrap_or(true)
-            }).collect::<Vec<_>>())
+                index_range
+                    .as_ref()
+                    .map(|range| {
+                        let x = range.contains(&meta.address_index().index());
+                        if x == true {
+                            println!("Idx: {}", meta.address_index().index());
+                        }
+                        x
+                    })
+                    .unwrap_or(true)
+            })
+            .collect::<Vec<_>>())
     }
-
 
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_receivers(
@@ -671,7 +679,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                         zcash_primitives::legacy::keys::NonHardenedChildIndex::from_index(
                             (*diversifier_index).try_into().unwrap(),
                         )
-                            .map(|i| TransparentAddressMetadata::new(Scope::External.into(), i));
+                        .map(|i| TransparentAddressMetadata::new(Scope::External.into(), i));
                     (ta.clone(), metadata)
                 })
             })

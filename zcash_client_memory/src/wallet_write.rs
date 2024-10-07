@@ -3,12 +3,12 @@ use incrementalmerkletree::{Marking, Position, Retention};
 use secrecy::SecretVec;
 use shardtree::{error::ShardTreeError, store::ShardStore};
 
+use std::cmp::{max, min};
+use std::time::UNIX_EPOCH;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap},
     ops::Range,
 };
-use std::cmp::{max, min};
-use std::time::UNIX_EPOCH;
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{
@@ -16,18 +16,31 @@ use zcash_primitives::{
         TxId,
     },
 };
-use zcash_protocol::{consensus::{self, NetworkUpgrade}, PoolType, ShieldedProtocol::{self, Sapling}};
+use zcash_protocol::{
+    consensus::{self, NetworkUpgrade},
+    PoolType,
+    ShieldedProtocol::{self, Sapling},
+};
 
 #[cfg(feature = "orchard")]
 use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
-use zcash_client_backend::{address::UnifiedAddress, data_api::{
-    chain::ChainState,
-    scanning::{ScanPriority, ScanRange},
-    AccountPurpose, AccountSource, TransactionStatus, WalletCommitmentTrees as _,
-    SAPLING_SHARD_HEIGHT,
-}, keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey}, wallet::{NoteId, Recipient, WalletTransparentOutput}, TransferType};
+use zcash_client_backend::{
+    address::UnifiedAddress,
+    data_api::{
+        chain::ChainState,
+        scanning::{ScanPriority, ScanRange},
+        AccountPurpose, AccountSource, TransactionStatus, WalletCommitmentTrees as _,
+        SAPLING_SHARD_HEIGHT,
+    },
+    keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
+    wallet::{NoteId, Recipient, WalletTransparentOutput},
+    TransferType,
+};
 
-use zcash_client_backend::data_api::{AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, SentTransactionOutput, WalletRead, WalletWrite};
+use zcash_client_backend::data_api::{
+    AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, SentTransactionOutput,
+    WalletRead, WalletWrite,
+};
 
 use crate::{
     error::Error, transparent::ReceivedTransparentOutput, PRUNING_DEPTH, VERIFY_LOOKAHEAD,
@@ -225,9 +238,9 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                         ScanRange::from_parts(
                             min_unscanned
                                 ..std::cmp::min(
-                                stable_height + 1,
-                                min_unscanned + VERIFY_LOOKAHEAD,
-                            ),
+                                    stable_height + 1,
+                                    min_unscanned + VERIFY_LOOKAHEAD,
+                                ),
                             ScanPriority::Verify,
                         )
                     }
@@ -616,12 +629,11 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         let funding_account = funding_accounts.iter().next().copied();
         if funding_accounts.len() > 1 {
             tracing::warn!(
-            "More than one wallet account detected as funding transaction {:?}, selecting {:?}",
-            d_tx.tx().txid(),
-            funding_account.unwrap()
+                "More than one wallet account detected as funding transaction {:?}, selecting {:?}",
+                d_tx.tx().txid(),
+                funding_account.unwrap()
             )
         }
-
 
         // A flag used to determine whether it is necessary to query for transactions that
         // provided transparent inputs to this transaction, in order to be able to correctly
@@ -639,15 +651,32 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 TransferType::Outgoing => {
                     let recipient = {
                         let receiver = Receiver::Sapling(output.note().recipient());
-                        let wallet_address =
-                            self.accounts.get(*output.account()).map(|acc| acc.select_receiving_address(self.params.network_type(), &receiver)).transpose()?.flatten()
-                                .unwrap_or_else(|| receiver.to_zcash_address(self.params.network_type()));
+                        let wallet_address = self
+                            .accounts
+                            .get(*output.account())
+                            .map(|acc| {
+                                acc.select_receiving_address(self.params.network_type(), &receiver)
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_else(|| {
+                                receiver.to_zcash_address(self.params.network_type())
+                            });
 
                         Recipient::External(wallet_address, PoolType::SAPLING)
                     };
 
-                    let sent_tx_output = SentTransactionOutput::from_parts(output.index(), recipient, output.note_value(), Some(output.memo().clone()));
-                    self.sent_notes.put_sent_output(d_tx.tx().txid(), *output.account(), &sent_tx_output);
+                    let sent_tx_output = SentTransactionOutput::from_parts(
+                        output.index(),
+                        recipient,
+                        output.note_value(),
+                        Some(output.memo().clone()),
+                    );
+                    self.sent_notes.put_sent_output(
+                        d_tx.tx().txid(),
+                        *output.account(),
+                        &sent_tx_output,
+                    );
                 }
                 TransferType::WalletInternal => {
                     let recipient = Recipient::InternalAccount {
@@ -655,9 +684,18 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                         external_address: None,
                         note: Note::Sapling(output.note().clone()),
                     };
-                    let sent_tx_output = SentTransactionOutput::from_parts(output.index(), recipient, output.note_value(), Some(output.memo().clone()));
+                    let sent_tx_output = SentTransactionOutput::from_parts(
+                        output.index(),
+                        recipient,
+                        output.note_value(),
+                        Some(output.memo().clone()),
+                    );
 
-                    self.received_notes.insert_received_note(ReceivedNote::from_sent_tx_output(d_tx.tx().txid(), &sent_tx_output)?);
+                    self.received_notes
+                        .insert_received_note(ReceivedNote::from_sent_tx_output(
+                            d_tx.tx().txid(),
+                            &sent_tx_output,
+                        )?);
 
                     self.sent_notes.put_sent_output(
                         d_tx.tx().txid(),
@@ -681,15 +719,32 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 TransferType::Outgoing => {
                     let recipient = {
                         let receiver = Receiver::Orchard(output.note().recipient());
-                        let wallet_address =
-                            self.accounts.get(*output.account()).map(|acc| acc.select_receiving_address(self.params.network_type(), &receiver)).transpose()?.flatten()
-                                .unwrap_or_else(|| receiver.to_zcash_address(self.params.network_type()));
+                        let wallet_address = self
+                            .accounts
+                            .get(*output.account())
+                            .map(|acc| {
+                                acc.select_receiving_address(self.params.network_type(), &receiver)
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_else(|| {
+                                receiver.to_zcash_address(self.params.network_type())
+                            });
 
                         Recipient::External(wallet_address, PoolType::ORCHARD)
                     };
 
-                    let sent_tx_output = SentTransactionOutput::from_parts(output.index(), recipient, output.note_value(), Some(output.memo().clone()));
-                    self.sent_notes.put_sent_output(d_tx.tx().txid(), *output.account(), &sent_tx_output);
+                    let sent_tx_output = SentTransactionOutput::from_parts(
+                        output.index(),
+                        recipient,
+                        output.note_value(),
+                        Some(output.memo().clone()),
+                    );
+                    self.sent_notes.put_sent_output(
+                        d_tx.tx().txid(),
+                        *output.account(),
+                        &sent_tx_output,
+                    );
                 }
                 TransferType::WalletInternal => {
                     let recipient = Recipient::InternalAccount {
@@ -697,9 +752,18 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                         external_address: None,
                         note: Note::Orchard(output.note().clone()),
                     };
-                    let sent_tx_output = SentTransactionOutput::from_parts(output.index(), recipient, output.note_value(), Some(output.memo().clone()));
+                    let sent_tx_output = SentTransactionOutput::from_parts(
+                        output.index(),
+                        recipient,
+                        output.note_value(),
+                        Some(output.memo().clone()),
+                    );
 
-                    self.received_notes.insert_received_note(ReceivedNote::from_sent_tx_output(d_tx.tx().txid(), &sent_tx_output)?);
+                    self.received_notes
+                        .insert_received_note(ReceivedNote::from_sent_tx_output(
+                            d_tx.tx().txid(),
+                            &sent_tx_output,
+                        )?);
 
                     self.sent_notes.put_sent_output(
                         d_tx.tx().txid(),
@@ -735,36 +799,41 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             {
                 if let Some(address) = txout.recipient_address() {
                     tracing::debug!(
-                    "{:?} output {} has recipient {}",
-                    d_tx.tx().txid(),
-                    output_index,
-                    address.encode(self.params())
-                );
+                        "{:?} output {} has recipient {}",
+                        d_tx.tx().txid(),
+                        output_index,
+                        address.encode(self.params())
+                    );
 
                     // The transaction is not necessarily mined yet, but we want to record
                     // that an output to the address was seen in this tx anyway. This will
                     // advance the gap regardless of whether it is mined, but an output in
                     // an unmined transaction won't advance the range of safe indices.
                     #[cfg(feature = "transparent-inputs")]
-                    self.accounts.mark_ephemeral_address_as_seen(
-                        &address, d_tx.tx().txid(),
-                    )?;
+                    self.accounts
+                        .mark_ephemeral_address_as_seen(&address, d_tx.tx().txid())?;
 
                     // If the output belongs to the wallet, add it to `transparent_received_outputs`.
                     #[cfg(feature = "transparent-inputs")]
-                    if let Some(account_id) =
-                        self.accounts.find_account_for_transparent_address(&address)?
+                    if let Some(account_id) = self
+                        .accounts
+                        .find_account_for_transparent_address(&address)?
                     {
                         tracing::debug!(
-                        "{:?} output {} belongs to account {:?}",
-                        d_tx.tx().txid(),
-                        output_index,
-                        account_id
-                    );
+                            "{:?} output {} belongs to account {:?}",
+                            d_tx.tx().txid(),
+                            output_index,
+                            account_id
+                        );
                         let wallet_transparent_output = WalletTransparentOutput::from_parts(
-                            OutPoint::new(d_tx.tx().txid().into(),
-                                          u32::try_from(output_index).unwrap(), ), txout.clone(), d_tx.mined_height(),
-                        ).unwrap();
+                            OutPoint::new(
+                                d_tx.tx().txid().into(),
+                                u32::try_from(output_index).unwrap(),
+                            ),
+                            txout.clone(),
+                            d_tx.mined_height(),
+                        )
+                        .unwrap();
                         self.put_transparent_output(
                             &wallet_transparent_output,
                             &account_id,
@@ -790,9 +859,9 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                         // )?;
                     } else {
                         tracing::debug!(
-                        "Address {} is not recognized as belonging to any of our accounts.",
-                        address.encode(self.params())
-                    );
+                            "Address {} is not recognized as belonging to any of our accounts.",
+                            address.encode(self.params())
+                        );
                     }
 
                     // If a transaction we observe contains spends from our wallet, we will
@@ -802,17 +871,34 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                         let receiver = Receiver::Transparent(address);
 
                         #[cfg(feature = "transparent-inputs")]
-                        let recipient_addr =
-                            self.accounts.get(account_id).map(|acc| { acc.select_receiving_address(self.params.network_type(), &receiver) }).transpose()?.flatten()
-                                .unwrap_or_else(|| receiver.to_zcash_address(self.params.network_type()));
+                        let recipient_addr = self
+                            .accounts
+                            .get(account_id)
+                            .map(|acc| {
+                                acc.select_receiving_address(self.params.network_type(), &receiver)
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_else(|| {
+                                receiver.to_zcash_address(self.params.network_type())
+                            });
 
                         #[cfg(not(feature = "transparent-inputs"))]
                         let recipient_addr = receiver.to_zcash_address(params.network_type());
 
                         let recipient = Recipient::External(recipient_addr, PoolType::TRANSPARENT);
 
-                        let sent_tx_output = SentTransactionOutput::from_parts(output_index, recipient, txout.value, None);
-                        self.sent_notes.put_sent_output(d_tx.tx().txid(), account_id, &sent_tx_output);
+                        let sent_tx_output = SentTransactionOutput::from_parts(
+                            output_index,
+                            recipient,
+                            txout.value,
+                            None,
+                        );
+                        self.sent_notes.put_sent_output(
+                            d_tx.tx().txid(),
+                            account_id,
+                            &sent_tx_output,
+                        );
                         // Even though we know the funding account, we don't know that we have
                         // information for all of the transparent inputs to the transaction.
                         #[cfg(feature = "transparent-inputs")]
@@ -822,10 +908,10 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                     }
                 } else {
                     tracing::warn!(
-                    "Unable to determine recipient address for tx {:?} output {}",
-                    d_tx.tx().txid(),
-                    output_index
-                );
+                        "Unable to determine recipient address for tx {:?} output {}",
+                        d_tx.tx().txid(),
+                        output_index
+                    );
                 }
             }
         }
@@ -846,7 +932,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         // }
         //
         // notify_tx_retrieved(conn, d_tx.tx().txid())?;
-
 
         #[cfg(feature = "transparent-inputs")]
         {
@@ -1078,7 +1163,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                             },
                             None,
                         )
-                            .unwrap();
+                        .unwrap();
                         self.put_transparent_output(&txo, receiving_account, true)?;
                         if let Some(account) = self.accounts.get_mut(*receiving_account) {
                             account.mark_ephemeral_address_as_used(
@@ -1123,10 +1208,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
         if let Some(account) = self.accounts.get_mut(account_id) {
             let first_unreserved = account.first_unreserved_index()?;
 
-            let allocation = range_from(
-                first_unreserved,
-                u32::try_from(n).unwrap(),
-            );
+            let allocation = range_from(first_unreserved, u32::try_from(n).unwrap());
 
             if allocation.len() < n {
                 return Err(AddressGenerationError::DiversifierSpaceExhausted.into());
@@ -1151,15 +1233,15 @@ fn range_from(i: u32, n: u32) -> Range<u32> {
     first..last
 }
 
-#[cfg(feature = "orchard")]
-use {incrementalmerkletree::frontier::Frontier, shardtree::store::Checkpoint};
 use zcash_client_backend::wallet::{Note, WalletSaplingOutput};
 use zcash_keys::address::Receiver;
 use zcash_keys::encoding::AddressCodec;
 use zcash_keys::keys::AddressGenerationError;
+#[cfg(feature = "orchard")]
+use {incrementalmerkletree::frontier::Frontier, shardtree::store::Checkpoint};
 
 #[cfg(feature = "orchard")]
-fn ensure_checkpoints<'a, H, I: Iterator<Item=&'a BlockHeight>, const DEPTH: u8>(
+fn ensure_checkpoints<'a, H, I: Iterator<Item = &'a BlockHeight>, const DEPTH: u8>(
     // An iterator of checkpoints heights for which we wish to ensure that
     // checkpoints exists.
     ensure_heights: I,
