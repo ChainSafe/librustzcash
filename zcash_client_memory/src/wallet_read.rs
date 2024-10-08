@@ -649,13 +649,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .filter(|(_addr, meta)| {
                 index_range
                     .as_ref()
-                    .map(|range| {
-                        let x = range.contains(&meta.address_index().index());
-                        if x == true {
-                            println!("Idx: {}", meta.address_index().index());
-                        }
-                        x
-                    })
+                    .map(|range| range.contains(&meta.address_index().index()))
                     .unwrap_or(true)
             })
             .collect::<Vec<_>>())

@@ -264,11 +264,6 @@ impl Account {
                 Error::AddressGeneration(AddressGenerationError::ShieldedReceiverRequired)
             })?;
         let (ua, diversifier_index) = acc.default_address(ua_request)?;
-        println!(
-            "New account! Default Transparent Address: {:?}, Idx: {:?}",
-            ua.transparent(),
-            diversifier_index
-        );
         acc.addresses.insert(diversifier_index, ua);
         #[cfg(feature = "transparent-inputs")]
         acc.reserve_until(0)?;
