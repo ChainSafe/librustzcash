@@ -63,7 +63,7 @@ where
     P: Parameters + Send + 'static,
     ChT: GrpcService<BoxBody>,
     ChT::Error: Into<StdError>,
-    ChT::ResponseBody: Body<Data=Bytes> + Send + 'static,
+    ChT::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <ChT::ResponseBody as Body>::Error: Into<StdError> + Send,
     CaT: BlockCache,
     CaT::Error: std::error::Error + Send + Sync + 'static,
@@ -91,7 +91,7 @@ where
         #[cfg(feature = "transparent-inputs")]
         wallet_birthday,
     )
-        .await?
+    .await?
     {}
 
     Ok(())
@@ -109,7 +109,7 @@ where
     P: Parameters + Send + 'static,
     ChT: GrpcService<BoxBody>,
     ChT::Error: Into<StdError>,
-    ChT::ResponseBody: Body<Data=Bytes> + Send + 'static,
+    ChT::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <ChT::ResponseBody as Body>::Error: Into<StdError> + Send,
     CaT: BlockCache,
     CaT::Error: std::error::Error + Send + Sync + 'static,
@@ -245,7 +245,7 @@ pub async fn update_subtree_roots<ChT, DbT, CaErr, DbErr>(
 where
     ChT: GrpcService<BoxBody>,
     ChT::Error: Into<StdError>,
-    ChT::ResponseBody: Body<Data=Bytes> + Send + 'static,
+    ChT::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <ChT::ResponseBody as Body>::Error: Into<StdError> + Send,
     DbT: WalletCommitmentTrees,
     <DbT as WalletCommitmentTrees>::Error: std::error::Error + Send + Sync + 'static,
@@ -306,7 +306,7 @@ pub async fn update_chain_tip<ChT, DbT, CaErr, TrErr>(
 where
     ChT: GrpcService<BoxBody>,
     ChT::Error: Into<StdError>,
-    ChT::ResponseBody: Body<Data=Bytes> + Send + 'static,
+    ChT::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <ChT::ResponseBody as Body>::Error: Into<StdError> + Send,
     DbT: WalletWrite,
     DbT::Error: std::error::Error + Send + Sync + 'static,
@@ -335,7 +335,7 @@ pub async fn download_blocks<ChT, CaT, DbErr, TrErr>(
 where
     ChT: GrpcService<BoxBody>,
     ChT::Error: Into<StdError>,
-    ChT::ResponseBody: Body<Data=Bytes> + Send + 'static,
+    ChT::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <ChT::ResponseBody as Body>::Error: Into<StdError> + Send,
     CaT: BlockCache,
     CaT::Error: std::error::Error + Send + Sync + 'static,
@@ -371,7 +371,7 @@ pub async fn download_chain_state<ChT, CaErr, DbErr, TrErr>(
 where
     ChT: GrpcService<BoxBody>,
     ChT::Error: Into<StdError>,
-    ChT::ResponseBody: Body<Data=Bytes> + Send + 'static,
+    ChT::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <ChT::ResponseBody as Body>::Error: Into<StdError> + Send,
 {
     let tree_state = client
@@ -499,7 +499,7 @@ where
     P: Parameters + Send + 'static,
     ChT: GrpcService<BoxBody>,
     ChT::Error: Into<StdError>,
-    ChT::ResponseBody: Body<Data=Bytes> + Send + 'static,
+    ChT::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <ChT::ResponseBody as Body>::Error: Into<StdError> + Send,
     DbT: WalletWrite,
     DbT::Error: std::error::Error + Send + Sync + 'static,
@@ -544,7 +544,7 @@ where
                             .map_err(|_| Error::MisbehavingServer)?,
                     ),
                 )
-                    .ok_or(Error::MisbehavingServer)
+                .ok_or(Error::MisbehavingServer)
             })
             .try_for_each(|output| {
                 let res = db_data.put_received_transparent_utxo(&output).map(|_| ());
@@ -605,7 +605,8 @@ where
     CaErr: std::error::Error,
     DbErr: std::error::Error,
     TrErr: std::error::Error,
-{}
+{
+}
 
 impl<CaErr, DbErr, TrErr> From<ChainError<DbErr, CaErr>> for Error<CaErr, DbErr, TrErr> {
     fn from(e: ChainError<DbErr, CaErr>) -> Self {

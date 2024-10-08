@@ -432,7 +432,7 @@ impl<Cache, DataStore: WalletTest, Network> TestState<Cache, DataStore, Network>
 }
 
 impl<Cache, DataStore: WalletTest, Network: consensus::Parameters>
-TestState<Cache, DataStore, Network>
+    TestState<Cache, DataStore, Network>
 {
     /// Convenience method for obtaining the Sapling activation height for the network under test.
     pub fn sapling_activation_height(&self) -> BlockHeight {
@@ -853,10 +853,10 @@ where
     ParamsT: consensus::Parameters + Send + 'static,
     AccountIdT: std::cmp::Eq + std::hash::Hash,
     ErrT: std::fmt::Debug,
-    DbT: InputSource<AccountId=AccountIdT, Error=ErrT>
-    + WalletTest
-    + WalletWrite<AccountId=AccountIdT, Error=ErrT>
-    + WalletCommitmentTrees,
+    DbT: InputSource<AccountId = AccountIdT, Error = ErrT>
+        + WalletTest
+        + WalletWrite<AccountId = AccountIdT, Error = ErrT>
+        + WalletCommitmentTrees,
     <DbT as WalletRead>::AccountId: ConditionallySelectable + Default + Send + 'static,
 {
     /// Invokes [`create_spend_to_address`] with the given arguments.
@@ -919,7 +919,7 @@ where
         >,
     >
     where
-        InputsT: InputSelector<InputSource=DbT>,
+        InputsT: InputSelector<InputSource = DbT>,
     {
         #![allow(deprecated)]
         let prover = LocalTxProver::bundled();
@@ -950,7 +950,7 @@ where
         super::error::Error<ErrT, Infallible, InputsT::Error, <InputsT::FeeRule as FeeRule>::Error>,
     >
     where
-        InputsT: InputSelector<InputSource=DbT>,
+        InputsT: InputSelector<InputSource = DbT>,
     {
         let network = self.network().clone();
         propose_transfer::<_, _, _, Infallible>(
@@ -1023,7 +1023,7 @@ where
         super::error::Error<ErrT, Infallible, InputsT::Error, <InputsT::FeeRule as FeeRule>::Error>,
     >
     where
-        InputsT: ShieldingSelector<InputSource=DbT>,
+        InputsT: ShieldingSelector<InputSource = DbT>,
     {
         use super::wallet::propose_shielding;
 
@@ -1092,7 +1092,7 @@ where
         >,
     >
     where
-        InputsT: ShieldingSelector<InputSource=DbT>,
+        InputsT: ShieldingSelector<InputSource = DbT>,
     {
         use crate::data_api::wallet::shield_transparent_funds;
 
@@ -1152,7 +1152,7 @@ where
         self.with_account_balance(account, min_confirmations, |balance| {
             balance.value_pending_spendability() + balance.change_pending_confirmation()
         })
-            .unwrap()
+        .unwrap()
     }
 
     /// Returns the amount of change in the given account that is not yet spendable with
@@ -1179,10 +1179,10 @@ where
     ParamsT: consensus::Parameters + Send + 'static,
     AccountIdT: std::cmp::Eq + std::hash::Hash,
     ErrT: std::fmt::Debug,
-    DbT: InputSource<AccountId=AccountIdT, Error=ErrT>
-    + WalletTest
-    + WalletWrite<AccountId=AccountIdT, Error=ErrT>
-    + WalletCommitmentTrees,
+    DbT: InputSource<AccountId = AccountIdT, Error = ErrT>
+        + WalletTest
+        + WalletWrite<AccountId = AccountIdT, Error = ErrT>
+        + WalletCommitmentTrees,
     <DbT as WalletRead>::AccountId: ConditionallySelectable + Default + Send + 'static,
 {
     /// Returns a transaction from the history.
@@ -1271,13 +1271,13 @@ pub struct InitialChainState {
 pub trait DataStoreFactory {
     type Error: core::fmt::Debug;
     type AccountId: ConditionallySelectable + Default + Hash + Eq + Send + 'static;
-    type Account: Account<AccountId=Self::AccountId> + Clone;
+    type Account: Account<AccountId = Self::AccountId> + Clone;
     type DsError: core::fmt::Debug;
-    type DataStore: InputSource<AccountId=Self::AccountId, Error=Self::DsError>
-    + WalletRead<AccountId=Self::AccountId, Account=Self::Account, Error=Self::DsError>
-    + WalletTest
-    + WalletWrite
-    + WalletCommitmentTrees;
+    type DataStore: InputSource<AccountId = Self::AccountId, Error = Self::DsError>
+        + WalletRead<AccountId = Self::AccountId, Account = Self::Account, Error = Self::DsError>
+        + WalletTest
+        + WalletWrite
+        + WalletCommitmentTrees;
 
     /// Constructs a new data store.
     fn new_data_store(&self, network: LocalNetwork) -> Result<Self::DataStore, Self::Error>;
@@ -2171,7 +2171,7 @@ fn fake_compact_block_spending<P: consensus::Parameters, Fvk: TestFvk>(
                 fvk.sapling_ovk(),
                 &mut rng,
             )
-                .0,
+            .0,
         ),
         Address::Transparent(_) | Address::Tex(_) => {
             panic!("transparent addresses not supported in compact blocks")
@@ -2187,7 +2187,7 @@ fn fake_compact_block_spending<P: consensus::Parameters, Fvk: TestFvk>(
                 let nullifier = ::orchard::note::Nullifier::from_bytes(
                     &pallas::Base::random(&mut rng).to_repr(),
                 )
-                    .unwrap();
+                .unwrap();
 
                 ctx.actions.push(
                     compact_orchard_action(
@@ -2197,7 +2197,7 @@ fn fake_compact_block_spending<P: consensus::Parameters, Fvk: TestFvk>(
                         fvk.orchard_ovk(zip32::Scope::External),
                         &mut rng,
                     )
-                        .0,
+                    .0,
                 );
                 done = true;
             }
@@ -2213,7 +2213,7 @@ fn fake_compact_block_spending<P: consensus::Parameters, Fvk: TestFvk>(
                             fvk.sapling_ovk(),
                             &mut rng,
                         )
-                            .0,
+                        .0,
                     );
                     done = true;
                 }
@@ -2265,7 +2265,7 @@ fn fake_compact_block_from_compact_tx(
 /// Trait used by tests that require a block cache.
 pub trait TestCache {
     type BsError: core::fmt::Debug;
-    type BlockSource: BlockSource<Error=Self::BsError>;
+    type BlockSource: BlockSource<Error = Self::BsError>;
     type InsertResult;
 
     /// Exposes the block cache as a [`BlockSource`].
@@ -2671,14 +2671,14 @@ impl WalletCommitmentTrees for MockWalletDb {
 
     fn with_sapling_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
     where
-            for<'a> F: FnMut(
-        &'a mut ShardTree<
-            Self::SaplingShardStore<'a>,
-            { ::sapling::NOTE_COMMITMENT_TREE_DEPTH },
-            SAPLING_SHARD_HEIGHT,
-        >,
-    ) -> Result<A, E>,
-            E: From<ShardTreeError<Infallible>>,
+        for<'a> F: FnMut(
+            &'a mut ShardTree<
+                Self::SaplingShardStore<'a>,
+                { ::sapling::NOTE_COMMITMENT_TREE_DEPTH },
+                SAPLING_SHARD_HEIGHT,
+            >,
+        ) -> Result<A, E>,
+        E: From<ShardTreeError<Infallible>>,
     {
         callback(&mut self.sapling_tree)
     }
@@ -2708,14 +2708,14 @@ impl WalletCommitmentTrees for MockWalletDb {
     #[cfg(feature = "orchard")]
     fn with_orchard_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
     where
-            for<'a> F: FnMut(
-        &'a mut ShardTree<
-            Self::OrchardShardStore<'a>,
-            { ORCHARD_SHARD_HEIGHT * 2 },
-            ORCHARD_SHARD_HEIGHT,
-        >,
-    ) -> Result<A, E>,
-            E: From<ShardTreeError<Self::Error>>,
+        for<'a> F: FnMut(
+            &'a mut ShardTree<
+                Self::OrchardShardStore<'a>,
+                { ORCHARD_SHARD_HEIGHT * 2 },
+                ORCHARD_SHARD_HEIGHT,
+            >,
+        ) -> Result<A, E>,
+        E: From<ShardTreeError<Self::Error>>,
     {
         callback(&mut self.orchard_tree)
     }
