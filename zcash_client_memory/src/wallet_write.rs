@@ -234,9 +234,9 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                         ScanRange::from_parts(
                             min_unscanned
                                 ..std::cmp::min(
-                                stable_height + 1,
-                                min_unscanned + VERIFY_LOOKAHEAD,
-                            ),
+                                    stable_height + 1,
+                                    min_unscanned + VERIFY_LOOKAHEAD,
+                                ),
                             ScanPriority::Verify,
                         )
                     }
@@ -837,7 +837,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                             },
                             None,
                         )
-                            .unwrap();
+                        .unwrap();
                         self.put_transparent_output(&txo, receiving_account, true)?;
                         // TODO: mark ephemeral address as used
                     }
@@ -906,7 +906,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
 use {incrementalmerkletree::frontier::Frontier, shardtree::store::Checkpoint};
 
 #[cfg(feature = "orchard")]
-fn ensure_checkpoints<'a, H, I: Iterator<Item=&'a BlockHeight>, const DEPTH: u8>(
+fn ensure_checkpoints<'a, H, I: Iterator<Item = &'a BlockHeight>, const DEPTH: u8>(
     // An iterator of checkpoints heights for which we wish to ensure that
     // checkpoints exists.
     ensure_heights: I,
