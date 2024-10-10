@@ -442,7 +442,6 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
 
         // Check that the transaction history matches what we expect.
         let tx_history = st.wallet().get_tx_history().unwrap();
-
         let tx_0 = tx_history
             .iter()
             .find(|tx| tx.txid() == *txids.first())
@@ -451,7 +450,6 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
             .iter()
             .find(|tx| tx.txid() == *txids.last())
             .unwrap();
-
         assert_eq!(tx_0.account_id(), &account_id);
         assert!(!tx_0.expired_unmined());
         assert_eq!(tx_0.has_change(), expected_step0_change.is_positive());
@@ -477,7 +475,6 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
     let (ephemeral0, txids0) = run_test(&mut st, 0);
     let (ephemeral1, txids1) = run_test(&mut st, 1);
     assert_ne!(ephemeral0, ephemeral1);
-
     let height = add_funds(&mut st, value);
 
     assert_matches!(

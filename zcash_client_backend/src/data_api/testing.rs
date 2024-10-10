@@ -92,6 +92,7 @@ pub mod sapling;
 pub mod transparent;
 
 /// Information about a transaction that the wallet is interested in.
+#[derive(Debug)]
 pub struct TransactionSummary<AccountId> {
     account_id: AccountId,
     txid: TxId,

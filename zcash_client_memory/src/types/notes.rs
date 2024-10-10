@@ -303,7 +303,7 @@ pub(crate) fn to_spendable_notes(
 }
 
 #[serde_as]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize, Debug)]
 pub enum SentNoteId {
     Shielded(#[serde_as(as = "NoteIdDef")] NoteId),
     Transparent {
@@ -403,7 +403,7 @@ impl Deref for SentNoteTable {
 }
 
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct SentNote {
     pub(crate) from_account_id: AccountId,
     #[serde_as(as = "RecipientDef<AccountId, Note, OutPoint>")]

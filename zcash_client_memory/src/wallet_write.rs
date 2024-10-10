@@ -656,7 +656,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                     .collect();
             }
             // All the checkpoints that are greater than the truncation height
-            let over = checkpoint_heights.split_off(&u32::from(max_height));
+            let over = checkpoint_heights.split_off(&(u32::from(max_height + 1)));
             if let Some(height) = checkpoint_heights.last().copied() {
                 Ok(BlockHeight::from(height))
             } else {

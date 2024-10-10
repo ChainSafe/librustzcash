@@ -432,8 +432,7 @@ pub type WalletOrchardOutput<AccountId> =
 
 /// An enumeration of supported shielded note types for use in [`ReceivedNote`]
 #[serde_with::serde_as]
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Note {
     Sapling(#[serde_as(as = "serde_with::FromInto<NoteSummary>")] sapling::Note),
     #[cfg(feature = "orchard")]
@@ -464,8 +463,7 @@ impl Note {
 }
 
 #[serde_with::serde_as]
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct NoteSummary {
     #[serde_as(as = "[_; 43]")]
     recipient_bytes: [u8; 43],
