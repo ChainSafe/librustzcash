@@ -241,7 +241,7 @@ where
                 let received_txo = self
                     .transparent_received_outputs
                     .iter()
-                    .filter(|(outpoint, received_output)| outpoint.txid() == txid)
+                    .filter(|(outpoint, _received_output)| outpoint.txid() == txid)
                     .collect::<Vec<_>>();
                 let sent_txo_value: u64 = received_txo
                     .iter()
@@ -273,10 +273,6 @@ where
                     .sum::<u64>()
                     + tx.fee().map(u64::from).unwrap_or(0);
 
-                println!(
-                    "balance_gained:{}, sent_txo_value: {}, balance_lost:{}",
-                    balance_gained, sent_txo_value, balance_lost
-                );
                 let is_shielding = {
                     //All of the wallet-spent and wallet-received notes are consistent with a shielding transaction.
                     // e.g. only transparent outputs are spend and only shielded notes are received
