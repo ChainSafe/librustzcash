@@ -2,7 +2,8 @@
 //! light client.
 
 use incrementalmerkletree::Position;
-use zcash_address::ZcashAddress;
+use serde::de;
+use zcash_address::{ToAddress, ZcashAddress};
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -28,7 +29,9 @@ use crate::fees::orchard as orchard_fees;
 use zcash_primitives::legacy::keys::{NonHardenedChildIndex, TransparentKeyScope};
 
 /// A unique identifier for a shielded transaction output
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct NoteId {
     txid: TxId,
     protocol: ShieldedProtocol,
@@ -171,6 +174,7 @@ impl<AccountId, N, O> Recipient<AccountId, Option<N>, O> {
 /// The shielded subset of a [`Transaction`]'s data that is relevant to a particular wallet.
 ///
 /// [`Transaction`]: zcash_primitives::transaction::Transaction
+#[derive(Clone)]
 pub struct WalletTx<AccountId> {
     txid: TxId,
     block_index: usize,
@@ -245,7 +249,7 @@ impl<AccountId> WalletTx<AccountId> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct WalletTransparentOutput {
     outpoint: OutPoint,
     txout: TxOut,
@@ -300,6 +304,7 @@ impl transparent_fees::InputView for WalletTransparentOutput {
 }
 
 /// A reference to a spent note belonging to the wallet within a transaction.
+#[derive(Clone)]
 pub struct WalletSpend<Nf, AccountId> {
     index: usize,
     nf: Nf,
@@ -339,6 +344,7 @@ pub type WalletSaplingSpend<AccountId> = WalletSpend<sapling::Nullifier, Account
 pub type WalletOrchardSpend<AccountId> = WalletSpend<orchard::note::Nullifier, AccountId>;
 
 /// An output that was successfully decrypted in the process of wallet scanning.
+#[derive(Clone)]
 pub struct WalletOutput<Note, Nullifier, AccountId> {
     index: usize,
     ephemeral_key: EphemeralKeyBytes,
@@ -425,11 +431,12 @@ pub type WalletOrchardOutput<AccountId> =
     WalletOutput<orchard::note::Note, orchard::note::Nullifier, AccountId>;
 
 /// An enumeration of supported shielded note types for use in [`ReceivedNote`]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[serde_with::serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Note {
-    Sapling(sapling::Note),
+    Sapling(#[serde_as(as = "serde_with::FromInto<NoteSummary>")] sapling::Note),
     #[cfg(feature = "orchard")]
-    Orchard(orchard::Note),
+    Orchard(#[serde_as(as = "serde_with::FromInto<NoteSummary>")] orchard::Note),
 }
 
 impl Note {
@@ -455,16 +462,60 @@ impl Note {
     }
 }
 
+#[serde_with::serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct NoteSummary {
+    #[serde_as(as = "[_; 43]")]
+    recipient_bytes: [u8; 43],
+    value: NonNegativeAmount,
+}
+
+impl From<sapling::Note> for NoteSummary {
+    fn from(note: sapling::Note) -> Self {
+        Self {
+            recipient_bytes: note.recipient().to_bytes(),
+            value: note.value().inner().try_into().expect(
+                "Sapling notes must have values in the range of valid non-negative ZEC values.",
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "orchard")]
+impl From<orchard::Note> for NoteSummary {
+    fn from(note: orchard::Note) -> Self {
+        Self {
+            recipient_bytes: note.recipient().to_raw_address_bytes(),
+            value: NonNegativeAmount::from_u64(note.value().inner()).expect(
+                "Orchard notes must have values in the range of valid non-negative ZEC values.",
+            ),
+        }
+    }
+}
+
 /// Information about a note that is tracked by the wallet that is available for spending,
 /// with sufficient information for use in note selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[serde_with::serde_as]
+#[derive(serde::Serialize)]
+#[serde(bound = "NoteRef: serde::Serialize, NoteT: serde::Serialize")]
 pub struct ReceivedNote<NoteRef, NoteT> {
     note_id: NoteRef,
     txid: TxId,
     output_index: u16,
     note: NoteT,
+    #[serde(with = "ScopeDef")]
     spending_key_scope: Scope,
+    #[serde_as(as = "serde_with::FromInto<u64>")]
     note_commitment_tree_position: Position,
+}
+
+// reimplementation of Scope to allow serializing/deserializng without modifying the foreign type
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(remote = "Scope")]
+pub enum ScopeDef {
+    External,
+    Internal,
 }
 
 impl<NoteRef, NoteT> ReceivedNote<NoteRef, NoteT> {

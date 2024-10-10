@@ -331,6 +331,24 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> InputSource for 
         wallet::transparent::get_wallet_transparent_output(self.conn.borrow(), outpoint, false)
     }
 
+    /// Fetches the transparent output corresponding to the provided `outpoint`.
+    /// Allows selecting unspendable outputs for testing purposes.
+    ///
+    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
+    /// spendable as of the chain tip height.
+    #[cfg(all(feature = "test-dependencies", feature = "transparent-inputs"))]
+    fn get_all_unspent_transparent_output(
+        &self,
+        outpoint: &OutPoint,
+        allow_unspendable: bool,
+    ) -> Result<Option<WalletTransparentOutput>, Self::Error> {
+        wallet::transparent::get_wallet_transparent_output(
+            self.conn.borrow(),
+            outpoint,
+            allow_unspendable,
+        )
+    }
+
     #[cfg(feature = "transparent-inputs")]
     fn get_spendable_transparent_outputs(
         &self,

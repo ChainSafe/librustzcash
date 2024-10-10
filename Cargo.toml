@@ -11,6 +11,7 @@ members = [
     "zcash",
     "zcash_client_backend",
     "zcash_client_sqlite",
+    "zcash_client_memory",
     "zcash_extensions",
     "zcash_history",
     "zcash_keys",
@@ -20,7 +21,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.77.0"
 repository = "https://github.com/zcash/librustzcash"
 license = "MIT OR Apache-2.0"
 categories = ["cryptography::cryptocurrencies"]
@@ -93,6 +94,7 @@ hex = "0.4"
 percent-encoding = "2.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_with = "3.9.0"
 
 # HTTP
 hyper = "1"
@@ -162,3 +164,6 @@ codegen-units = 1
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(zcash_unstable, values("zfuture"))'] }
+
+[patch.crates-io]
+zip32 = { git = "https://github.com/zcash/zip32.git", branch = "diversifier_index_ord"}
