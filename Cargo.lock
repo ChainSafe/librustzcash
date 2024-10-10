@@ -2177,8 +2177,9 @@ dependencies = [
 
 [[package]]
 name = "incrementalmerkletree-testing"
-version = "0.1.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=336452152536dde5831c9a4029fd26b4ec310608#336452152536dde5831c9a4029fd26b4ec310608"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc7fb094e413bc6daea7b30a6f2c749e47fd07e98691c6ef3b3423d4ef4b7fb6"
 dependencies = [
  "incrementalmerkletree",
  "proptest",
@@ -2867,6 +2868,10 @@ dependencies = [
  "digest 0.10.7",
  "password-hash",
 ]
+
+[[package]]
+name = "pczt"
+version = "0.0.0"
 
 [[package]]
 name = "pem-rfc7468"
@@ -3992,8 +3997,9 @@ dependencies = [
 
 [[package]]
 name = "shardtree"
-version = "0.4.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=336452152536dde5831c9a4029fd26b4ec310608#336452152536dde5831c9a4029fd26b4ec310608"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5f2390975ebfe8838f9e861f7a588123d49a7a7a0a08568ea831d8ad53fc9b4"
 dependencies = [
  "assert_matches",
  "bitflags 2.6.0",
@@ -5919,7 +5925,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_client_backend"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "ambassador",
  "arti-client",
@@ -6024,7 +6030,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_client_sqlite"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "ambassador",
  "assert_matches",
@@ -6106,7 +6112,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_keys"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bech32",
  "bip32",
@@ -6290,7 +6296,7 @@ dependencies = [
 
 [[package]]
 name = "zip321"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "nom",
