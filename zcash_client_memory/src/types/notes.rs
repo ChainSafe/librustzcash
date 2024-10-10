@@ -6,11 +6,11 @@ use serde_with::serde_as;
 use serde_with::{FromInto, TryFromInto};
 use zcash_protocol::ShieldedProtocol;
 
+use std::collections::BTreeSet;
 use std::{
     collections::BTreeMap,
     ops::{Deref, DerefMut},
 };
-
 use zip32::Scope;
 
 use zcash_primitives::transaction::{components::OutPoint, TxId};
@@ -234,6 +234,41 @@ impl ReceivedNoteTable {
         self.0.retain(|n| n.note_id != note.note_id);
         self.0.push(note);
     }
+
+    #[cfg(feature = "orchard")]
+    pub fn detect_orchard_spending_accounts<'a>(
+        &self,
+        nfs: impl Iterator<Item = &'a orchard::note::Nullifier>,
+    ) -> Result<BTreeSet<AccountId>, Error> {
+        let mut acc = BTreeSet::new();
+        let nfs = nfs.collect::<Vec<_>>();
+        for (nf, id) in self.0.iter().filter_map(|n| match (n.nf, n.account_id) {
+            (Some(Nullifier::Orchard(nf)), account_id) => Some((nf, account_id)),
+            _ => None,
+        }) {
+            if nfs.contains(&&nf) {
+                acc.insert(id);
+            }
+        }
+        Ok(acc)
+    }
+
+    pub fn detect_sapling_spending_accounts<'a>(
+        &self,
+        nfs: impl Iterator<Item = &'a sapling::Nullifier>,
+    ) -> Result<BTreeSet<AccountId>, Error> {
+        let mut acc = BTreeSet::new();
+        let nfs = nfs.collect::<Vec<_>>();
+        for (nf, id) in self.0.iter().filter_map(|n| match (n.nf, n.account_id) {
+            (Some(Nullifier::Sapling(nf)), account_id) => Some((nf, account_id)),
+            _ => None,
+        }) {
+            if nfs.contains(&&nf) {
+                acc.insert(id);
+            }
+        }
+        Ok(acc)
+    }
 }
 
 // We deref to slice so that we can reuse the slice impls
@@ -380,6 +415,51 @@ impl SentNoteTable {
                     note_id.into(),
                     SentNote {
                         from_account_id: *tx.account_id(),
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                    },
+                );
+            }
+        }
+    }
+
+    pub fn put_sent_output(
+        &mut self,
+        txid: TxId,
+        from_account_id: AccountId,
+        output: &SentTransactionOutput<AccountId>,
+    ) {
+        let pool_type = match output.recipient() {
+            Recipient::External(_, pool_type) => *pool_type,
+            Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
+            Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
+        };
+        match pool_type {
+            PoolType::Transparent => {
+                // we kind of are in a tricky spot here since NoteId cannot represent a transparent note..
+                // just make it a sapling one for now until we figure out a better way to represent this
+                let note_id = SentNoteId::Transparent {
+                    txid,
+                    output_index: output.output_index().try_into().unwrap(),
+                };
+                self.0.insert(
+                    note_id,
+                    SentNote {
+                        from_account_id,
+                        to: output.recipient().clone(),
+                        value: output.value(),
+                        memo: Memo::Empty, // transparent notes don't have memos
+                    },
+                );
+            }
+            PoolType::Shielded(protocol) => {
+                let note_id =
+                    NoteId::new(txid, protocol, output.output_index().try_into().unwrap());
+                self.0.insert(
+                    note_id.into(),
+                    SentNote {
+                        from_account_id,
                         to: output.recipient().clone(),
                         value: output.value(),
                         memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
