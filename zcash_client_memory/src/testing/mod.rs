@@ -242,7 +242,7 @@ where
                 let received_txo = self
                     .transparent_received_outputs
                     .iter()
-                    .filter(|(outpoint, received_output)| outpoint.txid() == txid)
+                    .filter(|(outpoint, _received_output)| outpoint.txid() == txid)
                     .collect::<Vec<_>>();
                 let sent_txo_value: u64 = received_txo
                     .iter()
