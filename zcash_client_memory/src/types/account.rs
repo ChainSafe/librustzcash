@@ -21,7 +21,6 @@ use zcash_client_backend::{
     wallet::NoteId,
 };
 use zcash_keys::address::Receiver;
-use zcash_primitives::legacy::keys::IncomingViewingKey;
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{Network, NetworkType};
@@ -29,7 +28,7 @@ use zcash_protocol::consensus::{Network, NetworkType};
 use {
     zcash_client_backend::wallet::TransparentAddressMetadata,
     zcash_primitives::legacy::keys::{
-        AccountPubKey, EphemeralIvk, NonHardenedChildIndex, TransparentKeyScope,
+        AccountPubKey, EphemeralIvk, IncomingViewingKey, NonHardenedChildIndex, TransparentKeyScope,
     },
 };
 
@@ -109,6 +108,7 @@ impl Accounts {
         self.accounts.keys()
     }
 
+    #[cfg(feature = "transparent-inputs")]
     pub(crate) fn find_account_for_transparent_address(
         &self,
         address: &TransparentAddress,
@@ -141,6 +141,7 @@ impl Accounts {
         }
     }
 
+    #[cfg(feature = "transparent-inputs")]
     pub(crate) fn find_account_for_ephemeral_address(
         &self,
         address: &TransparentAddress,
@@ -157,6 +158,7 @@ impl Accounts {
         Ok(None)
     }
 
+    #[cfg(feature = "transparent-inputs")]
     pub(crate) fn mark_ephemeral_address_as_seen(
         &mut self,
         address: &TransparentAddress,
@@ -344,6 +346,7 @@ impl Account {
         self.account_id
     }
 
+    #[cfg(feature = "transparent-inputs")]
     pub(crate) fn get_legacy_transparent_address(
         &self,
     ) -> Result<Option<(TransparentAddress, NonHardenedChildIndex)>, Error> {

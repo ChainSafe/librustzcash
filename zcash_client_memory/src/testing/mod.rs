@@ -109,23 +109,29 @@ where
                     receiving_account,
                     ..
                 } => {
-                    let account = self.get_account(receiving_account)?.unwrap();
-                    let (_addr, meta) = account
-                        .ephemeral_addresses()?
-                        .into_iter()
-                        .find(|(addr, _)| addr == &ephemeral_address)
-                        .unwrap();
-
-                    Ok((
-                        // TODO: Use the ephemeral address index to look up the address
-                        // and find the correct index
-                        note.value.into_u64(),
-                        Some(Address::from(ephemeral_address)),
-                        Some((
-                            Address::from(ephemeral_address),
-                            meta.address_index().index(),
-                        )),
-                    ))
+                    #[cfg(feature = "transparent-inputs")]
+                    {
+                        let account = self.get_account(receiving_account)?.unwrap();
+                        let (_addr, meta) = account
+                            .ephemeral_addresses()?
+                            .into_iter()
+                            .find(|(addr, _)| addr == &ephemeral_address)
+                            .unwrap();
+                        Ok((
+                            // TODO: Use the ephemeral address index to look up the address
+                            // and find the correct index
+                            note.value.into_u64(),
+                            Some(Address::from(ephemeral_address)),
+                            Some((
+                                Address::from(ephemeral_address),
+                                meta.address_index().index(),
+                            )),
+                        ))
+                    }
+                    #[cfg(not(feature = "transparent-inputs"))]
+                    {
+                        unimplemented!("EphemeralTransparent recipients are not supported without the `transparent-inputs` feature.")
+                    }
                 }
                 Recipient::InternalAccount { .. } => Ok((note.value.into_u64(), None, None)),
             })

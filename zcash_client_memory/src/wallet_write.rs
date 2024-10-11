@@ -844,19 +844,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                         // that any transparent inputs belonging to the wallet will be
                         // discovered.
                         tx_has_wallet_outputs = true;
-
-                        // When we receive transparent funds (particularly as ephemeral outputs
-                        // in transaction pairs sending to a ZIP 320 address) it becomes
-                        // possible that the spend of these outputs is not then later detected
-                        // if the transaction that spends them is purely transparent. This is
-                        // especially a problem in wallet recovery.
-                        // transparent::queue_transparent_spend_detection(
-                        //     conn,
-                        //     params,
-                        //     address,
-                        //     tx_ref,
-                        //     output_index.try_into().unwrap(),
-                        // )?;
                     } else {
                         tracing::debug!(
                             "Address {} is not recognized as belonging to any of our accounts.",
@@ -884,7 +871,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                             });
 
                         #[cfg(not(feature = "transparent-inputs"))]
-                        let recipient_addr = receiver.to_zcash_address(params.network_type());
+                        let recipient_addr = receiver.to_zcash_address(self.params.network_type());
 
                         let recipient = Recipient::External(recipient_addr, PoolType::TRANSPARENT);
 
@@ -920,18 +907,14 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         // inputs, we may need to download the transactions corresponding to the transparent
         // prevout references to determine whether the transaction was created (at least in
         // part) by this wallet.
-        // #[cfg(feature = "transparent-inputs")]
-        // if tx_has_wallet_outputs {
-        //     if let Some(b) = d_tx.tx().transparent_bundle() {
-        //         // queue the transparent inputs for enhancement
-        //         self.transaction_data_request_queue.queue_status_retrieval(
-        //             b.vin.iter().map(|txin| *txin.prevout.txid()),
-        //             Some(tx_ref),
-        //         )?;
-        //     }
-        // }
-        //
-        // notify_tx_retrieved(conn, d_tx.tx().txid())?;
+        #[cfg(feature = "transparent-inputs")]
+        if tx_has_wallet_outputs {
+            if let Some(_) = d_tx.tx().transparent_bundle() {
+                // queue the transparent inputs for enhancement
+                self.transaction_data_request_queue
+                    .queue_status_retrieval(&d_tx.tx().txid());
+            }
+        }
 
         #[cfg(feature = "transparent-inputs")]
         {

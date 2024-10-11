@@ -965,6 +965,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
     }
 
+    #[cfg(feature = "transparent-inputs")]
     pub(crate) fn find_account_for_transparent_address(
         &self,
         address: &TransparentAddress,
