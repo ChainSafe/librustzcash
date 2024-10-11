@@ -8,6 +8,7 @@ use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},
     ShardTree,
 };
+use std::cmp::min;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     num::NonZeroU32,
@@ -31,7 +32,7 @@ use zcash_primitives::{
     transaction::{components::OutPoint, TxId},
 };
 
-use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
+use zcash_client_backend::data_api::{GAP_LIMIT, SAPLING_SHARD_HEIGHT};
 use zcash_client_backend::{
     data_api::{
         scanning::{ScanPriority, ScanRange},
@@ -67,6 +68,7 @@ pub(crate) const PRUNING_DEPTH: u32 = 100;
 pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 
 use types::serialization::*;
+use zcash_primitives::transaction::Transaction;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[serde_as]
@@ -230,6 +232,63 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
 
         Ok((id, account))
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub fn first_unsafe_index(&self, account_id: AccountId) -> Result<u32, Error> {
+        let first_unmined_index = if let Some(account) = self.accounts.get(account_id) {
+            let mut idx = 0;
+            for ((tidx, eph_addr)) in account.ephemeral_addresses.iter().rev() {
+                if let Some(_) = eph_addr
+                    .seen
+                    .and_then(|txid| self.tx_table.get(&txid))
+                    .and_then(|tx| tx.mined_height())
+                {
+                    idx = tidx.checked_add(1).unwrap();
+                    break;
+                }
+            }
+            idx
+        } else {
+            0
+        };
+
+        Ok(min(
+            1 << 31,
+            first_unmined_index.checked_add(GAP_LIMIT).unwrap(),
+        ))
+    }
+
+    pub fn get_funding_accounts(&self, tx: &Transaction) -> Result<BTreeSet<AccountId>, Error> {
+        let mut funding_accounts = BTreeSet::new();
+        #[cfg(feature = "transparent-inputs")]
+        funding_accounts.extend(
+            self.transparent_received_outputs.detect_spending_accounts(
+                tx.transparent_bundle()
+                    .iter()
+                    .flat_map(|bundle| bundle.vin.iter().map(|txin| &txin.prevout)),
+            )?,
+        );
+
+        funding_accounts.extend(self.received_notes.detect_sapling_spending_accounts(
+            tx.sapling_bundle().iter().flat_map(|bundle| {
+                bundle
+                    .shielded_spends()
+                    .iter()
+                    .map(|spend| spend.nullifier())
+            }),
+        )?);
+
+        #[cfg(feature = "orchard")]
+        funding_accounts.extend(
+            self.received_notes.detect_orchard_spending_accounts(
+                tx.orchard_bundle()
+                    .iter()
+                    .flat_map(|bundle| bundle.actions().iter().map(|action| action.nullifier())),
+            )?,
+        );
+
+        Ok(funding_accounts)
     }
 
     pub(crate) fn get_received_notes(&self) -> &ReceivedNoteTable {
@@ -906,20 +965,12 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
     }
 
+    #[cfg(feature = "transparent-inputs")]
     pub(crate) fn find_account_for_transparent_address(
         &self,
         address: &TransparentAddress,
     ) -> Result<Option<AccountId>, Error> {
-        Ok(self
-            .accounts
-            .iter()
-            .find(|(_, account)| {
-                account
-                    .addresses()
-                    .iter()
-                    .any(|(_, unified_address)| unified_address.transparent() == Some(address))
-            })
-            .map(|(id, _)| id.clone()))
+        self.accounts.find_account_for_transparent_address(address)
     }
 
     pub(crate) fn mark_transparent_output_spent(
@@ -1027,7 +1078,6 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
 #[cfg(test)]
 mod test {
-
     use ciborium::into_writer;
 
     use crate::MemoryWalletDb;
