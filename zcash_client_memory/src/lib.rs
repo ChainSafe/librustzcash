@@ -68,6 +68,7 @@ pub(crate) const PRUNING_DEPTH: u32 = 100;
 pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 
 use types::serialization::*;
+use zcash_client_backend::data_api::scanning::Progress;
 use zcash_primitives::transaction::Transaction;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
@@ -238,7 +239,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub fn first_unsafe_index(&self, account_id: AccountId) -> Result<u32, Error> {
         let first_unmined_index = if let Some(account) = self.accounts.get(account_id) {
             let mut idx = 0;
-            for ((tidx, eph_addr)) in account.ephemeral_addresses.iter().rev() {
+            for (tidx, eph_addr) in account.ephemeral_addresses.iter().rev() {
                 if let Some(_) = eph_addr
                     .seen
                     .and_then(|txid| self.tx_table.get(&txid))
@@ -812,10 +813,26 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub fn sapling_scan_progress(
         &self,
         birthday_height: &BlockHeight,
+        recover_until_height: Option<BlockHeight>,
         fully_scanned_height: &BlockHeight,
         chain_tip_height: &BlockHeight,
-    ) -> Result<Option<Ratio<u64>>, Error> {
+    ) -> Result<Progress, Error> {
         if fully_scanned_height == chain_tip_height {
+            let recover = recover_until_height
+                .map(|end_height| {
+                    self.blocks
+                        .iter()
+                        .filter(|(height, _)| &birthday_height <= height && height <= &&end_height)
+                        .map(|(_, block)| {
+                            (block.sapling_commitment_tree_size.unwrap_or(0)
+                                - block.sapling_output_count.unwrap_or(0))
+                                as u64
+                        })
+                        .max()
+                })
+                .map(|recovered| recovered.map(|n| Ratio::new(n, n)))
+                .unwrap_or_else(|| Some(Ratio::new(1, 1)));
+
             let outputs_sum = self
                 .blocks
                 .iter()
@@ -823,7 +840,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 .fold(0, |sum, (_, block)| {
                     sum + block.sapling_output_count.unwrap_or(0)
                 });
-            Ok(Some(Ratio::new(outputs_sum as u64, outputs_sum as u64)))
+            Ok(Progress {
+                recover,
+                scan: Some(Ratio::new(outputs_sum as u64, outputs_sum as u64)),
+            })
         } else {
             // Get the starting note commitment tree size from the wallet birthday, or failing that
             // from the blocks table.
@@ -850,14 +870,29 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                         .max()
                 });
 
-            // Compute the total blocks scanned so far above the starting height
-            let scanned_count = self
-                .blocks
-                .iter()
-                .filter(|(height, _)| height > &birthday_height)
-                .fold(0_u64, |acc, (_, block)| {
-                    acc + block.sapling_output_count.unwrap_or(0) as u64
-                });
+            let recover_until_size = recover_until_height.map(|end_height| {
+                self.blocks
+                    .iter()
+                    .filter(|(height, _)| height <= &&(end_height + 1))
+                    .map(|(_, block)| {
+                        (block.sapling_commitment_tree_size.unwrap_or(0)
+                            - block.sapling_output_count.unwrap_or(0))
+                            as u64
+                    })
+                    .max()
+            });
+
+            let recovered_count = recover_until_height.map(|end_height| {
+                self.blocks
+                    .iter()
+                    .filter(|(height, _)| &birthday_height <= height && height <= &&end_height)
+                    .map(|(_, block)| {
+                        (block.sapling_commitment_tree_size.unwrap_or(0)
+                            - block.sapling_output_count.unwrap_or(0))
+                            as u64
+                    })
+                    .max()
+            });
 
             // We don't have complete information on how many outputs will exist in the shard at
             // the chain tip without having scanned the chain tip block, so we overestimate by
@@ -869,7 +904,9 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             let shard_index_iter = self
                 .sapling_tree_shard_end_heights
                 .iter()
-                .filter(|(_, height)| height > &birthday_height)
+                .filter(|(_, height)| {
+                    height > &&(recover_until_height.unwrap_or(*birthday_height) + 1)
+                })
                 .map(|(address, _)| address.index());
 
             let min_idx = shard_index_iter.clone().min().unwrap_or(0);
@@ -878,11 +915,41 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             let max_tree_size = Some(min_idx << SAPLING_SHARD_HEIGHT);
             let min_tree_size = Some((max_idx + 1) << SAPLING_SHARD_HEIGHT);
 
-            Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
-                |(min_tree_size, max_tree_size)| {
-                    Ratio::new(scanned_count, max_tree_size - min_tree_size)
-                },
-            ))
+            let recover = recovered_count
+                .zip(recover_until_size)
+                .map(|(recovered, end_size)| {
+                    start_size
+                        .or(min_tree_size)
+                        .zip(end_size)
+                        .map(|(start_size, end_size)| {
+                            Ratio::new(recovered.unwrap_or(0), end_size - start_size)
+                        })
+                })
+                // If none of the wallet's accounts have a recover-until height, then we can't
+                // (yet) distinguish general scanning from recovery, so treat the wallet as
+                // fully recovered.
+                .unwrap_or_else(|| Some(Ratio::new(1, 1)));
+            let scan = if recover_until_height.map_or(false, |h| h == *chain_tip_height) {
+                Some(Ratio::new(1, 1))
+            } else {
+                // Compute the total blocks scanned so far above the starting height
+                let scanned_count = self
+                    .blocks
+                    .iter()
+                    .filter(|(height, _)| height > &birthday_height)
+                    .fold(0_u64, |acc, (_, block)| {
+                        acc + block.sapling_output_count.unwrap_or(0) as u64
+                    });
+
+                recover_until_size
+                    .unwrap_or(start_size)
+                    .or(min_tree_size)
+                    .zip(max_tree_size)
+                    .map(|(min_tree_size, max_tree_size)| {
+                        Ratio::new(scanned_count, max_tree_size - min_tree_size)
+                    })
+            };
+            Ok(Progress { scan, recover })
         }
     }
 
@@ -890,10 +957,26 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub fn orchard_scan_progress(
         &self,
         birthday_height: &BlockHeight,
+        recover_until_height: Option<BlockHeight>,
         fully_scanned_height: &BlockHeight,
         chain_tip_height: &BlockHeight,
-    ) -> Result<Option<Ratio<u64>>, Error> {
+    ) -> Result<Progress, Error> {
         if fully_scanned_height == chain_tip_height {
+            let recover = recover_until_height
+                .map(|end_height| {
+                    self.blocks
+                        .iter()
+                        .filter(|(height, _)| &birthday_height <= height && height <= &&end_height)
+                        .map(|(_, block)| {
+                            (block.orchard_commitment_tree_size.unwrap_or(0)
+                                - block.orchard_action_count.unwrap_or(0))
+                                as u64
+                        })
+                        .max()
+                })
+                .map(|recovered| recovered.map(|n| Ratio::new(n, n)))
+                .unwrap_or_else(|| Some(Ratio::new(1, 1)));
+
             let outputs_sum = self
                 .blocks
                 .iter()
@@ -901,7 +984,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 .fold(0, |sum, (_, block)| {
                     sum + block.orchard_action_count.unwrap_or(0)
                 });
-            Ok(Some(Ratio::new(outputs_sum as u64, outputs_sum as u64)))
+            Ok(Progress {
+                recover,
+                scan: Some(Ratio::new(outputs_sum as u64, outputs_sum as u64)),
+            })
         } else {
             // Get the starting note commitment tree size from the wallet birthday, or failing that
             // from the blocks table.
@@ -928,6 +1014,30 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                         .max()
                 });
 
+            let recover_until_size = recover_until_height.map(|end_height| {
+                self.blocks
+                    .iter()
+                    .filter(|(height, _)| height <= &&(end_height + 1))
+                    .map(|(_, block)| {
+                        (block.orchard_commitment_tree_size.unwrap_or(0)
+                            - block.orchard_action_count.unwrap_or(0))
+                            as u64
+                    })
+                    .max()
+            });
+
+            let recovered_count = recover_until_height.map(|end_height| {
+                self.blocks
+                    .iter()
+                    .filter(|(height, _)| &birthday_height <= height && height <= &&end_height)
+                    .map(|(_, block)| {
+                        (block.orchard_commitment_tree_size.unwrap_or(0)
+                            - block.orchard_action_count.unwrap_or(0))
+                            as u64
+                    })
+                    .max()
+            });
+
             // Compute the total blocks scanned so far above the starting height
             let scanned_count = Some(
                 self.blocks
@@ -948,7 +1058,9 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             let shard_index_iter = self
                 .orchard_tree_shard_end_heights
                 .iter()
-                .filter(|(_, height)| height > &birthday_height)
+                .filter(|(_, height)| {
+                    height > &&(recover_until_height.unwrap_or(*birthday_height) + 1)
+                })
                 .map(|(address, _)| address.index());
 
             let min_idx = shard_index_iter.clone().min().unwrap_or(0);
@@ -957,11 +1069,42 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             let max_tree_size = Some(min_idx << ORCHARD_SHARD_HEIGHT);
             let min_tree_size = Some((max_idx + 1) << ORCHARD_SHARD_HEIGHT);
 
-            Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
-                |(min_tree_size, max_tree_size)| {
-                    Ratio::new(scanned_count.unwrap_or(0), max_tree_size - min_tree_size)
-                },
-            ))
+            let recover = recovered_count
+                .zip(recover_until_size)
+                .map(|(recovered, end_size)| {
+                    start_size
+                        .or(min_tree_size)
+                        .zip(end_size)
+                        .map(|(start_size, end_size)| {
+                            Ratio::new(recovered.unwrap_or(0), end_size - start_size)
+                        })
+                })
+                // If none of the wallet's accounts have a recover-until height, then we can't
+                // (yet) distinguish general scanning from recovery, so treat the wallet as
+                // fully recovered.
+                .unwrap_or_else(|| Some(Ratio::new(1, 1)));
+
+            let scan = if recover_until_height.map_or(false, |h| h == *chain_tip_height) {
+                Some(Ratio::new(1, 1))
+            } else {
+                // Compute the total blocks scanned so far above the starting height
+                let scanned_count = self
+                    .blocks
+                    .iter()
+                    .filter(|(height, _)| height > &birthday_height)
+                    .fold(0_u64, |acc, (_, block)| {
+                        acc + block.orchard_action_count.unwrap_or(0) as u64
+                    });
+
+                recover_until_size
+                    .unwrap_or(start_size)
+                    .or(min_tree_size)
+                    .zip(max_tree_size)
+                    .map(|(min_tree_size, max_tree_size)| {
+                        Ratio::new(scanned_count, max_tree_size - min_tree_size)
+                    })
+            };
+            Ok(Progress { scan, recover })
         }
     }
 

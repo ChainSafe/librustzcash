@@ -226,6 +226,12 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
         let birthday_height = self
             .get_wallet_birthday()?
             .expect("If a scan range exists, we know the wallet birthday.");
+        let recover_until_height = self
+            .accounts
+            .iter()
+            .map(|(_, account)| account.birthday().recover_until())
+            .flatten()
+            .max();
 
         let fully_scanned_height = self
             .block_fully_scanned()?
@@ -319,31 +325,51 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .unwrap_or(0);
 
         // Treat Sapling and Orchard outputs as having the same cost to scan.
-        let sapling_scan_progress =
-            self.sapling_scan_progress(&birthday_height, &fully_scanned_height, &chain_tip_height)?;
+        let sapling_progress = self.sapling_scan_progress(
+            &birthday_height,
+            recover_until_height,
+            &fully_scanned_height,
+            &chain_tip_height,
+        )?;
         #[cfg(feature = "orchard")]
-        let orchard_scan_progress =
-            self.orchard_scan_progress(&birthday_height, &fully_scanned_height, &chain_tip_height)?;
+        let orchard_progress = self.orchard_scan_progress(
+            &birthday_height,
+            recover_until_height,
+            &fully_scanned_height,
+            &chain_tip_height,
+        )?;
         #[cfg(not(feature = "orchard"))]
         let orchard_scan_progress: Option<Ratio<u64>> = None;
 
-        let scan_progress = sapling_scan_progress
-            .zip(orchard_scan_progress)
+        let scan_progress = sapling_progress
+            .scan
+            .zip(orchard_progress.scan)
             .map(|(s, o)| {
                 Ratio::new(
                     s.numerator() + o.numerator(),
                     s.denominator() + o.denominator(),
                 )
             })
-            .or(sapling_scan_progress)
-            .or(orchard_scan_progress);
+            .or(sapling_progress.scan)
+            .or(orchard_progress.scan);
+        let recover_progress = sapling_progress
+            .recover
+            .zip(orchard_progress.recover)
+            .map(|(s, o)| {
+                Ratio::new(
+                    s.numerator() + o.numerator(),
+                    s.denominator() + o.denominator(),
+                )
+            })
+            .or(sapling_progress.recover)
+            .or(orchard_progress.recover);
 
         let summary = WalletSummary::new(
             account_balances,
             chain_tip_height,
             fully_scanned_height,
             scan_progress,
-            None, // TODO: Unimplemented
+            recover_progress,
             next_sapling_subtree_index,
             #[cfg(feature = "orchard")]
             next_orchard_subtree_index,
