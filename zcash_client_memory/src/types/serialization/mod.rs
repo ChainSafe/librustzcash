@@ -10,7 +10,9 @@ mod transaction;
 pub use transaction::*;
 mod scanning;
 pub use scanning::*;
+mod address;
 mod nullifier;
+pub use address::*;
 
 mod memo;
 pub use memo::*;
