@@ -128,7 +128,9 @@ pub struct Account {
     _purpose: AccountPurpose, // TODO: Remove this. AccountSource should be sufficient.
 
     /// Stores diversified Unified Addresses that have been generated from accounts in the wallet.
-    #[serde(skip)]
+    #[serde_as(
+        as = "BTreeMap<serde_with::FromInto<DiversifierIndexDef>, serde_with::FromInto<UnifiedAddressDef>>"
+    )]
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
 
     #[serde_as(as = "BTreeSet<NoteIdDef>")]
