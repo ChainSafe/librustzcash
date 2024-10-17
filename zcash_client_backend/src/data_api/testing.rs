@@ -88,8 +88,11 @@ use {
 pub mod orchard;
 pub mod pool;
 pub mod sapling;
+#[cfg(feature = "transparent-inputs")]
+pub mod transparent;
 
 /// Information about a transaction that the wallet is interested in.
+#[derive(Debug)]
 pub struct TransactionSummary<AccountId> {
     account_id: AccountId,
     txid: TxId,

@@ -831,6 +831,20 @@ pub trait InputSource {
         Ok(None)
     }
 
+    /// Fetches the transparent output corresponding to the provided `outpoint`.
+    /// Allows selecting unspendable outputs for testing purposes.
+    ///
+    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
+    /// spendable as of the chain tip height.
+    #[cfg(all(feature = "test-dependencies", feature = "transparent-inputs"))]
+    fn get_all_unspent_transparent_output(
+        &self,
+        _outpoint: &OutPoint,
+        _allow_unspendable: bool,
+    ) -> Result<Option<WalletTransparentOutput>, Self::Error> {
+        Ok(None)
+    }
+
     /// Returns the list of spendable transparent outputs received by this wallet at `address`
     /// such that, at height `target_height`:
     /// * the transaction that produced the output had or will have at least `min_confirmations`
@@ -1745,7 +1759,6 @@ impl AccountBirthday {
     ///
     /// This API is intended primarily to be used in testing contexts; under normal circumstances,
     /// [`AccountBirthday::from_treestate`] should be used instead.
-    #[cfg(any(test, feature = "test-dependencies"))]
     pub fn from_parts(prior_chain_state: ChainState, recover_until: Option<BlockHeight>) -> Self {
         Self {
             prior_chain_state,
@@ -1799,6 +1812,11 @@ impl AccountBirthday {
     /// Returns the height at which the wallet should exit "recovery mode".
     pub fn recover_until(&self) -> Option<BlockHeight> {
         self.recover_until
+    }
+
+    /// Returns the chain state prior to the birthday height of the account.
+    pub fn prior_chain_state(&self) -> &ChainState {
+        &self.prior_chain_state
     }
 
     #[cfg(any(test, feature = "test-dependencies"))]

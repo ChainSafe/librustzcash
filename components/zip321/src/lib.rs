@@ -15,7 +15,7 @@ use nom::{
     character::complete::char, combinator::all_consuming, multi::separated_list0,
     sequence::preceded,
 };
-
+use serde::{Deserialize, Serialize};
 use zcash_address::{ConversionError, ZcashAddress};
 use zcash_protocol::{
     memo::{self, MemoBytes},
@@ -114,7 +114,8 @@ pub fn memo_from_base64(s: &str) -> Result<MemoBytes, Zip321Error> {
 }
 
 /// A single payment being requested.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[serde_with::serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Payment {
     /// The address to which the payment should be sent.
     recipient_address: ZcashAddress,
@@ -220,7 +221,7 @@ impl Payment {
 /// When constructing a transaction in response to such a request,
 /// a separate output should be added to the transaction for each
 /// payment value in the request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransactionRequest {
     payments: BTreeMap<usize, Payment>,
 }

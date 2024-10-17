@@ -37,8 +37,8 @@ zip321.workspace = true
 # Dependencies exposed in a public API:
 # (Breaking upgrades to these require a breaking upgrade to this crate.)
 # - Data Access API
-time = "0.3.22"
-nonempty.workspace = true
+time = { version = "0.3.22", default-features = false }
+nonempty = { workspace = true, features = ["serialize"] }
 
 # - CSPRNG
 rand_core.workspace = true
@@ -123,9 +123,10 @@ tower = { workspace = true, optional = true }
 http-body-util = { workspace = true, optional = true }
 hyper-util = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true }
 tokio-rustls = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
+serde_with = "3.9.0"
 
 [build-dependencies]
 tonic-build = { workspace = true, features = ["prost"] }
@@ -149,6 +150,8 @@ zcash_proofs = { workspace = true, features = ["bundled-prover"] }
 zcash_protocol = { workspace = true, features = ["local-consensus"] }
 
 [features]
+default = ["time/default"]
+
 ## Enables the `tonic` gRPC client bindings for connecting to a `lightwalletd` server.
 lightwalletd-tonic = ["dep:tonic", "hyper-util?/tokio"]
 
@@ -186,7 +189,6 @@ tor = [
     "dep:hyper-util",
     "dep:rand",
     "dep:rust_decimal",
-    "dep:serde",
     "dep:serde_json",
     "dep:tokio",
     "dep:tokio-rustls",
@@ -221,6 +223,18 @@ unstable-serialization = ["dep:byteorder"]
 
 ## Exposes the [`data_api::scanning::spanning_tree`] module.
 unstable-spanning-tree = []
+
+## Exposes access to the lightwalletd server via TOR
+tor-lightwalletd-tonic = [
+  "tor",
+  "lightwalletd-tonic",
+  "tonic?/tls",
+  "tonic?/tls-webpki-roots"
+]
+
+wasm-bindgen = [
+    "time/wasm-bindgen",
+]
 
 [lib]
 bench = false

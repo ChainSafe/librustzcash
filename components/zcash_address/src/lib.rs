@@ -146,7 +146,7 @@ pub use zcash_protocol::consensus::NetworkType as Network;
 use zcash_protocol::PoolType;
 
 /// A Zcash address.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ZcashAddress {
     net: Network,
     kind: AddressKind,
@@ -154,9 +154,11 @@ pub struct ZcashAddress {
 
 /// Known kinds of Zcash addresses.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[serde_with::serde_as]
+#[derive(serde::Serialize, serde::Deserialize)]
 enum AddressKind {
-    Sprout([u8; 64]),
-    Sapling([u8; 43]),
+    Sprout(#[serde_as(as = "[_; 64]")] [u8; 64]),
+    Sapling(#[serde_as(as = "[_; 43]")] [u8; 43]),
     Unified(unified::Address),
     P2pkh([u8; 20]),
     P2sh([u8; 20]),
