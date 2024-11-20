@@ -338,7 +338,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .or(orchard_scan_progress);
 
         // TODO: This won't work
-        let scan_progress = Progress::new(scan_progress.unwrap(), None);
+        let scan_progress = Progress::new(scan_progress.unwrap(), Some(Ratio::new(0, 0)));
 
         let summary = WalletSummary::new(
             account_balances,
