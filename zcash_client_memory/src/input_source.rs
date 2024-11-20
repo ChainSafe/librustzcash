@@ -125,7 +125,7 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
                     .unwrap_or(false)
             })
             .filter_map(|(outpoint, txo, tx)| {
-                txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
+                txo.to_wallet_transparent_output(outpoint, tx.and_then(|tx| tx.mined_height()))
             })
             .collect();
         Ok(txos)
@@ -144,10 +144,9 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             .transparent_received_outputs
             .get(outpoint)
             .map(|txo| (txo, self.tx_table.get(&txo.transaction_id)))
-            .map(|(txo, tx)| {
-                txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
-            })
-            .flatten())
+            .and_then(|(txo, tx)| {
+                txo.to_wallet_transparent_output(outpoint, tx.and_then(|tx| tx.mined_height()))
+            }))
     }
 
     /// Returns metadata for the spendable notes in the wallet.

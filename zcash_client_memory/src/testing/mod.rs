@@ -139,10 +139,9 @@ where
             .transparent_received_outputs
             .get(outpoint)
             .map(|txo| (txo, self.tx_table.get(&txo.transaction_id)))
-            .map(|(txo, tx)| {
-                txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
-            })
-            .flatten())
+            .and_then(|(txo, tx)| {
+                txo.to_wallet_transparent_output(outpoint, tx.and_then(|tx| tx.mined_height()))
+            }))
     }
 
     fn get_notes(
@@ -308,7 +307,7 @@ where
                 self.orchard_tree
                     .store()
                     .for_each_checkpoint(usize::MAX, |id, cp| {
-                        checkpoints.push((id.clone(), cp.position()));
+                        checkpoints.push((*id, cp.position()));
                         Ok(())
                     })?;
             }

@@ -248,7 +248,7 @@ pub(crate) fn to_spendable_notes(
                     ))
                 }
                 #[cfg(feature = "orchard")]
-                _ => return Err(Error::Other("Note is not a sapling note".to_owned())),
+                _ => Err(Error::Other("Note is not a sapling note".to_owned())),
             }
         })
         .collect::<Result<Vec<_>, Error>>()?;
@@ -262,7 +262,7 @@ pub(crate) fn to_spendable_notes(
                     note.note_id,
                     note.txid(),
                     note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
-                    inner.clone(),
+                    *inner,
                     note.recipient_key_scope
                         .ok_or(Error::Missing("recipient key scope".into()))?,
                     note.commitment_tree_position

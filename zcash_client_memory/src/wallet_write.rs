@@ -880,7 +880,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 if let Some(address) =
                     account.next_available_address(UnifiedAddressRequest::all().unwrap())?
                 {
-                    let t_address = address.transparent().unwrap().clone();
+                    let t_address = *address.transparent().unwrap();
                     addresses.push(t_address);
                 } else {
                     return Err(Error::UnknownZip32Derivation);

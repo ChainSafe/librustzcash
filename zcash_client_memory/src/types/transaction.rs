@@ -120,7 +120,7 @@ impl TransactionTable {
         match self.0.entry(*txid) {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().tx_status = mined_height
-                    .map(|h| TransactionStatus::Mined(h))
+                    .map(TransactionStatus::Mined)
                     .unwrap_or(TransactionStatus::NotInMainChain);
                 // replace the block if it's not already set
                 entry.get_mut().block = (*block).or(entry.get().block);
@@ -128,7 +128,7 @@ impl TransactionTable {
             Entry::Vacant(entry) => {
                 entry.insert(TransactionEntry {
                     tx_status: mined_height
-                        .map(|h| TransactionStatus::Mined(h))
+                        .map(TransactionStatus::Mined)
                         .unwrap_or(TransactionStatus::NotInMainChain),
                     block: *block,
                     tx_index: None,

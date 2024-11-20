@@ -650,7 +650,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                             (*diversifier_index).try_into().unwrap(),
                         )
                         .map(|i| TransparentAddressMetadata::new(zip32::Scope::External.into(), i));
-                    (ta.clone(), metadata)
+                    (*ta, metadata)
                 })
             })
             .collect();
@@ -689,7 +689,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             if tx.is_mined_or_unexpired_at(summary_height)
                 && self.utxo_is_spendable(outpoint, summary_height, 0)?
             {
-                let address = txo.address.clone();
+                let address = txo.address;
                 let balance = balances.entry(address).or_insert(Zatoshis::ZERO);
                 *balance = balance.add(txo.txout.value).expect("balance overflow");
             }
