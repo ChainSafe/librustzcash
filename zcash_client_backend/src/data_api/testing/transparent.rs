@@ -1,21 +1,19 @@
 use crate::{
     data_api::{
-        testing::{AddressType, TestBuilder, TestState},
-        testing::{DataStoreFactory, ShieldedProtocol, TestCache},
+        testing::{
+            AddressType, DataStoreFactory, ShieldedProtocol, TestBuilder, TestCache, TestState,
+        },
         wallet::input_selection::GreedyInputSelector,
         Account as _, InputSource, WalletRead, WalletWrite,
     },
-    fees::{fixed, DustOutputPolicy},
+    fees::{standard, DustOutputPolicy, StandardFeeRule},
     wallet::WalletTransparentOutput,
 };
 use assert_matches::assert_matches;
 use sapling::zip32::ExtendedSpendingKey;
 use zcash_primitives::{
     block::BlockHash,
-    transaction::{
-        components::{amount::NonNegativeAmount, OutPoint, TxOut},
-        fees::fixed::FeeRule as FixedFeeRule,
-    },
+    transaction::components::{amount::NonNegativeAmount, OutPoint, TxOut},
 };
 
 pub fn put_received_transparent_utxo<DSF>(dsf: DSF)
@@ -108,20 +106,6 @@ where
         st.wallet().get_transparent_balances(account_id, height_2),
         Ok(h) if h.get(taddr) == Some(&value)
     );
-
-    // Artificially delete the address from the addresses table so that
-    // we can ensure the update fails if the join doesn't work.
-    // TODO: We need to add a new testing method to WalletWrite to delete an address
-    // st.wallet()
-    //     .conn()
-    //     .execute(
-    //         "DELETE FROM addresses WHERE cached_transparent_receiver_address = ?",
-    //         [Some(taddr.encode(st.network()))],
-    //     )
-    //     .unwrap();
-
-    // let res2 = st.wallet_mut().put_received_transparent_utxo(&utxo2);
-    // assert_matches!(res2, Err(_));
 }
 
 pub fn transparent_balance_across_shielding<DSF>(dsf: DSF, cache: impl TestCache)
@@ -211,16 +195,23 @@ where
     check_balance(&st, 0, value);
 
     // Shield the output.
-    let input_selector = GreedyInputSelector::new(
-        fixed::SingleOutputChangeStrategy::new(
-            FixedFeeRule::non_standard(NonNegativeAmount::ZERO),
-            None,
-            ShieldedProtocol::Sapling,
-        ),
+    let input_selector = GreedyInputSelector::new();
+    let change_strategy = standard::SingleOutputChangeStrategy::new(
+        StandardFeeRule::Zip317,
+        None,
+        ShieldedProtocol::Sapling,
         DustOutputPolicy::default(),
     );
     let txid = st
-        .shield_transparent_funds(&input_selector, value, account.usk(), &[*taddr], 1)
+        .shield_transparent_funds(
+            &input_selector,
+            &change_strategy,
+            value,
+            account.usk(),
+            &[*taddr],
+            account.id(),
+            1,
+        )
         .unwrap()[0];
 
     // The wallet should have zero transparent balance, because the shielding

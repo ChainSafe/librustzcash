@@ -23,6 +23,7 @@ use secrecy::{ExposeSecret, Secret, SecretVec};
 use shardtree::{error::ShardTreeError, store::memory::MemoryShardStore, ShardTree};
 use subtle::ConditionallySelectable;
 
+use zcash_address::ZcashAddress;
 use zcash_keys::address::Address;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
@@ -31,7 +32,7 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{
         components::{amount::NonNegativeAmount, sapling::zip212_enforcement},
-        fees::{zip317::FeeError as Zip317FeeError, FeeRule, StandardFeeRule},
+        fees::FeeRule,
         Transaction, TxId,
     },
 };
@@ -43,10 +44,14 @@ use zcash_protocol::{
     value::{ZatBalance, Zatoshis},
 };
 use zip32::{fingerprint::SeedFingerprint, DiversifierIndex};
+use zip321::Payment;
 
 use crate::{
     address::UnifiedAddress,
-    fees::{standard, DustOutputPolicy},
+    fees::{
+        standard::{self, SingleOutputChangeStrategy},
+        ChangeStrategy, DustOutputPolicy, StandardFeeRule,
+    },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     proposal::Proposal,
     proto::compact_formats::{
@@ -56,21 +61,21 @@ use crate::{
     ShieldedProtocol,
 };
 
-use super::WalletTest;
-#[allow(deprecated)]
 use super::{
     chain::{scan_cached_blocks, BlockSource, ChainState, CommitmentTreeRoot, ScanSummary},
     scanning::ScanRange,
     wallet::{
-        create_proposed_transactions, create_spend_to_address,
-        input_selection::{GreedyInputSelector, GreedyInputSelectorError, InputSelector},
-        propose_standard_transfer_to_address, propose_transfer, spend,
+        create_proposed_transactions,
+        input_selection::{GreedyInputSelector, InputSelector},
+        propose_standard_transfer_to_address, propose_transfer,
     },
-    Account, AccountBalance, AccountBirthday, AccountPurpose, AccountSource, BlockMetadata,
-    DecryptedTransaction, InputSource, NullifierQuery, ScannedBlock, SeedRelevance,
+    Account, AccountBalance, AccountBirthday, AccountMeta, AccountPurpose, AccountSource,
+    BlockMetadata, DecryptedTransaction, InputSource, NullifierQuery, ScannedBlock, SeedRelevance,
     SentTransaction, SpendableNotes, TransactionDataRequest, TransactionStatus,
-    WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite, SAPLING_SHARD_HEIGHT,
+    WalletCommitmentTrees, WalletRead, WalletSummary, WalletTest, WalletWrite,
+    SAPLING_SHARD_HEIGHT,
 };
+use super::{error::Error, NoteFilter};
 
 #[cfg(feature = "transparent-inputs")]
 use {
@@ -859,105 +864,118 @@ where
         + WalletCommitmentTrees,
     <DbT as WalletRead>::AccountId: ConditionallySelectable + Default + Send + 'static,
 {
-    /// Invokes [`create_spend_to_address`] with the given arguments.
-    #[allow(deprecated)]
-    #[allow(clippy::type_complexity)]
-    #[allow(clippy::too_many_arguments)]
-    pub fn create_spend_to_address(
+    // Creates a transaction that sends the specified value from the given account to
+    // the provided recipient address, using a greedy input selector and the default
+    // mutli-output change strategy.
+    pub fn create_standard_transaction(
         &mut self,
-        usk: &UnifiedSpendingKey,
-        to: &Address,
-        amount: NonNegativeAmount,
-        memo: Option<MemoBytes>,
-        ovk_policy: OvkPolicy,
-        min_confirmations: NonZeroU32,
-        change_memo: Option<MemoBytes>,
-        fallback_change_pool: ShieldedProtocol,
+        from_account: &TestAccount<DbT::Account>,
+        to: ZcashAddress,
+        value: NonNegativeAmount,
     ) -> Result<
         NonEmpty<TxId>,
-        super::error::Error<
-            ErrT,
-            <DbT as WalletCommitmentTrees>::Error,
-            GreedyInputSelectorError<Zip317FeeError, <DbT as InputSource>::NoteRef>,
-            Zip317FeeError,
+        super::wallet::TransferErrT<
+            DbT,
+            GreedyInputSelector<DbT>,
+            standard::MultiOutputChangeStrategy<DbT>,
         >,
     > {
-        let prover = LocalTxProver::bundled();
-        let network = self.network().clone();
-        create_spend_to_address(
-            self.wallet_mut(),
-            &network,
-            &prover,
-            &prover,
-            usk,
-            to,
-            amount,
-            memo,
-            ovk_policy,
-            min_confirmations,
-            change_memo,
+        let input_selector = GreedyInputSelector::new();
+
+        #[cfg(not(feature = "orchard"))]
+        let fallback_change_pool = ShieldedProtocol::Sapling;
+        #[cfg(feature = "orchard")]
+        let fallback_change_pool = ShieldedProtocol::Orchard;
+
+        let change_strategy = standard::SingleOutputChangeStrategy::new(
+            StandardFeeRule::Zip317,
+            None,
             fallback_change_pool,
+            DustOutputPolicy::default(),
+        );
+
+        let request =
+            zip321::TransactionRequest::new(vec![Payment::without_memo(to, value)]).unwrap();
+
+        self.spend(
+            &input_selector,
+            &change_strategy,
+            from_account.usk(),
+            request,
+            OvkPolicy::Sender,
+            NonZeroU32::MIN,
         )
     }
 
-    /// Invokes [`spend`] with the given arguments.
+    /// Prepares and executes the given [`zip321::TransactionRequest`] in a single step.
     #[allow(clippy::type_complexity)]
-    pub fn spend<InputsT>(
+    pub fn spend<InputsT, ChangeT>(
         &mut self,
         input_selector: &InputsT,
+        change_strategy: &ChangeT,
         usk: &UnifiedSpendingKey,
         request: zip321::TransactionRequest,
         ovk_policy: OvkPolicy,
         min_confirmations: NonZeroU32,
-    ) -> Result<
-        NonEmpty<TxId>,
-        super::error::Error<
-            ErrT,
-            <DbT as WalletCommitmentTrees>::Error,
-            InputsT::Error,
-            <InputsT::FeeRule as FeeRule>::Error,
-        >,
-    >
+    ) -> Result<NonEmpty<TxId>, super::wallet::TransferErrT<DbT, InputsT, ChangeT>>
     where
         InputsT: InputSelector<InputSource = DbT>,
+        ChangeT: ChangeStrategy<MetaSource = DbT>,
     {
-        #![allow(deprecated)]
         let prover = LocalTxProver::bundled();
         let network = self.network().clone();
-        spend(
+
+        let account = self
+            .wallet()
+            .get_account_for_ufvk(&usk.to_unified_full_viewing_key())
+            .map_err(Error::DataSource)?
+            .ok_or(Error::KeyNotRecognized)?;
+
+        let proposal = propose_transfer(
+            self.wallet_mut(),
+            &network,
+            account.id(),
+            input_selector,
+            change_strategy,
+            request,
+            min_confirmations,
+        )?;
+
+        create_proposed_transactions(
             self.wallet_mut(),
             &network,
             &prover,
             &prover,
-            input_selector,
             usk,
-            request,
             ovk_policy,
-            min_confirmations,
+            &proposal,
         )
     }
 
     /// Invokes [`propose_transfer`] with the given arguments.
     #[allow(clippy::type_complexity)]
-    pub fn propose_transfer<InputsT>(
+    pub fn propose_transfer<InputsT, ChangeT>(
         &mut self,
         spend_from_account: <DbT as InputSource>::AccountId,
         input_selector: &InputsT,
+        change_strategy: &ChangeT,
         request: zip321::TransactionRequest,
         min_confirmations: NonZeroU32,
     ) -> Result<
-        Proposal<InputsT::FeeRule, <DbT as InputSource>::NoteRef>,
-        super::error::Error<ErrT, Infallible, InputsT::Error, <InputsT::FeeRule as FeeRule>::Error>,
+        Proposal<ChangeT::FeeRule, <DbT as InputSource>::NoteRef>,
+        super::wallet::ProposeTransferErrT<DbT, Infallible, InputsT, ChangeT>,
     >
     where
         InputsT: InputSelector<InputSource = DbT>,
+        ChangeT: ChangeStrategy<MetaSource = DbT>,
     {
         let network = self.network().clone();
-        propose_transfer::<_, _, _, Infallible>(
+        propose_transfer::<_, _, _, _, Infallible>(
             self.wallet_mut(),
             &network,
             spend_from_account,
             input_selector,
+            change_strategy,
             request,
             min_confirmations,
         )
@@ -978,11 +996,11 @@ where
         fallback_change_pool: ShieldedProtocol,
     ) -> Result<
         Proposal<StandardFeeRule, <DbT as InputSource>::NoteRef>,
-        super::error::Error<
-            ErrT,
+        super::wallet::ProposeTransferErrT<
+            DbT,
             CommitmentTreeErrT,
-            GreedyInputSelectorError<Zip317FeeError, <DbT as InputSource>::NoteRef>,
-            Zip317FeeError,
+            GreedyInputSelector<DbT>,
+            SingleOutputChangeStrategy<DbT>,
         >,
     > {
         let network = self.network().clone();
@@ -1012,47 +1030,47 @@ where
     #[cfg(feature = "transparent-inputs")]
     #[allow(clippy::type_complexity)]
     #[allow(dead_code)]
-    pub fn propose_shielding<InputsT>(
+    pub fn propose_shielding<InputsT, ChangeT>(
         &mut self,
         input_selector: &InputsT,
+        change_strategy: &ChangeT,
         shielding_threshold: NonNegativeAmount,
         from_addrs: &[TransparentAddress],
+        to_account: <InputsT::InputSource as InputSource>::AccountId,
         min_confirmations: u32,
     ) -> Result<
-        Proposal<InputsT::FeeRule, Infallible>,
-        super::error::Error<ErrT, Infallible, InputsT::Error, <InputsT::FeeRule as FeeRule>::Error>,
+        Proposal<ChangeT::FeeRule, Infallible>,
+        super::wallet::ProposeShieldingErrT<DbT, Infallible, InputsT, ChangeT>,
     >
     where
         InputsT: ShieldingSelector<InputSource = DbT>,
+        ChangeT: ChangeStrategy<MetaSource = DbT>,
     {
         use super::wallet::propose_shielding;
 
         let network = self.network().clone();
-        propose_shielding::<_, _, _, Infallible>(
+        propose_shielding::<_, _, _, _, Infallible>(
             self.wallet_mut(),
             &network,
             input_selector,
+            change_strategy,
             shielding_threshold,
             from_addrs,
+            to_account,
             min_confirmations,
         )
     }
 
     /// Invokes [`create_proposed_transactions`] with the given arguments.
     #[allow(clippy::type_complexity)]
-    pub fn create_proposed_transactions<InputsErrT, FeeRuleT>(
+    pub fn create_proposed_transactions<InputsErrT, FeeRuleT, ChangeErrT>(
         &mut self,
         usk: &UnifiedSpendingKey,
         ovk_policy: OvkPolicy,
         proposal: &Proposal<FeeRuleT, <DbT as InputSource>::NoteRef>,
     ) -> Result<
         NonEmpty<TxId>,
-        super::error::Error<
-            ErrT,
-            <DbT as WalletCommitmentTrees>::Error,
-            InputsErrT,
-            FeeRuleT::Error,
-        >,
+        super::wallet::CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, DbT::NoteRef>,
     >
     where
         FeeRuleT: FeeRule,
@@ -1075,24 +1093,20 @@ where
     /// [`shield_transparent_funds`]: crate::data_api::wallet::shield_transparent_funds
     #[cfg(feature = "transparent-inputs")]
     #[allow(clippy::type_complexity)]
-    pub fn shield_transparent_funds<InputsT>(
+    #[allow(clippy::too_many_arguments)]
+    pub fn shield_transparent_funds<InputsT, ChangeT>(
         &mut self,
         input_selector: &InputsT,
+        change_strategy: &ChangeT,
         shielding_threshold: NonNegativeAmount,
         usk: &UnifiedSpendingKey,
         from_addrs: &[TransparentAddress],
+        to_account: <DbT as InputSource>::AccountId,
         min_confirmations: u32,
-    ) -> Result<
-        NonEmpty<TxId>,
-        super::error::Error<
-            ErrT,
-            <DbT as WalletCommitmentTrees>::Error,
-            InputsT::Error,
-            <InputsT::FeeRule as FeeRule>::Error,
-        >,
-    >
+    ) -> Result<NonEmpty<TxId>, super::wallet::ShieldErrT<DbT, InputsT, ChangeT>>
     where
         InputsT: ShieldingSelector<InputSource = DbT>,
+        ChangeT: ChangeStrategy<MetaSource = DbT>,
     {
         use crate::data_api::wallet::shield_transparent_funds;
 
@@ -1104,9 +1118,11 @@ where
             &prover,
             &prover,
             input_selector,
+            change_strategy,
             shielding_threshold,
             usk,
             from_addrs,
+            to_account,
             min_confirmations,
         )
     }
@@ -1228,17 +1244,18 @@ impl<Cache, DbT: WalletRead + Reset> TestState<Cache, DbT, LocalNetwork> {
     //    }
 }
 
-/// Helper method for constructing a [`GreedyInputSelector`] with a
-/// [`standard::SingleOutputChangeStrategy`].
-pub fn input_selector<DbT: InputSource>(
+pub fn single_output_change_strategy<DbT: InputSource>(
     fee_rule: StandardFeeRule,
     change_memo: Option<&str>,
     fallback_change_pool: ShieldedProtocol,
-) -> GreedyInputSelector<DbT, standard::SingleOutputChangeStrategy> {
+) -> standard::SingleOutputChangeStrategy<DbT> {
     let change_memo = change_memo.map(|m| MemoBytes::from(m.parse::<Memo>().unwrap()));
-    let change_strategy =
-        standard::SingleOutputChangeStrategy::new(fee_rule, change_memo, fallback_change_pool);
-    GreedyInputSelector::new(change_strategy, DustOutputPolicy::default())
+    standard::SingleOutputChangeStrategy::new(
+        fee_rule,
+        change_memo,
+        fallback_change_pool,
+        DustOutputPolicy::default(),
+    )
 }
 
 // Checks that a protobuf proposal serialized from the provided proposal value correctly parses to
@@ -2378,6 +2395,15 @@ impl InputSource for MockWalletDb {
         _exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         Ok(SpendableNotes::empty())
+    }
+
+    fn get_account_metadata(
+        &self,
+        _account: Self::AccountId,
+        _selector: &NoteFilter,
+        _exclude: &[Self::NoteRef],
+    ) -> Result<AccountMeta, Self::Error> {
+        Err(())
     }
 }
 

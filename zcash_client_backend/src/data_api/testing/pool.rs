@@ -2,7 +2,7 @@ use std::{
     cmp::Eq,
     convert::Infallible,
     hash::Hash,
-    num::{NonZeroU32, NonZeroU8},
+    num::{NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize},
 };
 
 use assert_matches::assert_matches;
@@ -17,9 +17,7 @@ use zcash_primitives::{
     legacy::TransparentAddress,
     transaction::{
         components::amount::NonNegativeAmount,
-        fees::{
-            fixed::FeeRule as FixedFeeRule, zip317::FeeError as Zip317FeeError, StandardFeeRule,
-        },
+        fees::zip317::{FeeRule as Zip317FeeRule, MARGINAL_FEE, MINIMUM_FEE},
         Transaction,
     },
 };
@@ -38,16 +36,22 @@ use crate::{
         self,
         chain::{self, ChainState, CommitmentTreeRoot, ScanSummary},
         error::Error,
-        testing::{input_selector, AddressType, FakeCompactOutput, InitialChainState, TestBuilder},
-        wallet::{
-            decrypt_and_store_transaction,
-            input_selection::{GreedyInputSelector, GreedyInputSelectorError},
+        testing::{
+            single_output_change_strategy, AddressType, FakeCompactOutput, InitialChainState,
+            TestBuilder,
         },
-        Account as _, AccountBirthday, DecryptedTransaction, InputSource, Ratio,
-        WalletCommitmentTrees, WalletRead, WalletSummary, WalletTest, WalletWrite,
+        wallet::{
+            decrypt_and_store_transaction, input_selection::GreedyInputSelector, TransferErrT,
+        },
+        Account as _, AccountBirthday, BoundedU8, DecryptedTransaction, InputSource, NoteFilter,
+        Ratio, WalletCommitmentTrees, WalletRead, WalletSummary, WalletTest, WalletWrite,
     },
     decrypt_transaction,
-    fees::{fixed, standard, DustOutputPolicy},
+    fees::{
+        self,
+        standard::{self, SingleOutputChangeStrategy},
+        DustOutputPolicy, SplitPolicy, StandardFeeRule,
+    },
     scanning::ScanError,
     wallet::{Note, NoteId, OvkPolicy, ReceivedNote},
 };
@@ -216,19 +220,21 @@ pub fn send_single_step_proposed_transfer<T: ShieldedPoolTester>(
         fee_rule,
         Some(change_memo.clone().into()),
         T::SHIELDED_PROTOCOL,
+        DustOutputPolicy::default(),
     );
-    let input_selector = &GreedyInputSelector::new(change_strategy, DustOutputPolicy::default());
+    let input_selector = GreedyInputSelector::new();
 
     let proposal = st
         .propose_transfer(
             account.id(),
-            input_selector,
+            &input_selector,
+            &change_strategy,
             request,
             NonZeroU32::new(1).unwrap(),
         )
         .unwrap();
 
-    let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+    let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
         account.usk(),
         OvkPolicy::Sender,
         &proposal,
@@ -310,6 +316,175 @@ pub fn send_single_step_proposed_transfer<T: ShieldedPoolTester>(
     );
 }
 
+pub fn send_with_multiple_change_outputs<T: ShieldedPoolTester>(
+    dsf: impl DataStoreFactory,
+    cache: impl TestCache,
+) {
+    let mut st = TestBuilder::new()
+        .with_data_store_factory(dsf)
+        .with_block_cache(cache)
+        .with_account_from_sapling_activation(BlockHash([0; 32]))
+        .build();
+
+    let account = st.test_account().cloned().unwrap();
+    let dfvk = T::test_account_fvk(&st);
+
+    // Add funds to the wallet in a single note
+    let value = Zatoshis::const_from_u64(650_0000);
+    let (h, _, _) = st.generate_next_block(&dfvk, AddressType::DefaultExternal, value);
+    st.scan_cached_blocks(h, 1);
+
+    // Spendable balance matches total balance
+    assert_eq!(st.get_total_balance(account.id()), value);
+    assert_eq!(st.get_spendable_balance(account.id(), 1), value);
+
+    assert_eq!(
+        st.wallet()
+            .block_max_scanned()
+            .unwrap()
+            .unwrap()
+            .block_height(),
+        h
+    );
+
+    let to_extsk = T::sk(&[0xf5; 32]);
+    let to: Address = T::sk_default_address(&to_extsk);
+    let request = zip321::TransactionRequest::new(vec![Payment::without_memo(
+        to.to_zcash_address(st.network()),
+        Zatoshis::const_from_u64(100_0000),
+    )])
+    .unwrap();
+
+    let input_selector = GreedyInputSelector::new();
+    let change_memo = "Test change memo".parse::<Memo>().unwrap();
+    let change_strategy = fees::zip317::MultiOutputChangeStrategy::new(
+        Zip317FeeRule::standard(),
+        Some(change_memo.clone().into()),
+        T::SHIELDED_PROTOCOL,
+        DustOutputPolicy::default(),
+        SplitPolicy::with_min_output_value(
+            NonZeroUsize::new(2).unwrap(),
+            NonNegativeAmount::const_from_u64(100_0000),
+        ),
+    );
+
+    let proposal = st
+        .propose_transfer(
+            account.id(),
+            &input_selector,
+            &change_strategy,
+            request.clone(),
+            NonZeroU32::new(1).unwrap(),
+        )
+        .unwrap();
+
+    let step = &proposal.steps().head;
+    assert_eq!(step.balance().proposed_change().len(), 2);
+
+    let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
+        account.usk(),
+        OvkPolicy::Sender,
+        &proposal,
+    );
+    assert_matches!(&create_proposed_result, Ok(txids) if txids.len() == 1);
+
+    let sent_tx_id = create_proposed_result.unwrap()[0];
+
+    // Verify that the sent transaction was stored and that we can decrypt the memos
+    let tx = st
+        .wallet()
+        .get_transaction(sent_tx_id)
+        .unwrap()
+        .expect("Created transaction was stored.");
+    let ufvks = [(account.id(), account.usk().to_unified_full_viewing_key())]
+        .into_iter()
+        .collect();
+    let d_tx = decrypt_transaction(st.network(), h + 1, &tx, &ufvks);
+    assert_eq!(T::decrypted_pool_outputs_count(&d_tx), 3);
+
+    let mut found_tx_change_memo = false;
+    let mut found_tx_empty_memo = false;
+    T::with_decrypted_pool_memos(&d_tx, |memo| {
+        if Memo::try_from(memo).unwrap() == change_memo {
+            found_tx_change_memo = true
+        }
+        if Memo::try_from(memo).unwrap() == Memo::Empty {
+            found_tx_empty_memo = true
+        }
+    });
+    assert!(found_tx_change_memo);
+    assert!(found_tx_empty_memo);
+
+    // Verify that the stored sent notes match what we're expecting
+    let sent_note_ids = st
+        .wallet()
+        .get_sent_note_ids(&sent_tx_id, T::SHIELDED_PROTOCOL)
+        .unwrap();
+    assert_eq!(sent_note_ids.len(), 3);
+
+    // The sent memo should be the empty memo for the sent output, and each
+    // change output's memo should be as specified.
+    let mut change_memo_count = 0;
+    let mut found_sent_empty_memo = false;
+    for sent_note_id in sent_note_ids {
+        match st
+            .wallet()
+            .get_memo(sent_note_id)
+            .expect("Note id is valid")
+            .as_ref()
+        {
+            Some(m) if m == &change_memo => {
+                change_memo_count += 1;
+            }
+            Some(m) if m == &Memo::Empty => {
+                found_sent_empty_memo = true;
+            }
+            Some(other) => panic!("Unexpected memo value: {:?}", other),
+            None => panic!("Memo should not be stored as NULL"),
+        }
+    }
+    assert_eq!(change_memo_count, 2);
+    assert!(found_sent_empty_memo);
+
+    let tx_history = st.wallet().get_tx_history().unwrap();
+    assert_eq!(tx_history.len(), 2);
+
+    let network = *st.network();
+    assert_matches!(
+        decrypt_and_store_transaction(&network, st.wallet_mut(), &tx, None),
+        Ok(_)
+    );
+
+    let (h, _) = st.generate_next_block_including(sent_tx_id);
+    st.scan_cached_blocks(h, 1);
+
+    // Now, create another proposal with more outputs requested. We have two change notes;
+    // we'll spend one of them, and then we'll generate 7 splits.
+    let change_strategy = fees::zip317::MultiOutputChangeStrategy::new(
+        Zip317FeeRule::standard(),
+        Some(change_memo.into()),
+        T::SHIELDED_PROTOCOL,
+        DustOutputPolicy::default(),
+        SplitPolicy::with_min_output_value(
+            NonZeroUsize::new(8).unwrap(),
+            NonNegativeAmount::const_from_u64(10_0000),
+        ),
+    );
+
+    let proposal = st
+        .propose_transfer(
+            account.id(),
+            &input_selector,
+            &change_strategy,
+            request,
+            NonZeroU32::new(1).unwrap(),
+        )
+        .unwrap();
+
+    let step = &proposal.steps().head;
+    assert_eq!(step.balance().proposed_change().len(), 7);
+}
+
 #[cfg(feature = "transparent-inputs")]
 pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
     ds_factory: DSF,
@@ -355,7 +530,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
         // Add funds to the wallet.
         add_funds(st, value);
 
-        let expected_step0_fee = (zip317::MARGINAL_FEE * 3).unwrap();
+        let expected_step0_fee = (zip317::MARGINAL_FEE * 3u64).unwrap();
         let expected_step1_fee = zip317::MINIMUM_FEE;
         let expected_ephemeral = (transfer_amount + expected_step1_fee).unwrap();
         let expected_step0_change =
@@ -399,7 +574,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
         );
         assert_eq!(steps[1].balance().proposed_change(), []);
 
-        let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+        let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
             account.usk(),
             OvkPolicy::Sender,
             &proposal,
@@ -496,7 +671,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
         )
         .unwrap();
 
-    let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+    let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
         account.usk(),
         OvkPolicy::Sender,
         &proposal,
@@ -755,7 +930,7 @@ pub fn proposal_fails_if_not_all_ephemeral_outputs_consumed<T: ShieldedPoolTeste
     // This is somewhat redundant with `send_multi_step_proposed_transfer`,
     // but tests the case with no change memo and ensures we haven't messed
     // up the test setup.
-    let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+    let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
         account.usk(),
         OvkPolicy::Sender,
         &proposal,
@@ -771,7 +946,7 @@ pub fn proposal_fails_if_not_all_ephemeral_outputs_consumed<T: ShieldedPoolTeste
     )
     .unwrap();
 
-    let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+    let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
         account.usk(),
         OvkPolicy::Sender,
         &frobbed_proposal,
@@ -783,9 +958,8 @@ pub fn proposal_fails_if_not_all_ephemeral_outputs_consumed<T: ShieldedPoolTeste
     );
 }
 
-#[allow(deprecated)]
-pub fn create_to_address_fails_on_incorrect_usk<T: ShieldedPoolTester>(
-    ds_factory: impl DataStoreFactory,
+pub fn create_to_address_fails_on_incorrect_usk<T: ShieldedPoolTester, DSF: DataStoreFactory>(
+    ds_factory: DSF,
 ) {
     let mut st = TestBuilder::new()
         .with_data_store_factory(ds_factory)
@@ -798,23 +972,30 @@ pub fn create_to_address_fails_on_incorrect_usk<T: ShieldedPoolTester>(
     let acct1 = zip32::AccountId::try_from(1).unwrap();
     let usk1 = UnifiedSpendingKey::from_seed(st.network(), &[1u8; 32], acct1).unwrap();
 
+    let input_selector = GreedyInputSelector::<DSF::DataStore>::new();
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, T::SHIELDED_PROTOCOL);
+
+    let req = TransactionRequest::new(vec![Payment::without_memo(
+        to.to_zcash_address(st.network()),
+        NonNegativeAmount::const_from_u64(1),
+    )])
+    .unwrap();
+
     // Attempting to spend with a USK that is not in the wallet results in an error
     assert_matches!(
-        st.create_spend_to_address(
+        st.spend(
+            &input_selector,
+            &change_strategy,
             &usk1,
-            &to,
-            NonNegativeAmount::const_from_u64(1),
-            None,
+            req,
             OvkPolicy::Sender,
             NonZeroU32::new(1).unwrap(),
-            None,
-            T::SHIELDED_PROTOCOL,
         ),
         Err(data_api::error::Error::KeyNotRecognized)
     );
 }
 
-#[allow(deprecated)]
 pub fn proposal_fails_with_no_blocks<T: ShieldedPoolTester, DSF>(ds_factory: DSF)
 where
     DSF: DataStoreFactory,
@@ -836,7 +1017,7 @@ where
     assert_matches!(
         st.propose_standard_transfer::<Infallible>(
             account_id,
-            StandardFeeRule::PreZip313,
+            StandardFeeRule::Zip317,
             NonZeroU32::new(1).unwrap(),
             &to,
             NonNegativeAmount::const_from_u64(1),
@@ -878,25 +1059,18 @@ pub fn spend_fails_on_unverified_notes<T: ShieldedPoolTester>(
         NonNegativeAmount::ZERO
     );
 
-    // The account is configured without a recover-until height, so is by definition
-    // fully recovered, and we count 1 per pool for both numerator and denominator.
-    let fully_recovered = {
-        let n = 1;
-        #[cfg(feature = "orchard")]
-        let n = n * 2;
-        Some(Ratio::new(n, n))
-    };
+    // If none of the wallet's accounts have a recover-until height, then there
+    // is no recovery phase for the wallet, and therefore the denominator in the
+    // resulting ratio (the number of notes in the recovery range) is zero.
+    let no_recovery = Some(Ratio::new(0, 0));
 
     // Wallet is fully scanned
     let summary = st.get_wallet_summary(1);
     assert_eq!(
-        summary.as_ref().and_then(|s| s.recovery_progress()),
-        fully_recovered,
+        summary.as_ref().and_then(|s| s.progress().recovery()),
+        no_recovery,
     );
-    assert_eq!(
-        summary.and_then(|s| s.scan_progress()),
-        Some(Ratio::new(1, 1))
-    );
+    assert_eq!(summary.map(|s| s.progress().scan()), Some(Ratio::new(1, 1)));
 
     // Add more funds to the wallet in a second note
     let (h2, _, _) = st.generate_next_block(&dfvk, AddressType::DefaultExternal, value);
@@ -911,13 +1085,10 @@ pub fn spend_fails_on_unverified_notes<T: ShieldedPoolTester>(
     // Wallet is still fully scanned
     let summary = st.get_wallet_summary(1);
     assert_eq!(
-        summary.as_ref().and_then(|s| s.recovery_progress()),
-        fully_recovered
+        summary.as_ref().and_then(|s| s.progress().recovery()),
+        no_recovery
     );
-    assert_eq!(
-        summary.and_then(|s| s.scan_progress()),
-        Some(Ratio::new(2, 2))
-    );
+    assert_eq!(summary.map(|s| s.progress().scan()), Some(Ratio::new(2, 2)));
 
     // Spend fails because there are insufficient verified notes
     let extsk2 = T::sk(&[0xf5; 32]);
@@ -949,7 +1120,7 @@ pub fn spend_fails_on_unverified_notes<T: ShieldedPoolTester>(
     st.scan_cached_blocks(h2 + 1, 8);
 
     // Total balance is value * number of blocks scanned (10).
-    assert_eq!(st.get_total_balance(account_id), (value * 10).unwrap());
+    assert_eq!(st.get_total_balance(account_id), (value * 10u64).unwrap());
 
     // Spend still fails
     assert_matches!(
@@ -976,15 +1147,15 @@ pub fn spend_fails_on_unverified_notes<T: ShieldedPoolTester>(
     st.scan_cached_blocks(h11, 1);
 
     // Total balance is value * number of blocks scanned (11).
-    assert_eq!(st.get_total_balance(account_id), (value * 11).unwrap());
+    assert_eq!(st.get_total_balance(account_id), (value * 11u64).unwrap());
     // Spendable balance at 10 confirmations is value * 2.
     assert_eq!(
         st.get_spendable_balance(account_id, 10),
-        (value * 2).unwrap()
+        (value * 2u64).unwrap()
     );
     assert_eq!(
         st.get_pending_shielded_balance(account_id, 10),
-        (value * 9).unwrap()
+        (value * 9u64).unwrap()
     );
 
     // Should now be able to generate a proposal
@@ -1005,7 +1176,11 @@ pub fn spend_fails_on_unverified_notes<T: ShieldedPoolTester>(
 
     // Executing the proposal should succeed
     let txid = st
-        .create_proposed_transactions::<Infallible, _>(account.usk(), OvkPolicy::Sender, &proposal)
+        .create_proposed_transactions::<Infallible, _, Infallible>(
+            account.usk(),
+            OvkPolicy::Sender,
+            &proposal,
+        )
         .unwrap()[0];
 
     let (h, _) = st.generate_next_block_including(txid);
@@ -1014,7 +1189,7 @@ pub fn spend_fails_on_unverified_notes<T: ShieldedPoolTester>(
     // TODO: send to an account so that we can check its balance.
     assert_eq!(
         st.get_total_balance(account_id),
-        ((value * 11).unwrap()
+        ((value * 11u64).unwrap()
             - (amount_sent + NonNegativeAmount::from_u64(10000).unwrap()).unwrap())
         .unwrap()
     );
@@ -1064,7 +1239,7 @@ pub fn spend_fails_on_locked_notes<T: ShieldedPoolTester>(
 
     // Executing the proposal should succeed
     assert_matches!(
-        st.create_proposed_transactions::<Infallible, _>(account.usk(), OvkPolicy::Sender, &proposal,),
+        st.create_proposed_transactions::<Infallible, _, Infallible>(account.usk(), OvkPolicy::Sender, &proposal,),
         Ok(txids) if txids.len() == 1
     );
 
@@ -1146,7 +1321,11 @@ pub fn spend_fails_on_locked_notes<T: ShieldedPoolTester>(
         .unwrap();
 
     let txid2 = st
-        .create_proposed_transactions::<Infallible, _>(account.usk(), OvkPolicy::Sender, &proposal)
+        .create_proposed_transactions::<Infallible, _, Infallible>(
+            account.usk(),
+            OvkPolicy::Sender,
+            &proposal,
+        )
         .unwrap()[0];
 
     let (h, _) = st.generate_next_block_including(txid2);
@@ -1194,7 +1373,11 @@ pub fn ovk_policy_prevents_recovery_from_chain<T: ShieldedPoolTester, DSF>(
                                         ovk_policy|
      -> Result<
         Option<(Note, Address, MemoBytes)>,
-        Error<_, _, GreedyInputSelectorError<Zip317FeeError, _>, Zip317FeeError>,
+        TransferErrT<
+            DSF::DataStore,
+            GreedyInputSelector<DSF::DataStore>,
+            SingleOutputChangeStrategy<DSF::DataStore>,
+        >,
     > {
         let min_confirmations = NonZeroU32::new(1).unwrap();
         let proposal = st.propose_standard_transfer(
@@ -1290,7 +1473,7 @@ pub fn spend_succeeds_to_t_addr_zero_change<T: ShieldedPoolTester>(
 
     // Executing the proposal should succeed
     assert_matches!(
-        st.create_proposed_transactions::<Infallible, _>(account.usk(), OvkPolicy::Sender, &proposal),
+        st.create_proposed_transactions::<Infallible, _, Infallible>(account.usk(), OvkPolicy::Sender, &proposal),
         Ok(txids) if txids.len() == 1
     );
 }
@@ -1353,7 +1536,7 @@ pub fn change_note_spends_succeed<T: ShieldedPoolTester>(
 
     // Executing the proposal should succeed
     assert_matches!(
-        st.create_proposed_transactions::<Infallible, _>(account.usk(), OvkPolicy::Sender, &proposal),
+        st.create_proposed_transactions::<Infallible, _, Infallible>(account.usk(), OvkPolicy::Sender, &proposal),
         Ok(txids) if txids.len() == 1
     );
 }
@@ -1401,16 +1584,18 @@ pub fn external_address_change_spends_detected_in_restore_from_seed<T: ShieldedP
     ])
     .unwrap();
 
-    #[allow(deprecated)]
-    let fee_rule = FixedFeeRule::standard();
-    let input_selector = GreedyInputSelector::new(
-        fixed::SingleOutputChangeStrategy::new(fee_rule, None, T::SHIELDED_PROTOCOL),
+    let change_strategy = fees::standard::SingleOutputChangeStrategy::new(
+        StandardFeeRule::Zip317,
+        None,
+        T::SHIELDED_PROTOCOL,
         DustOutputPolicy::default(),
     );
+    let input_selector = GreedyInputSelector::new();
 
     let txid = st
         .spend(
             &input_selector,
+            &change_strategy,
             &usk,
             req,
             OvkPolicy::Sender,
@@ -1418,7 +1603,7 @@ pub fn external_address_change_spends_detected_in_restore_from_seed<T: ShieldedP
         )
         .unwrap()[0];
 
-    let amount_left = (value - (amount_sent + fee_rule.fixed_fee()).unwrap()).unwrap();
+    let amount_left = (value - (amount_sent + MINIMUM_FEE + MARGINAL_FEE).unwrap()).unwrap();
     let pending_change = (amount_left - amount_legacy_change).unwrap();
 
     // The "legacy change" is not counted by get_pending_change().
@@ -1454,8 +1639,8 @@ pub fn external_address_change_spends_detected_in_restore_from_seed<T: ShieldedP
 }
 
 #[allow(dead_code)]
-pub fn zip317_spend<T: ShieldedPoolTester>(
-    ds_factory: impl DataStoreFactory,
+pub fn zip317_spend<T: ShieldedPoolTester, DSF: DataStoreFactory>(
+    ds_factory: DSF,
     cache: impl TestCache,
 ) {
     let mut st = TestBuilder::new()
@@ -1491,7 +1676,9 @@ pub fn zip317_spend<T: ShieldedPoolTester>(
     assert_eq!(st.get_total_balance(account_id), total);
     assert_eq!(st.get_spendable_balance(account_id, 1), total);
 
-    let input_selector = input_selector(StandardFeeRule::Zip317, None, T::SHIELDED_PROTOCOL);
+    let input_selector = GreedyInputSelector::<DSF::DataStore>::new();
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, T::SHIELDED_PROTOCOL);
 
     // This first request will fail due to insufficient non-dust funds
     let req = TransactionRequest::new(vec![Payment::without_memo(
@@ -1503,6 +1690,7 @@ pub fn zip317_spend<T: ShieldedPoolTester>(
     assert_matches!(
         st.spend(
             &input_selector,
+            &change_strategy,
             account.usk(),
             req,
             OvkPolicy::Sender,
@@ -1524,6 +1712,7 @@ pub fn zip317_spend<T: ShieldedPoolTester>(
     let txid = st
         .spend(
             &input_selector,
+            &change_strategy,
             account.usk(),
             req,
             OvkPolicy::Sender,
@@ -1586,24 +1775,35 @@ where
     let res0 = st.wallet_mut().put_received_transparent_utxo(&utxo);
     assert_matches!(res0, Ok(_));
 
-    let fee_rule = StandardFeeRule::Zip317;
-
-    let input_selector = GreedyInputSelector::new(
-        standard::SingleOutputChangeStrategy::new(fee_rule, None, T::SHIELDED_PROTOCOL),
-        DustOutputPolicy::default(),
-    );
+    let input_selector = GreedyInputSelector::new();
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, T::SHIELDED_PROTOCOL);
 
     let txids = st
         .shield_transparent_funds(
             &input_selector,
+            &change_strategy,
             NonNegativeAmount::from_u64(10000).unwrap(),
             account.usk(),
             &[*taddr],
+            account.id(),
             1,
         )
         .unwrap();
     assert_eq!(txids.len(), 1);
 
+    let tx = st.get_tx_from_history(*txids.first()).unwrap().unwrap();
+    assert_eq!(tx.spent_note_count(), 1);
+    assert!(tx.has_change());
+    assert_eq!(tx.received_note_count(), 0);
+    assert_eq!(tx.sent_note_count(), 0);
+    assert!(tx.is_shielding());
+
+    // Generate and scan the block including the transaction
+    let (h, _) = st.generate_next_block_including(*txids.first());
+    st.scan_cached_blocks(h, 1);
+
+    // Ensure that the transaction metadata is still correct after the update produced by scanning.
     let tx = st.get_tx_from_history(*txids.first()).unwrap().unwrap();
     assert_eq!(tx.spent_note_count(), 1);
     assert!(tx.has_change());
@@ -1731,8 +1931,8 @@ pub fn birthday_in_anchor_shard<T: ShieldedPoolTester>(
     assert_eq!(spendable.len(), 1);
 }
 
-pub fn checkpoint_gaps<T: ShieldedPoolTester>(
-    ds_factory: impl DataStoreFactory,
+pub fn checkpoint_gaps<T: ShieldedPoolTester, DSF: DataStoreFactory>(
+    ds_factory: DSF,
     cache: impl TestCache,
 ) {
     let mut st = TestBuilder::new()
@@ -1783,18 +1983,26 @@ pub fn checkpoint_gaps<T: ShieldedPoolTester>(
     .unwrap();
     assert_eq!(spendable.len(), 1);
 
-    // Attempt to spend the note with 5 confirmations
+    let input_selector = GreedyInputSelector::<DSF::DataStore>::new();
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, T::SHIELDED_PROTOCOL);
+
     let to = T::fvk_default_address(&not_our_key);
+    let req = TransactionRequest::new(vec![Payment::without_memo(
+        to.to_zcash_address(st.network()),
+        NonNegativeAmount::const_from_u64(10000),
+    )])
+    .unwrap();
+
+    // Attempt to spend the note with 5 confirmations
     assert_matches!(
-        st.create_spend_to_address(
+        st.spend(
+            &input_selector,
+            &change_strategy,
             account.usk(),
-            &to,
-            NonNegativeAmount::const_from_u64(10000),
-            None,
+            req,
             OvkPolicy::Sender,
             NonZeroU32::new(5).unwrap(),
-            None,
-            T::SHIELDED_PROTOCOL,
         ),
         Ok(_)
     );
@@ -1834,15 +2042,14 @@ pub fn pool_crossing_required<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     )])
     .unwrap();
 
-    let fee_rule = StandardFeeRule::Zip317;
-    let input_selector = GreedyInputSelector::new(
-        standard::SingleOutputChangeStrategy::new(fee_rule, None, P1::SHIELDED_PROTOCOL),
-        DustOutputPolicy::default(),
-    );
+    let input_selector = GreedyInputSelector::new();
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, P1::SHIELDED_PROTOCOL);
     let proposal0 = st
         .propose_transfer(
             account.id(),
             &input_selector,
+            &change_strategy,
             p0_to_p1,
             NonZeroU32::new(1).unwrap(),
         )
@@ -1859,7 +2066,7 @@ pub fn pool_crossing_required<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     let expected_change = (note_value - transfer_amount - expected_fee).unwrap();
     let proposed_change = step0.balance().proposed_change();
     assert_eq!(proposed_change.len(), 1);
-    let change_output = proposed_change.get(0).unwrap();
+    let change_output = proposed_change.first().unwrap();
     // Since this is a cross-pool transfer, change will be sent to the preferred pool.
     assert_eq!(
         change_output.output_pool(),
@@ -1870,7 +2077,7 @@ pub fn pool_crossing_required<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     );
     assert_eq!(change_output.value(), expected_change);
 
-    let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+    let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
         account.usk(),
         OvkPolicy::Sender,
         &proposal0,
@@ -1914,7 +2121,7 @@ pub fn fully_funded_fully_private<P0: ShieldedPoolTester, P1: ShieldedPoolTester
     st.generate_next_block(&p1_fvk, AddressType::DefaultExternal, note_value);
     st.scan_cached_blocks(account.birthday().height(), 2);
 
-    let initial_balance = (note_value * 2).unwrap();
+    let initial_balance = (note_value * 2u64).unwrap();
     assert_eq!(st.get_total_balance(account.id()), initial_balance);
     assert_eq!(st.get_spendable_balance(account.id(), 1), initial_balance);
 
@@ -1925,17 +2132,16 @@ pub fn fully_funded_fully_private<P0: ShieldedPoolTester, P1: ShieldedPoolTester
     )])
     .unwrap();
 
-    let fee_rule = StandardFeeRule::Zip317;
-    let input_selector = GreedyInputSelector::new(
-        // We set the default change output pool to P0, because we want to verify later that
-        // change is actually sent to P1 (as the transaction is fully fundable from P1).
-        standard::SingleOutputChangeStrategy::new(fee_rule, None, P0::SHIELDED_PROTOCOL),
-        DustOutputPolicy::default(),
-    );
+    let input_selector = GreedyInputSelector::new();
+    // We set the default change output pool to P0, because we want to verify later that
+    // change is actually sent to P1 (as the transaction is fully fundable from P1).
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, P0::SHIELDED_PROTOCOL);
     let proposal0 = st
         .propose_transfer(
             account.id(),
             &input_selector,
+            &change_strategy,
             p0_to_p1,
             NonZeroU32::new(1).unwrap(),
         )
@@ -1953,7 +2159,7 @@ pub fn fully_funded_fully_private<P0: ShieldedPoolTester, P1: ShieldedPoolTester
     let expected_change = (note_value - transfer_amount - expected_fee).unwrap();
     let proposed_change = step0.balance().proposed_change();
     assert_eq!(proposed_change.len(), 1);
-    let change_output = proposed_change.get(0).unwrap();
+    let change_output = proposed_change.first().unwrap();
     // Since there are sufficient funds in either pool, change is kept in the same pool as
     // the source note (the target pool), and does not necessarily follow preference order.
     assert_eq!(
@@ -1962,7 +2168,7 @@ pub fn fully_funded_fully_private<P0: ShieldedPoolTester, P1: ShieldedPoolTester
     );
     assert_eq!(change_output.value(), expected_change);
 
-    let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+    let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
         account.usk(),
         OvkPolicy::Sender,
         &proposal0,
@@ -2005,7 +2211,7 @@ pub fn fully_funded_send_to_t<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     st.generate_next_block(&p1_fvk, AddressType::DefaultExternal, note_value);
     st.scan_cached_blocks(account.birthday().height(), 2);
 
-    let initial_balance = (note_value * 2).unwrap();
+    let initial_balance = (note_value * 2u64).unwrap();
     assert_eq!(st.get_total_balance(account.id()), initial_balance);
     assert_eq!(st.get_spendable_balance(account.id(), 1), initial_balance);
 
@@ -2016,17 +2222,16 @@ pub fn fully_funded_send_to_t<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     )])
     .unwrap();
 
-    let fee_rule = StandardFeeRule::Zip317;
-    let input_selector = GreedyInputSelector::new(
-        // We set the default change output pool to P0, because we want to verify later that
-        // change is actually sent to P1 (as the transaction is fully fundable from P1).
-        standard::SingleOutputChangeStrategy::new(fee_rule, None, P0::SHIELDED_PROTOCOL),
-        DustOutputPolicy::default(),
-    );
+    let input_selector = GreedyInputSelector::new();
+    // We set the default change output pool to P0, because we want to verify later that
+    // change is actually sent to P1 (as the transaction is fully fundable from P1).
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, P0::SHIELDED_PROTOCOL);
     let proposal0 = st
         .propose_transfer(
             account.id(),
             &input_selector,
+            &change_strategy,
             p0_to_p1,
             NonZeroU32::new(1).unwrap(),
         )
@@ -2043,14 +2248,14 @@ pub fn fully_funded_send_to_t<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     let expected_change = (note_value - transfer_amount - expected_fee).unwrap();
     let proposed_change = step0.balance().proposed_change();
     assert_eq!(proposed_change.len(), 1);
-    let change_output = proposed_change.get(0).unwrap();
+    let change_output = proposed_change.first().unwrap();
     // Since there are sufficient funds in either pool, change is kept in the same pool as
     // the source note (the target pool), and does not necessarily follow preference order.
     // The source note will always be sapling, as we spend Sapling funds preferentially.
     assert_eq!(change_output.output_pool(), PoolType::SAPLING);
     assert_eq!(change_output.value(), expected_change);
 
-    let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+    let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
         account.usk(),
         OvkPolicy::Sender,
         &proposal0,
@@ -2099,7 +2304,7 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
 
     let next_to_scan = scanned.scanned_range().end;
 
-    let initial_balance = (note_value * 3).unwrap();
+    let initial_balance = (note_value * 3u64).unwrap();
     assert_eq!(st.get_total_balance(acct_id), initial_balance);
     assert_eq!(st.get_spendable_balance(acct_id, 1), initial_balance);
 
@@ -2117,11 +2322,9 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     assert_eq!(st.get_spendable_balance(acct_id, 1), initial_balance);
 
     // Set up the fee rule and input selector we'll use for all the transfers.
-    let fee_rule = StandardFeeRule::Zip317;
-    let input_selector = GreedyInputSelector::new(
-        standard::SingleOutputChangeStrategy::new(fee_rule, None, P1::SHIELDED_PROTOCOL),
-        DustOutputPolicy::default(),
-    );
+    let input_selector = GreedyInputSelector::new();
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, P1::SHIELDED_PROTOCOL);
 
     // First, send funds just to P0
     let transfer_amount = NonNegativeAmount::const_from_u64(200000);
@@ -2133,6 +2336,7 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     let res = st
         .spend(
             &input_selector,
+            &change_strategy,
             account.usk(),
             p0_transfer,
             OvkPolicy::Sender,
@@ -2145,7 +2349,7 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     let expected_change = (note_value - transfer_amount - expected_fee).unwrap();
     assert_eq!(
         st.get_total_balance(acct_id),
-        ((note_value * 2).unwrap() + expected_change).unwrap()
+        ((note_value * 2u64).unwrap() + expected_change).unwrap()
     );
     assert_eq!(st.get_pending_change(acct_id, 1), expected_change);
 
@@ -2164,6 +2368,7 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     let res = st
         .spend(
             &input_selector,
+            &change_strategy,
             account.usk(),
             both_transfer,
             OvkPolicy::Sender,
@@ -2188,8 +2393,8 @@ pub fn multi_pool_checkpoint<P0: ShieldedPoolTester, P1: ShieldedPoolTester>(
     );
 
     let expected_final = (initial_balance + note_value
-        - (transfer_amount * 3).unwrap()
-        - (expected_fee * 3).unwrap())
+        - (transfer_amount * 3u64).unwrap()
+        - (expected_fee * 3u64).unwrap())
     .unwrap();
     assert_eq!(st.get_total_balance(acct_id), expected_final);
 
@@ -2603,18 +2808,14 @@ pub fn scan_cached_blocks_allows_blocks_out_of_order<T: ShieldedPoolTester>(
     )])
     .unwrap();
 
-    #[allow(deprecated)]
-    let input_selector = GreedyInputSelector::new(
-        standard::SingleOutputChangeStrategy::new(
-            StandardFeeRule::Zip317,
-            None,
-            T::SHIELDED_PROTOCOL,
-        ),
-        DustOutputPolicy::default(),
-    );
+    let input_selector = GreedyInputSelector::new();
+    let change_strategy =
+        single_output_change_strategy(StandardFeeRule::Zip317, None, T::SHIELDED_PROTOCOL);
+
     assert_matches!(
         st.spend(
             &input_selector,
+            &change_strategy,
             account.usk(),
             req,
             OvkPolicy::Sender,
@@ -2766,5 +2967,91 @@ pub fn scan_cached_blocks_detects_spends_out_of_order<T: ShieldedPoolTester, DSF
     assert_eq!(
         st.get_total_balance(account.id()),
         (value - value2).unwrap()
+    );
+}
+
+pub fn metadata_queries_exclude_unwanted_notes<T: ShieldedPoolTester, DSF, TC>(
+    ds_factory: DSF,
+    cache: TC,
+) where
+    DSF: DataStoreFactory,
+    <DSF as DataStoreFactory>::AccountId: std::fmt::Debug,
+    TC: TestCache,
+{
+    let mut st = TestBuilder::new()
+        .with_data_store_factory(ds_factory)
+        .with_block_cache(cache)
+        .with_account_from_sapling_activation(BlockHash([0; 32]))
+        .build();
+
+    let account = st.test_account().cloned().unwrap();
+    let dfvk = T::test_account_fvk(&st);
+
+    // Create 10 blocks with successively increasing value
+    let value = NonNegativeAmount::const_from_u64(100_0000);
+    let (h0, _, _) = st.generate_next_block(&dfvk, AddressType::DefaultExternal, value);
+    let mut note_values = vec![value];
+    for i in 2..=10 {
+        let value = NonNegativeAmount::const_from_u64(i * 100_0000);
+        st.generate_next_block(&dfvk, AddressType::DefaultExternal, value);
+        note_values.push(value);
+    }
+    st.scan_cached_blocks(h0, 10);
+
+    let test_meta = |st: &TestState<TC, DSF::DataStore, LocalNetwork>, query, expected_count| {
+        let metadata = st
+            .wallet()
+            .get_account_metadata(account.id(), &query, &[])
+            .unwrap();
+
+        assert_eq!(metadata.note_count(T::SHIELDED_PROTOCOL), expected_count);
+    };
+
+    test_meta(
+        &st,
+        NoteFilter::ExceedsMinValue(NonNegativeAmount::const_from_u64(1000_0000)),
+        Some(1),
+    );
+    test_meta(
+        &st,
+        NoteFilter::ExceedsMinValue(NonNegativeAmount::const_from_u64(500_0000)),
+        Some(6),
+    );
+    test_meta(
+        &st,
+        NoteFilter::ExceedsBalancePercentage(BoundedU8::new_const(10)),
+        Some(5),
+    );
+
+    // We haven't sent any funds yet, so we can't evaluate this query
+    test_meta(
+        &st,
+        NoteFilter::ExceedsPriorSendPercentile(BoundedU8::new_const(50)),
+        None,
+    );
+
+    // Spend half of each one of our notes, so that we can get a distribution of sent note values.
+    // FIXME: This test is currently excessively specialized to the `zcash_client_sqlite::WalletDb`
+    // implmentation of the `InputSource` trait. A better approach would be to create a test input
+    // source that can select a set of notes directly based upon their nullifiers.
+    let not_our_key = T::sk_to_fvk(&T::sk(&[0xf5; 32]));
+    let to = T::fvk_default_address(&not_our_key).to_zcash_address(st.network());
+    let nz2 = NonZeroU64::new(2).unwrap();
+
+    for value in &note_values {
+        let txids = st
+            .create_standard_transaction(&account, to.clone(), *value / nz2)
+            .unwrap();
+        st.generate_next_block_including(txids.head);
+    }
+    st.scan_cached_blocks(h0 + 10, 10);
+
+    // Since we've spent half our notes, our remaining notes each have approximately half their
+    // original value. The 50th percentile of our spends should be 250_0000 ZAT, and half of our
+    // remaining notes should have value greater than that.
+    test_meta(
+        &st,
+        NoteFilter::ExceedsPriorSendPercentile(BoundedU8::new_const(50)),
+        Some(5),
     );
 }

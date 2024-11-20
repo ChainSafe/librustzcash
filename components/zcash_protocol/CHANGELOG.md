@@ -7,6 +7,13 @@ and this library adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.4.1] - 2024-11-13
+### Added
+- `zcash_protocol::value::QuotRem`
+- `zcash_protocol::value::Zatoshis::div_with_remainder`
+- `impl Mul<u64> for zcash_protocol::value::Zatoshis`
+- `impl Div<NonZeroU64> for zcash_protocol::value::Zatoshis`
+
 ## [0.4.0] - 2024-10-02
 ### Added
 - `impl Sub<BlockHeight> for BlockHeight` unlike the implementation that was
@@ -77,9 +84,9 @@ The entries below are relative to the `zcash_primitives` crate as of the tag
 - `zcash_protocol::consensus::Parameters` has been split into two traits, with
   the newly added `NetworkConstants` trait providing all network constant
   accessors. Also, the `address_network` method has been replaced with a new
-  `network_type` method that serves the same purpose. A blanket impl of 
+  `network_type` method that serves the same purpose. A blanket impl of
   `NetworkConstants` is provided for all types that implement `Parameters`,
-  so call sites for methods that have moved to `NetworkConstants` should 
+  so call sites for methods that have moved to `NetworkConstants` should
   remain unchanged (though they may require an additional `use` statement.)
 
 ### Removed

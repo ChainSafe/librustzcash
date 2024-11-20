@@ -1,10 +1,13 @@
-use zcash_client_backend::data_api::{InputSource, TransactionStatus, WalletRead};
+use zcash_client_backend::data_api::{
+    AccountMeta, InputSource, NoteFilter, PoolMeta, TransactionStatus, WalletRead,
+};
 use zcash_client_backend::wallet::{Note, ReceivedNote};
 use zcash_primitives::transaction::components::OutPoint;
 use zcash_protocol::{
     consensus,
     consensus::BlockHeight,
     value::Zatoshis,
+    ShieldedProtocol,
     ShieldedProtocol::{Orchard, Sapling},
 };
 #[cfg(feature = "transparent-inputs")]
@@ -150,6 +153,39 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             })
             .flatten())
     }
+
+    /// Returns metadata for the spendable notes in the wallet.
+    fn get_account_metadata(
+        &self,
+        account_id: Self::AccountId,
+        selector: &NoteFilter,
+        exclude: &[Self::NoteRef],
+    ) -> Result<AccountMeta, Self::Error> {
+        let chain_tip_height = self
+            .chain_height()?
+            .ok_or(Error::Other("unknown chain height".to_string()))?;
+
+        let sapling_pool_meta = self.spendable_notes_meta(
+            ShieldedProtocol::Sapling,
+            chain_tip_height,
+            account_id,
+            selector,
+            exclude,
+        )?;
+
+        #[cfg(feature = "orchard")]
+        let orchard_pool_meta = self.spendable_notes_meta(
+            ShieldedProtocol::Orchard,
+            chain_tip_height,
+            account_id,
+            selector,
+            exclude,
+        )?;
+        #[cfg(not(feature = "orchard"))]
+        let orchard_pool_meta = None;
+
+        Ok(AccountMeta::new(sapling_pool_meta, orchard_pool_meta))
+    }
 }
 
 impl<P: consensus::Parameters> MemoryWalletDb<P> {
@@ -244,5 +280,71 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             None => false,
         };
         Ok(spent)
+    }
+
+    fn spendable_notes_meta(
+        &self,
+        protocol: ShieldedProtocol,
+        chain_tip_height: BlockHeight,
+        account: AccountId,
+        filter: &NoteFilter,
+        exclude: &[NoteId],
+    ) -> Result<Option<PoolMeta>, Error> {
+        let birthday_height = match self.get_wallet_birthday()? {
+            Some(birthday) => birthday,
+            None => {
+                return Ok(None);
+            }
+        };
+        let (count, total) = self
+            .received_notes
+            .iter()
+            .filter(|note| note.account_id == account)
+            .filter(|note| note.note.protocol() == protocol)
+            .filter(|note| {
+                self.note_is_spendable(note, birthday_height, chain_tip_height, exclude)
+                    .unwrap()
+            })
+            .filter(|note| {
+                self.matches_note_filter(note, filter)
+                    .unwrap()
+                    .is_some_and(|b| b)
+            })
+            .fold((0, Zatoshis::ZERO), |(count, total), note| {
+                (count + 1, (total + note.note.value()).unwrap())
+            });
+
+        Ok(Some(PoolMeta::new(count, total)))
+    }
+
+    fn matches_note_filter(
+        &self,
+        note: &crate::ReceivedNote,
+        filter: &NoteFilter,
+    ) -> Result<Option<bool>, Error> {
+        match filter {
+            NoteFilter::ExceedsMinValue(min_value) => Ok(Some(note.note.value() > *min_value)),
+            NoteFilter::ExceedsPriorSendPercentile(n) => todo!(),
+            NoteFilter::ExceedsBalancePercentage(p) => todo!(),
+            // evaluate both conditions.
+            // If one cannot be evaluated (e.g. it returns None) it is ignored
+            NoteFilter::Combine(a, b) => {
+                let matches_a = self.matches_note_filter(note, a)?.unwrap_or(true);
+                let matches_b = self.matches_note_filter(note, b)?.unwrap_or(true);
+                Ok(Some(matches_a && matches_b))
+            }
+            // Evaluate the first condition and return the result.
+            // If the first condition cannot be evaluated then use the fallback instead
+            NoteFilter::Attempt {
+                condition,
+                fallback,
+            } => {
+                if let Some(b) = self.matches_note_filter(note, condition)? {
+                    Ok(Some(b))
+                } else {
+                    self.matches_note_filter(note, fallback)
+                }
+            }
+        }
     }
 }

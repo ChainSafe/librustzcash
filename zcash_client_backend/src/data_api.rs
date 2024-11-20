@@ -67,7 +67,6 @@ use incrementalmerkletree::{frontier::Frontier, Retention};
 use nonempty::NonEmpty;
 use secrecy::SecretVec;
 use shardtree::{error::ShardTreeError, store::ShardStore, ShardTree};
-use zcash_keys::address::Address;
 use zip32::fingerprint::SeedFingerprint;
 
 use self::{
@@ -107,7 +106,7 @@ use {
 use ambassador::delegatable_trait;
 
 #[cfg(any(test, feature = "test-dependencies"))]
-use zcash_primitives::consensus::NetworkUpgrade;
+use {zcash_keys::address::Address, zcash_primitives::consensus::NetworkUpgrade};
 
 pub mod chain;
 pub mod error;
@@ -462,6 +461,51 @@ impl<T> Ratio<T> {
     }
 }
 
+/// A type representing the progress the wallet has made toward detecting all of the funds
+/// belonging to the wallet.
+///
+/// The window over which progress is computed spans from the wallet's birthday to the current
+/// chain tip. It is divided into two regions, the "Scan Window" which covers the region from the
+/// wallet recovery height to the current chain tip, and the "Recovery Window" which covers the
+/// range from the wallet birthday to the wallet recovery height. If no wallet recovery height is
+/// available, the scan window will cover the entire range from the wallet birthday to the chain
+/// tip.
+///
+/// Progress for both scanning and recovery is represented in terms of the ratio between notes
+/// scanned and the total number of notes added to the chain in the relevant window. This ratio
+/// should only be used to compute progress percentages for display, and the numerator and
+/// denominator should not be treated as authoritative note counts. In the case that there are no
+/// notes in a given block range, the denominator of these values will be zero, so callers should always
+/// use checked division when converting the resulting values to percentages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Progress {
+    scan: Ratio<u64>,
+    recovery: Option<Ratio<u64>>,
+}
+
+impl Progress {
+    /// Constructs a new progress value from its constituent parts.
+    pub fn new(scan: Ratio<u64>, recovery: Option<Ratio<u64>>) -> Self {
+        Self { scan, recovery }
+    }
+
+    /// Returns the progress the wallet has made in scanning blocks for shielded notes belonging to
+    /// the wallet between the wallet recovery height (or the wallet birthday if no recovery height
+    /// is set) and the chain tip.
+    pub fn scan(&self) -> Ratio<u64> {
+        self.scan
+    }
+
+    /// Returns the progress the wallet has made in scanning blocks for shielded notes belonging to
+    /// the wallet between the wallet birthday and the block height at which recovery from seed was
+    /// initiated.
+    ///
+    /// Returns `None` if no recovery height is set for the wallet.
+    pub fn recovery(&self) -> Option<Ratio<u64>> {
+        self.recovery
+    }
+}
+
 /// A type representing the potentially-spendable value of unspent outputs in the wallet.
 ///
 /// The balances reported using this data structure may overestimate the total spendable value of
@@ -475,8 +519,7 @@ pub struct WalletSummary<AccountId: Eq + Hash> {
     account_balances: HashMap<AccountId, AccountBalance>,
     chain_tip_height: BlockHeight,
     fully_scanned_height: BlockHeight,
-    scan_progress: Option<Ratio<u64>>,
-    recovery_progress: Option<Ratio<u64>>,
+    progress: Progress,
     next_sapling_subtree_index: u64,
     #[cfg(feature = "orchard")]
     next_orchard_subtree_index: u64,
@@ -488,8 +531,7 @@ impl<AccountId: Eq + Hash> WalletSummary<AccountId> {
         account_balances: HashMap<AccountId, AccountBalance>,
         chain_tip_height: BlockHeight,
         fully_scanned_height: BlockHeight,
-        scan_progress: Option<Ratio<u64>>,
-        recovery_progress: Option<Ratio<u64>>,
+        progress: Progress,
         next_sapling_subtree_index: u64,
         #[cfg(feature = "orchard")] next_orchard_subtree_index: u64,
     ) -> Self {
@@ -497,8 +539,7 @@ impl<AccountId: Eq + Hash> WalletSummary<AccountId> {
             account_balances,
             chain_tip_height,
             fully_scanned_height,
-            scan_progress,
-            recovery_progress,
+            progress,
             next_sapling_subtree_index,
             #[cfg(feature = "orchard")]
             next_orchard_subtree_index,
@@ -527,39 +568,17 @@ impl<AccountId: Eq + Hash> WalletSummary<AccountId> {
     /// general usability, including the ability to spend existing funds that were
     /// previously spendable.
     ///
-    /// The window over which progress is computed spans from the wallet's recovery height
-    /// to the current chain tip. This may be adjusted in future updates to better match
-    /// the intended semantics.
+    /// The window over which progress is computed spans from the wallet's birthday to the current
+    /// chain tip. It is divided into two segments: a "recovery" segment, between the wallet
+    /// birthday and the recovery height (currently the height at which recovery from seed was
+    /// initiated, but how this boundary is computed may change in the future), and a "scan"
+    /// segment, between the recovery height and the current chain tip.
     ///
-    /// Progress is represented in terms of the ratio between notes scanned and the total
-    /// number of notes added to the chain in the relevant window. This ratio should only
-    /// be used to compute progress percentages, and the numerator and denominator should
-    /// not be treated as authoritative note counts.
-    ///
-    /// Returns `None` if the wallet is unable to determine the size of the note
-    /// commitment tree.
-    pub fn scan_progress(&self) -> Option<Ratio<u64>> {
-        self.scan_progress
-    }
-
-    /// Returns the progress of recovering the wallet from seed.
-    ///
-    /// This progress metric is intended as an indicator of how close the wallet is to
-    /// having a complete history.
-    ///
-    /// The window over which progress is computed spans from the wallet birthday to the
-    /// wallet's recovery height. This may be adjusted in future updates to better match
-    /// the intended semantics.
-    ///
-    /// Progress is represented in terms of the ratio between notes scanned and the total
-    /// number of notes added to the chain in the relevant window. This ratio should only
-    /// be used to compute progress percentages, and the numerator and denominator should
-    /// not be treated as authoritative note counts.
-    ///
-    /// Returns `None` if the wallet is unable to determine the size of the note
-    /// commitment tree.
-    pub fn recovery_progress(&self) -> Option<Ratio<u64>> {
-        self.recovery_progress
+    /// When converting the ratios returned here to percentages, checked division must be used in
+    /// order to avoid divide-by-zero errors. A zero denominator in a returned ratio indicates that
+    /// there are no shielded notes to be scanned in the associated block range.
+    pub fn progress(&self) -> Progress {
+        self.progress
     }
 
     /// Returns the Sapling subtree index that should start the next range of subtree
@@ -775,8 +794,222 @@ impl<NoteRef> SpendableNotes<NoteRef> {
     }
 }
 
+/// Metadata about the structure of unspent outputs in a single pool within a wallet account.
+///
+/// This type is often used to represent a filtered view of outputs in the account that were
+/// selected according to the conditions imposed by a [`NoteFilter`].
+#[derive(Debug, Clone)]
+pub struct PoolMeta {
+    note_count: usize,
+    value: NonNegativeAmount,
+}
+
+impl PoolMeta {
+    /// Constructs a new [`PoolMeta`] value from its constituent parts.
+    pub fn new(note_count: usize, value: NonNegativeAmount) -> Self {
+        Self { note_count, value }
+    }
+
+    /// Returns the number of unspent outputs in the account, potentially selected in accordance
+    /// with some [`NoteFilter`].
+    pub fn note_count(&self) -> usize {
+        self.note_count
+    }
+
+    /// Returns the total value of unspent outputs in the account that are accounted for in
+    /// [`Self::note_count`].
+    pub fn value(&self) -> NonNegativeAmount {
+        self.value
+    }
+}
+
+/// Metadata about the structure of the wallet for a particular account.
+///
+/// At present this just contains counts of unspent outputs in each pool, but it may be extended in
+/// the future to contain note values or other more detailed information about wallet structure.
+///
+/// Values of this type are intended to be used in selection of change output values. A value of
+/// this type may represent filtered data, and may therefore not count all of the unspent notes in
+/// the wallet.
+///
+/// A [`AccountMeta`] value is normally produced by querying the wallet database via passing a
+/// [`NoteFilter`] to [`InputSource::get_account_metadata`].
+#[derive(Debug, Clone)]
+pub struct AccountMeta {
+    sapling: Option<PoolMeta>,
+    orchard: Option<PoolMeta>,
+}
+
+impl AccountMeta {
+    /// Constructs a new [`AccountMeta`] value from its constituent parts.
+    pub fn new(sapling: Option<PoolMeta>, orchard: Option<PoolMeta>) -> Self {
+        Self { sapling, orchard }
+    }
+
+    /// Returns metadata about Sapling notes belonging to the account for which this was generated.
+    ///
+    /// Returns [`None`] if no metadata is available or it was not possible to evaluate the query
+    /// described by a [`NoteFilter`] given the available wallet data.
+    pub fn sapling(&self) -> Option<&PoolMeta> {
+        self.sapling.as_ref()
+    }
+
+    /// Returns metadata about Orchard notes belonging to the account for which this was generated.
+    ///
+    /// Returns [`None`] if no metadata is available or it was not possible to evaluate the query
+    /// described by a [`NoteFilter`] given the available wallet data.
+    pub fn orchard(&self) -> Option<&PoolMeta> {
+        self.orchard.as_ref()
+    }
+
+    fn sapling_note_count(&self) -> Option<usize> {
+        self.sapling.as_ref().map(|m| m.note_count)
+    }
+
+    fn orchard_note_count(&self) -> Option<usize> {
+        self.orchard.as_ref().map(|m| m.note_count)
+    }
+
+    /// Returns the number of unspent notes in the wallet for the given shielded protocol.
+    pub fn note_count(&self, protocol: ShieldedProtocol) -> Option<usize> {
+        match protocol {
+            ShieldedProtocol::Sapling => self.sapling_note_count(),
+            ShieldedProtocol::Orchard => self.orchard_note_count(),
+        }
+    }
+
+    /// Returns the total number of unspent shielded notes belonging to the account for which this
+    /// was generated.
+    ///
+    /// Returns [`None`] if no metadata is available or it was not possible to evaluate the query
+    /// described by a [`NoteFilter`] given the available wallet data. If metadata is available
+    /// only for a single pool, the metadata for that pool will be returned.
+    pub fn total_note_count(&self) -> Option<usize> {
+        let s = self.sapling_note_count();
+        let o = self.orchard_note_count();
+        s.zip(o).map(|(s, o)| s + o).or(s).or(o)
+    }
+
+    fn sapling_value(&self) -> Option<NonNegativeAmount> {
+        self.sapling.as_ref().map(|m| m.value)
+    }
+
+    fn orchard_value(&self) -> Option<NonNegativeAmount> {
+        self.orchard.as_ref().map(|m| m.value)
+    }
+
+    /// Returns the total value of shielded notes represented by [`Self::total_note_count`]
+    ///
+    /// Returns [`None`] if no metadata is available or it was not possible to evaluate the query
+    /// described by a [`NoteFilter`] given the available wallet data. If metadata is available
+    /// only for a single pool, the metadata for that pool will be returned.
+    pub fn total_value(&self) -> Option<NonNegativeAmount> {
+        let s = self.sapling_value();
+        let o = self.orchard_value();
+        s.zip(o)
+            .map(|(s, o)| (s + o).expect("Does not overflow Zcash maximum value."))
+            .or(s)
+            .or(o)
+    }
+}
+
+/// A `u8` value in the range 0..=MAX
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BoundedU8<const MAX: u8>(u8);
+
+impl<const MAX: u8> BoundedU8<MAX> {
+    /// Creates a constant `BoundedU8` from a [`u8`] value.
+    ///
+    /// Panics: if the value is outside the range `0..=MAX`.
+    pub const fn new_const(value: u8) -> Self {
+        assert!(value <= MAX);
+        Self(value)
+    }
+
+    /// Creates a `BoundedU8` from a [`u8`] value.
+    ///
+    /// Returns `None` if the provided value is outside the range `0..=MAX`.
+    pub fn new(value: u8) -> Option<Self> {
+        if value <= MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the wrapped [`u8`] value.
+    pub fn value(&self) -> u8 {
+        self.0
+    }
+}
+
+impl<const MAX: u8> From<BoundedU8<MAX>> for u8 {
+    fn from(value: BoundedU8<MAX>) -> Self {
+        value.0
+    }
+}
+
+impl<const MAX: u8> From<BoundedU8<MAX>> for usize {
+    fn from(value: BoundedU8<MAX>) -> Self {
+        usize::from(value.0)
+    }
+}
+
+/// A small query language for filtering notes belonging to an account.
+///
+/// A filter described using this language is applied to notes individually. It is primarily
+/// intended for retrieval of account metadata in service of making determinations for how to
+/// allocate change notes, and is not currently intended for use in broader note selection
+/// contexts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NoteFilter {
+    /// Selects notes having value greater than or equal to the provided value.
+    ExceedsMinValue(NonNegativeAmount),
+    /// Selects notes having value greater than or equal to approximately the n'th percentile of
+    /// previously sent notes in the account, irrespective of pool. The wrapped value must be in
+    /// the range `1..=99`. The value `n` is respected in a best-effort fashion; results are likely
+    /// to be inaccurate if the account has not yet completed scanning or if insufficient send data
+    /// is available to establish a distribution.
+    // TODO: it might be worthwhile to add an optional parameter here that can be used to ignore
+    // low-valued (test/memo-only) sends when constructing the distribution to be drawn from.
+    ExceedsPriorSendPercentile(BoundedU8<99>),
+    /// Selects notes having value greater than or equal to the specified percentage of the account
+    /// balance across all shielded pools. The wrapped value must be in the range `1..=99`
+    ExceedsBalancePercentage(BoundedU8<99>),
+    /// A note will be selected if it satisfies both of the specified conditions.
+    ///
+    /// If it is not possible to evaluate one of the conditions (for example,
+    /// [`NoteFilter::ExceedsPriorSendPercentile`] cannot be evaluated if no sends have been
+    /// performed) then that condition will be ignored. If neither condition can be evaluated,
+    /// then the entire condition cannot be evaluated.
+    Combine(Box<NoteFilter>, Box<NoteFilter>),
+    /// A note will be selected if it satisfies the first condition; if it is not possible to
+    /// evaluate that condition (for example, [`NoteFilter::ExceedsPriorSendPercentile`] cannot
+    /// be evaluated if no sends have been performed) then the second condition will be used for
+    /// evaluation.
+    Attempt {
+        condition: Box<NoteFilter>,
+        fallback: Box<NoteFilter>,
+    },
+}
+
+impl NoteFilter {
+    /// Constructs a [`NoteFilter::Combine`] query node.
+    pub fn combine(l: NoteFilter, r: NoteFilter) -> Self {
+        Self::Combine(Box::new(l), Box::new(r))
+    }
+
+    /// Constructs a [`NoteFilter::Attempt`] query node.
+    pub fn attempt(condition: NoteFilter, fallback: NoteFilter) -> Self {
+        Self::Attempt {
+            condition: Box::new(condition),
+            fallback: Box::new(fallback),
+        }
+    }
+}
+
 /// A trait representing the capability to query a data store for unspent transaction outputs
-/// belonging to a wallet.
+/// belonging to a account.
 #[cfg_attr(feature = "test-dependencies", delegatable_trait)]
 pub trait InputSource {
     /// The type of errors produced by a wallet backend.
@@ -818,6 +1051,22 @@ pub trait InputSource {
         anchor_height: BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error>;
+
+    /// Returns metadata describing the structure of the wallet for the specified account.
+    ///
+    /// The returned metadata value must exclude:
+    /// - spent notes;
+    /// - unspent notes excluded by the provided selector;
+    /// - unspent notes identified in the given `exclude` list.
+    ///
+    /// Implementations of this method may limit the complexity of supported queries. Such
+    /// limitations should be clearly documented for the implementing type.
+    fn get_account_metadata(
+        &self,
+        account: Self::AccountId,
+        selector: &NoteFilter,
+        exclude: &[Self::NoteRef],
+    ) -> Result<AccountMeta, Self::Error>;
 
     /// Fetches the transparent output corresponding to the provided `outpoint`.
     ///
@@ -1133,7 +1382,8 @@ pub trait WalletRead {
     /// the maximum index).
     ///
     /// If `index_range` is some `Range`, it limits the result to addresses with indices
-    /// in that range.
+    /// in that range. An `index_range` of `None` is defined to be equivalent to
+    /// `0..(1u32 << 31)`.
     ///
     /// Wallets should scan the chain for UTXOs sent to these ephemeral transparent
     /// receivers, but do not need to do so regularly. Under expected usage, outputs
@@ -1169,9 +1419,8 @@ pub trait WalletRead {
     }
 
     /// If a given ephemeral address might have been reserved, i.e. would be included in
-    /// the map returned by `get_known_ephemeral_addresses(account_id, false)` for any
-    /// of the wallet's accounts, then return `Ok(Some(account_id))`. Otherwise return
-    /// `Ok(None)`.
+    /// the result of `get_known_ephemeral_addresses(account_id, None)` for any of the
+    /// wallet's accounts, then return `Ok(Some(account_id))`. Otherwise return `Ok(None)`.
     ///
     /// This is equivalent to (but may be implemented more efficiently than):
     /// ```compile_fail
@@ -1284,6 +1533,7 @@ pub trait WalletTest: InputSource + WalletRead {
 ///
 /// This type is opaque, and exists for use by tests defined in this crate.
 #[cfg(any(test, feature = "test-dependencies"))]
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct OutputOfSentTx {
     value: NonNegativeAmount,

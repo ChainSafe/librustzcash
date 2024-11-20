@@ -252,7 +252,7 @@ pub(crate) fn put_received_note<T: ReceivedOrchardOutput>(
             rseed = :rseed,
             nf = IFNULL(:nf, nf),
             memo = IFNULL(:memo, memo),
-            is_change = IFNULL(:is_change, is_change),
+            is_change = MAX(:is_change, is_change),
             commitment_tree_position = IFNULL(:commitment_tree_position, commitment_tree_position),
             recipient_key_scope = :recipient_key_scope
         RETURNING orchard_received_notes.id",
@@ -400,6 +400,11 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn send_with_multiple_change_outputs() {
+        testing::pool::send_with_multiple_change_outputs::<OrchardPoolTester>()
+    }
+
+    #[test]
     #[cfg(feature = "transparent-inputs")]
     fn send_multi_step_proposed_transfer() {
         testing::pool::send_multi_step_proposed_transfer::<OrchardPoolTester>()
@@ -412,13 +417,11 @@ pub(crate) mod tests {
     }
 
     #[test]
-    #[allow(deprecated)]
     fn create_to_address_fails_on_incorrect_usk() {
         testing::pool::create_to_address_fails_on_incorrect_usk::<OrchardPoolTester>()
     }
 
     #[test]
-    #[allow(deprecated)]
     fn proposal_fails_with_no_blocks() {
         testing::pool::proposal_fails_with_no_blocks::<OrchardPoolTester>()
     }
@@ -481,6 +484,11 @@ pub(crate) mod tests {
     #[test]
     fn scan_cached_blocks_detects_spends_out_of_order() {
         testing::pool::scan_cached_blocks_detects_spends_out_of_order::<OrchardPoolTester>()
+    }
+
+    #[test]
+    fn metadata_queries_exclude_unwanted_notes() {
+        testing::pool::metadata_queries_exclude_unwanted_notes::<OrchardPoolTester>()
     }
 
     #[test]

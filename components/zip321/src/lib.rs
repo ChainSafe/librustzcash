@@ -284,8 +284,8 @@ impl TransactionRequest {
         self.payments
             .values()
             .map(|p| p.amount)
-            .fold(Ok(Zatoshis::ZERO), |acc, a| {
-                (acc? + a).ok_or(BalanceError::Overflow)
+            .try_fold(Zatoshis::ZERO, |acc, a| {
+                (acc + a).ok_or(BalanceError::Overflow)
             })
     }
 

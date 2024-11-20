@@ -16,7 +16,7 @@ use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
         scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, InputSource,
-        Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus,
+        Progress, Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     wallet::{NoteId, Recipient},
@@ -337,12 +337,14 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             .or(sapling_scan_progress)
             .or(orchard_scan_progress);
 
+        // TODO: This won't work
+        let scan_progress = Progress::new(scan_progress.unwrap(), None);
+
         let summary = WalletSummary::new(
             account_balances,
             chain_tip_height,
             fully_scanned_height,
             scan_progress,
-            None, // TODO: Unimplemented
             next_sapling_subtree_index,
             #[cfg(feature = "orchard")]
             next_orchard_subtree_index,

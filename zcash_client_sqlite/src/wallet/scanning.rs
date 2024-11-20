@@ -599,10 +599,10 @@ pub(crate) mod tests {
                 testing::orchard::OrchardPoolTester, wallet::input_selection::GreedyInputSelector,
                 WalletCommitmentTrees,
             },
-            fees::{standard, DustOutputPolicy},
+            fees::{standard, DustOutputPolicy, StandardFeeRule},
             wallet::OvkPolicy,
         },
-        zcash_primitives::{memo::Memo, transaction::fees::StandardFeeRule},
+        zcash_primitives::memo::Memo,
     };
 
     #[test]
@@ -629,7 +629,7 @@ pub(crate) mod tests {
         let initial_height_offset = 310;
 
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_block_cache(BlockCache::new())
             .with_initial_chain_state(|rng, network| {
                 let sapling_activation_height =
@@ -796,7 +796,7 @@ pub(crate) mod tests {
         u32,
     ) {
         let st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_block_cache(BlockCache::new())
             .with_initial_chain_state(|rng, network| {
                 // We set the Sapling and Orchard frontiers at the birthday height to be
@@ -891,7 +891,7 @@ pub(crate) mod tests {
         use ScanPriority::*;
 
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_block_cache(BlockCache::new())
             .build();
         let sap_active = st.sapling_activation_height();
@@ -1044,7 +1044,7 @@ pub(crate) mod tests {
         // notes beyond the end of the first shard.
         let frontier_tree_size: u32 = (0x1 << 16) + 1234;
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_block_cache(BlockCache::new())
             .with_initial_chain_state(|rng, network| {
                 let birthday_height =
@@ -1237,7 +1237,7 @@ pub(crate) mod tests {
         // notes beyond the end of the first shard.
         let frontier_tree_size: u32 = (0x1 << 16) + 1234;
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_block_cache(BlockCache::new())
             .with_initial_chain_state(|rng, network| {
                 let birthday_height =
@@ -1292,22 +1292,23 @@ pub(crate) mod tests {
         let birthday = account.birthday();
         let sap_active = st.sapling_activation_height();
 
-        // The account is configured without a recover-until height, so is by definition
-        // fully recovered, and we count 1 per pool for both numerator and denominator.
-        let fully_recovered = {
-            let n = 1;
-            #[cfg(feature = "orchard")]
-            let n = n * 2;
-            Some(Ratio::new(n, n))
-        };
+        // If none of the wallet's accounts have a recover-until height, then there
+        // is no recovery phase for the wallet, and therefore the denominator in the
+        // resulting ratio (the number of notes in the recovery range) is zero.
+        let no_recovery = Some(Ratio::new(0, 0));
 
-        // We have scan ranges and a subtree, but have scanned no blocks.
+        // We have scan ranges and a subtree, but have scanned no blocks. Given the number of
+        // blocks scanned in the previous subtree, we estimate the number of notes in the current
+        // subtree
         let summary = st.get_wallet_summary(1);
         assert_eq!(
-            summary.as_ref().and_then(|s| s.recovery_progress()),
-            fully_recovered,
+            summary.as_ref().and_then(|s| s.progress().recovery()),
+            no_recovery,
         );
-        assert_eq!(summary.and_then(|s| s.scan_progress()), None);
+        assert_matches!(
+            summary.map(|s| s.progress().scan()),
+            Some(ratio) if *ratio.numerator() == 0
+        );
 
         // Set up prior chain state. This simulates us having imported a wallet
         // with a birthday 520 blocks below the chain tip.
@@ -1346,8 +1347,8 @@ pub(crate) mod tests {
         assert_eq!(summary.as_ref().map(|s| T::next_subtree_index(s)), Some(0));
 
         assert_eq!(
-            summary.as_ref().and_then(|s| s.recovery_progress()),
-            fully_recovered,
+            summary.as_ref().and_then(|s| s.progress().recovery()),
+            no_recovery
         );
 
         // Progress denominator depends on which pools are enabled (which changes the
@@ -1358,7 +1359,7 @@ pub(crate) mod tests {
         let expected_denom = expected_denom * 2;
         let expected_denom = expected_denom + 1;
         assert_eq!(
-            summary.and_then(|s| s.scan_progress()),
+            summary.map(|s| s.progress().scan()),
             Some(Ratio::new(1, u64::from(expected_denom)))
         );
 
@@ -1451,7 +1452,7 @@ pub(crate) mod tests {
                     / (max_scanned - (birthday.height() - 10)));
         let summary = st.get_wallet_summary(1);
         assert_eq!(
-            summary.and_then(|s| s.scan_progress()),
+            summary.map(|s| s.progress().scan()),
             Some(Ratio::new(1, u64::from(expected_denom)))
         );
     }
@@ -1461,7 +1462,7 @@ pub(crate) mod tests {
         use ScanPriority::*;
 
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .build();
 
         let ranges = vec![
@@ -1506,7 +1507,7 @@ pub(crate) mod tests {
         use ScanPriority::*;
 
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .build();
 
         let ranges = vec![
@@ -1578,7 +1579,7 @@ pub(crate) mod tests {
         // notes back from the end of the second shard.
         let birthday_tree_size: u32 = (0x1 << 17) - 50;
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_block_cache(BlockCache::new())
             .with_initial_chain_state(|rng, network| {
                 let birthday_height =
@@ -1778,20 +1779,21 @@ pub(crate) mod tests {
             fee_rule,
             Some(change_memo.into()),
             OrchardPoolTester::SHIELDED_PROTOCOL,
+            DustOutputPolicy::default(),
         );
-        let input_selector =
-            &GreedyInputSelector::new(change_strategy, DustOutputPolicy::default());
+        let input_selector = GreedyInputSelector::new();
 
         let proposal = st
             .propose_transfer(
                 account.id(),
-                input_selector,
+                &input_selector,
+                &change_strategy,
                 request,
                 NonZeroU32::new(10).unwrap(),
             )
             .unwrap();
 
-        let create_proposed_result = st.create_proposed_transactions::<Infallible, _>(
+        let create_proposed_result = st.create_proposed_transactions::<Infallible, _, Infallible>(
             account.usk(),
             OvkPolicy::Sender,
             &proposal,
@@ -1866,13 +1868,14 @@ pub(crate) mod tests {
             fee_rule,
             Some(change_memo.into()),
             OrchardPoolTester::SHIELDED_PROTOCOL,
+            DustOutputPolicy::default(),
         );
-        let input_selector =
-            &GreedyInputSelector::new(change_strategy, DustOutputPolicy::default());
+        let input_selector = GreedyInputSelector::new();
 
         let proposal = st.propose_transfer(
             account.id(),
-            input_selector,
+            &input_selector,
+            &change_strategy,
             request.clone(),
             NonZeroU32::new(10).unwrap(),
         );
@@ -1885,7 +1888,8 @@ pub(crate) mod tests {
         // Verify that it's now possible to create the proposal
         let proposal = st.propose_transfer(
             account.id(),
-            input_selector,
+            &input_selector,
+            &change_strategy,
             request,
             NonZeroU32::new(10).unwrap(),
         );

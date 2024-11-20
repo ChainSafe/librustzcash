@@ -50,7 +50,9 @@ use crate::{
         WalletRead, WalletWrite,
     },
     decrypt_transaction,
-    fees::{self, DustOutputPolicy},
+    fees::{
+        standard::SingleOutputChangeStrategy, ChangeStrategy, DustOutputPolicy, StandardFeeRule,
+    },
     keys::UnifiedSpendingKey,
     proposal::{Proposal, ProposalError, Step, StepOutputIndex},
     wallet::{Note, OvkPolicy, Recipient},
@@ -62,7 +64,7 @@ use zcash_primitives::{
     transaction::{
         builder::{BuildConfig, BuildResult, Builder},
         components::{amount::NonNegativeAmount, sapling::zip212_enforcement, OutPoint},
-        fees::{zip317::FeeError as Zip317FeeError, FeeRule, StandardFeeRule},
+        fees::FeeRule,
         Transaction, TxId,
     },
 };
@@ -83,9 +85,7 @@ use {
 };
 
 pub mod input_selection;
-use input_selection::{
-    GreedyInputSelector, GreedyInputSelectorError, InputSelector, InputSelectorError,
-};
+use input_selection::{GreedyInputSelector, InputSelector, InputSelectorError};
 
 /// Scans a [`Transaction`] for any information that can be decrypted by the accounts in
 /// the wallet, and saves it to the wallet.
@@ -117,319 +117,83 @@ where
     Ok(())
 }
 
-#[allow(clippy::needless_doctest_main)]
-/// Creates a transaction or series of transactions paying the specified address from
-/// the given account, and the [`TxId`] corresponding to each newly-created transaction.
-///
-/// These transactions can be retrieved from the underlying data store using the
-/// [`WalletRead::get_transaction`] method.
-///
-/// Do not call this multiple times in parallel, or you will generate transactions that
-/// double-spend the same notes.
-///
-/// # Transaction privacy
-///
-/// `ovk_policy` specifies the desired policy for which outgoing viewing key should be
-/// able to decrypt the outputs of this transaction. This is primarily relevant to
-/// wallet recovery from backup; in particular, [`OvkPolicy::Discard`] will prevent the
-/// recipient's address, and the contents of `memo`, from ever being recovered from the
-/// block chain. (The total value sent can always be inferred by the sender from the spent
-/// notes and received change.)
-///
-/// Regardless of the specified policy, `create_spend_to_address` saves `to`, `value`, and
-/// `memo` in `db_data`. This can be deleted independently of `ovk_policy`.
-///
-/// For details on what transaction information is visible to the holder of a full or
-/// outgoing viewing key, refer to [ZIP 310].
-///
-/// [ZIP 310]: https://zips.z.cash/zip-0310
-///
-/// Parameters:
-/// * `wallet_db`: A read/write reference to the wallet database
-/// * `params`: Consensus parameters
-/// * `spend_prover`: The [`sapling::SpendProver`] to use in constructing the shielded
-///   transaction.
-/// * `output_prover`: The [`sapling::OutputProver`] to use in constructing the shielded
-///   transaction.
-/// * `usk`: The unified spending key that controls the funds that will be spent
-///   in the resulting transaction. This procedure will return an error if the
-///   USK does not correspond to an account known to the wallet.
-/// * `to`: The address to which `amount` will be paid.
-/// * `amount`: The amount to send.
-/// * `memo`: A memo to be included in the output to the recipient.
-/// * `ovk_policy`: The policy to use for constructing outgoing viewing keys that
-///   can allow the sender to view the resulting notes on the blockchain.
-/// * `min_confirmations`: The minimum number of confirmations that a previously
-///   received note must have in the blockchain in order to be considered for being
-///   spent. A value of 10 confirmations is recommended and 0-conf transactions are
-///   not supported.
-/// * `change_memo`: A memo to be included in the change output
-///
-/// # Examples
-///
-/// ```
-/// # #[cfg(all(feature = "test-dependencies", feature = "local-prover"))]
-/// # {
-/// use zcash_primitives::{
-///     consensus::{self, Network},
-///     constants::testnet::COIN_TYPE,
-///     transaction::{TxId, components::Amount},
-///     zip32::AccountId,
-/// };
-/// use zcash_proofs::prover::LocalTxProver;
-/// use zcash_client_backend::{
-///     keys::{UnifiedSpendingKey, UnifiedAddressRequest},
-///     data_api::{wallet::create_spend_to_address, error::Error, testing},
-///     wallet::OvkPolicy,
-/// };
-///
-/// # use std::convert::Infallible;
-/// # use zcash_primitives::transaction::components::amount::BalanceError;
-/// # use zcash_client_backend::{
-/// #     data_api::wallet::input_selection::GreedyInputSelectorError,
-/// # };
-/// #
-/// # fn main() {
-/// #   test();
-/// # }
-/// #
-/// # #[allow(deprecated)]
-/// # fn test() -> Result<TxId, Error<(), GreedyInputSelectorError<BalanceError, u32>, Infallible, u32>> {
-///
-/// let tx_prover = match LocalTxProver::with_default_location() {
-///     Some(tx_prover) => tx_prover,
-///     None => {
-///         panic!("Cannot locate the Zcash parameters. Please run zcash-fetch-params or fetch-params.sh to download the parameters, and then re-run the tests.");
-///     }
-/// };
-///
-/// let account = AccountId::from(0);
-/// let req = UnifiedAddressRequest::new(false, true, true);
-/// let usk = UnifiedSpendingKey::from_seed(&Network::TestNetwork, &[0; 32][..], account).unwrap();
-/// let to = usk.to_unified_full_viewing_key().default_address(req).0.into();
-///
-/// let mut db_read = testing::MockWalletDb {
-///     network: Network::TestNetwork
-/// };
-///
-/// create_spend_to_address(
-///     &mut db_read,
-///     &Network::TestNetwork,
-///     tx_prover,
-///     &usk,
-///     &to,
-///     Amount::from_u64(1).unwrap(),
-///     None,
-///     OvkPolicy::Sender,
-///     10,
-///     None
-/// )
-///
-/// # }
-/// # }
-/// ```
-///
-/// [`sapling::SpendProver`]: sapling::prover::SpendProver
-/// [`sapling::OutputProver`]: sapling::prover::OutputProver
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::type_complexity)]
-#[deprecated(
-    note = "Use `propose_transfer` and `create_proposed_transactions` instead. `create_spend_to_address` uses a fixed fee of 10000 zatoshis, which is not compliant with ZIP 317."
-)]
-pub fn create_spend_to_address<DbT, ParamsT>(
-    wallet_db: &mut DbT,
-    params: &ParamsT,
-    spend_prover: &impl SpendProver,
-    output_prover: &impl OutputProver,
-    usk: &UnifiedSpendingKey,
-    to: &Address,
-    amount: NonNegativeAmount,
-    memo: Option<MemoBytes>,
-    ovk_policy: OvkPolicy,
-    min_confirmations: NonZeroU32,
-    change_memo: Option<MemoBytes>,
-    fallback_change_pool: ShieldedProtocol,
-) -> Result<
-    NonEmpty<TxId>,
-    Error<
-        <DbT as WalletRead>::Error,
-        <DbT as WalletCommitmentTrees>::Error,
-        GreedyInputSelectorError<Zip317FeeError, DbT::NoteRef>,
-        Zip317FeeError,
-    >,
->
-where
-    ParamsT: consensus::Parameters + Clone,
-    DbT: InputSource,
-    DbT: WalletWrite<
-        Error = <DbT as InputSource>::Error,
-        AccountId = <DbT as InputSource>::AccountId,
-    >,
-    DbT: WalletCommitmentTrees,
-{
-    let account = wallet_db
-        .get_account_for_ufvk(&usk.to_unified_full_viewing_key())
-        .map_err(Error::DataSource)?
-        .ok_or(Error::KeyNotRecognized)?;
+/// Errors that may be generated in construction of proposals for shielded->shielded or
+/// shielded->transparent transfers.
+pub type ProposeTransferErrT<DbT, CommitmentTreeErrT, InputsT, ChangeT> = Error<
+    <DbT as WalletRead>::Error,
+    CommitmentTreeErrT,
+    <InputsT as InputSelector>::Error,
+    <<ChangeT as ChangeStrategy>::FeeRule as FeeRule>::Error,
+    <ChangeT as ChangeStrategy>::Error,
+    <<InputsT as InputSelector>::InputSource as InputSource>::NoteRef,
+>;
 
-    #[allow(deprecated)]
-    let proposal = propose_standard_transfer_to_address(
-        wallet_db,
-        params,
-        StandardFeeRule::PreZip313,
-        account.id(),
-        min_confirmations,
-        to,
-        amount,
-        memo,
-        change_memo,
-        fallback_change_pool,
-    )?;
+/// Errors that may be generated in construction of proposals for transparent->shielded
+/// wallet-internal transfers.
+#[cfg(feature = "transparent-inputs")]
+pub type ProposeShieldingErrT<DbT, CommitmentTreeErrT, InputsT, ChangeT> = Error<
+    <DbT as WalletRead>::Error,
+    CommitmentTreeErrT,
+    <InputsT as ShieldingSelector>::Error,
+    <<ChangeT as ChangeStrategy>::FeeRule as FeeRule>::Error,
+    <ChangeT as ChangeStrategy>::Error,
+    Infallible,
+>;
 
-    create_proposed_transactions(
-        wallet_db,
-        params,
-        spend_prover,
-        output_prover,
-        usk,
-        ovk_policy,
-        &proposal,
-    )
-}
-
-type ErrorT<DbT, InputsErrT, FeeRuleT> = Error<
+/// Errors that may be generated in combined creation and execution of transaction proposals.
+pub type CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, N> = Error<
     <DbT as WalletRead>::Error,
     <DbT as WalletCommitmentTrees>::Error,
     InputsErrT,
     <FeeRuleT as FeeRule>::Error,
+    ChangeErrT,
+    N,
 >;
 
-/// Constructs a transaction or series of transactions that send funds as specified
-/// by the `request` argument, stores them to the wallet's "sent transactions" data
-/// store, and returns the [`TxId`] for each transaction constructed.
-///
-/// The newly-created transactions can be retrieved from the underlying data store using the
-/// [`WalletRead::get_transaction`] method.
-///
-/// Do not call this multiple times in parallel, or you will generate transactions that
-/// double-spend the same notes.
-///
-/// # Transaction privacy
-///
-/// `ovk_policy` specifies the desired policy for which outgoing viewing key should be
-/// able to decrypt the outputs of this transaction. This is primarily relevant to
-/// wallet recovery from backup; in particular, [`OvkPolicy::Discard`] will prevent the
-/// recipient's address, and the contents of `memo`, from ever being recovered from the
-/// block chain. (The total value sent can always be inferred by the sender from the spent
-/// notes and received change.)
-///
-/// Regardless of the specified policy, `create_spend_to_address` saves `to`, `value`, and
-/// `memo` in `db_data`. This can be deleted independently of `ovk_policy`.
-///
-/// For details on what transaction information is visible to the holder of a full or
-/// outgoing viewing key, refer to [ZIP 310].
-///
-/// [ZIP 310]: https://zips.z.cash/zip-0310
-///
-/// Parameters:
-/// * `wallet_db`: A read/write reference to the wallet database
-/// * `params`: Consensus parameters
-/// * `spend_prover`: The [`sapling::SpendProver`] to use in constructing the shielded
-///   transaction.
-/// * `output_prover`: The [`sapling::OutputProver`] to use in constructing the shielded
-///   transaction.
-/// * `input_selector`: The [`InputSelector`] that will be used to select available
-///   inputs from the wallet database, choose change amounts and compute required
-///   transaction fees.
-/// * `usk`: The unified spending key that controls the funds that will be spent
-///   in the resulting transaction. This procedure will return an error if the
-///   USK does not correspond to an account known to the wallet.
-/// * `request`: The ZIP-321 payment request specifying the recipients and amounts
-///   for the transaction.
-/// * `ovk_policy`: The policy to use for constructing outgoing viewing keys that
-///   can allow the sender to view the resulting notes on the blockchain.
-/// * `min_confirmations`: The minimum number of confirmations that a previously
-///   received note must have in the blockchain in order to be considered for being
-///   spent. A value of 10 confirmations is recommended and 0-conf transactions are
-///   not supported.
-///
-/// [`sapling::SpendProver`]: sapling::prover::SpendProver
-/// [`sapling::OutputProver`]: sapling::prover::OutputProver
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::type_complexity)]
-#[deprecated(note = "Use `propose_transfer` and `create_proposed_transactions` instead.")]
-pub fn spend<DbT, ParamsT, InputsT>(
-    wallet_db: &mut DbT,
-    params: &ParamsT,
-    spend_prover: &impl SpendProver,
-    output_prover: &impl OutputProver,
-    input_selector: &InputsT,
-    usk: &UnifiedSpendingKey,
-    request: zip321::TransactionRequest,
-    ovk_policy: OvkPolicy,
-    min_confirmations: NonZeroU32,
-) -> Result<NonEmpty<TxId>, ErrorT<DbT, InputsT::Error, InputsT::FeeRule>>
-where
-    DbT: InputSource,
-    DbT: WalletWrite<
-        Error = <DbT as InputSource>::Error,
-        AccountId = <DbT as InputSource>::AccountId,
-    >,
-    DbT: WalletCommitmentTrees,
-    ParamsT: consensus::Parameters + Clone,
-    InputsT: InputSelector<InputSource = DbT>,
-{
-    let account = wallet_db
-        .get_account_for_ufvk(&usk.to_unified_full_viewing_key())
-        .map_err(Error::DataSource)?
-        .ok_or(Error::KeyNotRecognized)?;
+/// Errors that may be generated in the execution of proposals that may send shielded inputs.
+pub type TransferErrT<DbT, InputsT, ChangeT> = Error<
+    <DbT as WalletRead>::Error,
+    <DbT as WalletCommitmentTrees>::Error,
+    <InputsT as InputSelector>::Error,
+    <<ChangeT as ChangeStrategy>::FeeRule as FeeRule>::Error,
+    <ChangeT as ChangeStrategy>::Error,
+    <<InputsT as InputSelector>::InputSource as InputSource>::NoteRef,
+>;
 
-    let proposal = propose_transfer(
-        wallet_db,
-        params,
-        account.id(),
-        input_selector,
-        request,
-        min_confirmations,
-    )?;
-
-    create_proposed_transactions(
-        wallet_db,
-        params,
-        spend_prover,
-        output_prover,
-        usk,
-        ovk_policy,
-        &proposal,
-    )
-}
+/// Errors that may be generated in the execution of shielding proposals.
+#[cfg(feature = "transparent-inputs")]
+pub type ShieldErrT<DbT, InputsT, ChangeT> = Error<
+    <DbT as WalletRead>::Error,
+    <DbT as WalletCommitmentTrees>::Error,
+    <InputsT as ShieldingSelector>::Error,
+    <<ChangeT as ChangeStrategy>::FeeRule as FeeRule>::Error,
+    <ChangeT as ChangeStrategy>::Error,
+    Infallible,
+>;
 
 /// Select transaction inputs, compute fees, and construct a proposal for a transaction or series
 /// of transactions that can then be authorized and made ready for submission to the network with
 /// [`create_proposed_transactions`].
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-pub fn propose_transfer<DbT, ParamsT, InputsT, CommitmentTreeErrT>(
+pub fn propose_transfer<DbT, ParamsT, InputsT, ChangeT, CommitmentTreeErrT>(
     wallet_db: &mut DbT,
     params: &ParamsT,
     spend_from_account: <DbT as InputSource>::AccountId,
     input_selector: &InputsT,
+    change_strategy: &ChangeT,
     request: zip321::TransactionRequest,
     min_confirmations: NonZeroU32,
 ) -> Result<
-    Proposal<InputsT::FeeRule, <DbT as InputSource>::NoteRef>,
-    Error<
-        <DbT as WalletRead>::Error,
-        CommitmentTreeErrT,
-        InputsT::Error,
-        <InputsT::FeeRule as FeeRule>::Error,
-    >,
+    Proposal<ChangeT::FeeRule, <DbT as InputSource>::NoteRef>,
+    ProposeTransferErrT<DbT, CommitmentTreeErrT, InputsT, ChangeT>,
 >
 where
     DbT: WalletRead + InputSource<Error = <DbT as WalletRead>::Error>,
     <DbT as InputSource>::NoteRef: Copy + Eq + Ord,
     ParamsT: consensus::Parameters + Clone,
     InputsT: InputSelector<InputSource = DbT>,
+    ChangeT: ChangeStrategy<MetaSource = DbT>,
 {
     let (target_height, anchor_height) = wallet_db
         .get_target_and_anchor_heights(min_confirmations)
@@ -444,6 +208,7 @@ where
             anchor_height,
             spend_from_account,
             request,
+            change_strategy,
         )
         .map_err(Error::from)
 }
@@ -488,11 +253,11 @@ pub fn propose_standard_transfer_to_address<DbT, ParamsT, CommitmentTreeErrT>(
     fallback_change_pool: ShieldedProtocol,
 ) -> Result<
     Proposal<StandardFeeRule, DbT::NoteRef>,
-    Error<
-        <DbT as WalletRead>::Error,
+    ProposeTransferErrT<
+        DbT,
         CommitmentTreeErrT,
-        GreedyInputSelectorError<Zip317FeeError, DbT::NoteRef>,
-        Zip317FeeError,
+        GreedyInputSelector<DbT>,
+        SingleOutputChangeStrategy<DbT>,
     >,
 >
 where
@@ -517,19 +282,20 @@ where
         "It should not be possible for this to violate ZIP 321 request construction invariants.",
     );
 
-    let change_strategy = fees::standard::SingleOutputChangeStrategy::new(
+    let input_selector = GreedyInputSelector::<DbT>::new();
+    let change_strategy = SingleOutputChangeStrategy::<DbT>::new(
         fee_rule,
         change_memo,
         fallback_change_pool,
+        DustOutputPolicy::default(),
     );
-    let input_selector =
-        GreedyInputSelector::<DbT, _>::new(change_strategy, DustOutputPolicy::default());
 
     propose_transfer(
         wallet_db,
         params,
         spend_from_account,
         &input_selector,
+        &change_strategy,
         request,
         min_confirmations,
     )
@@ -540,26 +306,24 @@ where
 #[cfg(feature = "transparent-inputs")]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-pub fn propose_shielding<DbT, ParamsT, InputsT, CommitmentTreeErrT>(
+pub fn propose_shielding<DbT, ParamsT, InputsT, ChangeT, CommitmentTreeErrT>(
     wallet_db: &mut DbT,
     params: &ParamsT,
     input_selector: &InputsT,
+    change_strategy: &ChangeT,
     shielding_threshold: NonNegativeAmount,
     from_addrs: &[TransparentAddress],
+    to_account: <DbT as InputSource>::AccountId,
     min_confirmations: u32,
 ) -> Result<
-    Proposal<InputsT::FeeRule, Infallible>,
-    Error<
-        <DbT as WalletRead>::Error,
-        CommitmentTreeErrT,
-        InputsT::Error,
-        <InputsT::FeeRule as FeeRule>::Error,
-    >,
+    Proposal<ChangeT::FeeRule, Infallible>,
+    ProposeShieldingErrT<DbT, CommitmentTreeErrT, InputsT, ChangeT>,
 >
 where
     ParamsT: consensus::Parameters,
     DbT: WalletRead + InputSource<Error = <DbT as WalletRead>::Error>,
     InputsT: ShieldingSelector<InputSource = DbT>,
+    ChangeT: ChangeStrategy<MetaSource = DbT>,
 {
     let chain_tip_height = wallet_db
         .chain_height()
@@ -570,8 +334,10 @@ where
         .propose_shielding(
             params,
             wallet_db,
+            change_strategy,
             shielding_threshold,
             from_addrs,
+            to_account,
             chain_tip_height + 1,
             min_confirmations,
         )
@@ -599,7 +365,7 @@ struct StepResult<AccountId> {
 /// and therefore the required spend proofs for such notes cannot be constructed.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-pub fn create_proposed_transactions<DbT, ParamsT, InputsErrT, FeeRuleT, N>(
+pub fn create_proposed_transactions<DbT, ParamsT, InputsErrT, FeeRuleT, ChangeErrT, N>(
     wallet_db: &mut DbT,
     params: &ParamsT,
     spend_prover: &impl SpendProver,
@@ -607,7 +373,7 @@ pub fn create_proposed_transactions<DbT, ParamsT, InputsErrT, FeeRuleT, N>(
     usk: &UnifiedSpendingKey,
     ovk_policy: OvkPolicy,
     proposal: &Proposal<FeeRuleT, N>,
-) -> Result<NonEmpty<TxId>, ErrorT<DbT, InputsErrT, FeeRuleT>>
+) -> Result<NonEmpty<TxId>, CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, N>>
 where
     DbT: WalletWrite + WalletCommitmentTrees,
     ParamsT: consensus::Parameters + Clone,
@@ -691,7 +457,7 @@ where
 // `TransparentAddress` and `Outpoint`.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-fn create_proposed_transaction<DbT, ParamsT, InputsErrT, FeeRuleT, N>(
+fn create_proposed_transaction<DbT, ParamsT, InputsErrT, FeeRuleT, ChangeErrT, N>(
     wallet_db: &mut DbT,
     params: &ParamsT,
     spend_prover: &impl SpendProver,
@@ -707,7 +473,10 @@ fn create_proposed_transaction<DbT, ParamsT, InputsErrT, FeeRuleT, N>(
         StepOutput,
         (TransparentAddress, OutPoint),
     >,
-) -> Result<StepResult<<DbT as WalletRead>::AccountId>, ErrorT<DbT, InputsErrT, FeeRuleT>>
+) -> Result<
+    StepResult<<DbT as WalletRead>::AccountId>,
+    CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, N>,
+>
 where
     DbT: WalletWrite + WalletCommitmentTrees,
     ParamsT: consensus::Parameters + Clone,
@@ -749,53 +518,54 @@ where
         return Err(Error::ProposalNotSupported);
     }
 
-    let (sapling_anchor, sapling_inputs) =
-        if proposal_step.involves(PoolType::Shielded(ShieldedProtocol::Sapling)) {
-            proposal_step.shielded_inputs().map_or_else(
-                || Ok((Some(sapling::Anchor::empty_tree()), vec![])),
-                |inputs| {
-                    wallet_db.with_sapling_tree_mut::<_, _, Error<_, _, _, _>>(|sapling_tree| {
-                        let anchor = sapling_tree
-                            .root_at_checkpoint_id(&inputs.anchor_height())?
-                            .ok_or(ProposalError::AnchorNotFound(inputs.anchor_height()))?
-                            .into();
+    let (sapling_anchor, sapling_inputs) = if proposal_step
+        .involves(PoolType::Shielded(ShieldedProtocol::Sapling))
+    {
+        proposal_step.shielded_inputs().map_or_else(
+            || Ok((Some(sapling::Anchor::empty_tree()), vec![])),
+            |inputs| {
+                wallet_db.with_sapling_tree_mut::<_, _, Error<_, _, _, _, _, _>>(|sapling_tree| {
+                    let anchor = sapling_tree
+                        .root_at_checkpoint_id(&inputs.anchor_height())?
+                        .ok_or(ProposalError::AnchorNotFound(inputs.anchor_height()))?
+                        .into();
 
-                        let sapling_inputs = inputs
-                            .notes()
-                            .iter()
-                            .filter_map(|selected| match selected.note() {
-                                Note::Sapling(note) => {
-                                    let key = match selected.spending_key_scope() {
-                                        Scope::External => usk.sapling().clone(),
-                                        Scope::Internal => usk.sapling().derive_internal(),
-                                    };
+                    let sapling_inputs = inputs
+                        .notes()
+                        .iter()
+                        .filter_map(|selected| match selected.note() {
+                            Note::Sapling(note) => {
+                                let key = match selected.spending_key_scope() {
+                                    Scope::External => usk.sapling().clone(),
+                                    Scope::Internal => usk.sapling().derive_internal(),
+                                };
 
-                                    sapling_tree
-                                        .witness_at_checkpoint_id_caching(
-                                            selected.note_commitment_tree_position(),
-                                            &inputs.anchor_height(),
-                                        )
-                                        .and_then(|witness| {
-                                            witness.ok_or(ShardTreeError::Query(
-                                                QueryError::CheckpointPruned,
-                                            ))
-                                        })
-                                        .map(|merkle_path| Some((key, note, merkle_path)))
-                                        .map_err(Error::from)
-                                        .transpose()
-                                }
-                                #[cfg(feature = "orchard")]
-                                Note::Orchard(_) => None,
-                            })
-                            .collect::<Result<Vec<_>, Error<_, _, _, _>>>()?;
+                                sapling_tree
+                                    .witness_at_checkpoint_id_caching(
+                                        selected.note_commitment_tree_position(),
+                                        &inputs.anchor_height(),
+                                    )
+                                    .and_then(|witness| {
+                                        witness.ok_or(ShardTreeError::Query(
+                                            QueryError::CheckpointPruned,
+                                        ))
+                                    })
+                                    .map(|merkle_path| Some((key, note, merkle_path)))
+                                    .map_err(Error::from)
+                                    .transpose()
+                            }
+                            #[cfg(feature = "orchard")]
+                            Note::Orchard(_) => None,
+                        })
+                        .collect::<Result<Vec<_>, Error<_, _, _, _, _, _>>>()?;
 
-                        Ok((Some(anchor), sapling_inputs))
-                    })
-                },
-            )?
-        } else {
-            (None, vec![])
-        };
+                    Ok((Some(anchor), sapling_inputs))
+                })
+            },
+        )?
+    } else {
+        (None, vec![])
+    };
 
     #[cfg(feature = "orchard")]
     let (orchard_anchor, orchard_inputs) = if proposal_step
@@ -804,7 +574,7 @@ where
         proposal_step.shielded_inputs().map_or_else(
             || Ok((Some(orchard::Anchor::empty_tree()), vec![])),
             |inputs| {
-                wallet_db.with_orchard_tree_mut::<_, _, Error<_, _, _, _>>(|orchard_tree| {
+                wallet_db.with_orchard_tree_mut::<_, _, Error<_, _, _, _, _, _>>(|orchard_tree| {
                     let anchor = orchard_tree
                         .root_at_checkpoint_id(&inputs.anchor_height())?
                         .ok_or(ProposalError::AnchorNotFound(inputs.anchor_height()))?
@@ -829,7 +599,7 @@ where
                                 .transpose(),
                             Note::Sapling(_) => None,
                         })
-                        .collect::<Result<Vec<_>, Error<_, _, _, _>>>()?;
+                        .collect::<Result<Vec<_>, Error<_, _, _, _, _, _>>>()?;
 
                     Ok((Some(anchor), orchard_inputs))
                 })
@@ -872,7 +642,7 @@ where
     #[cfg(feature = "transparent-inputs")]
     let mut metadata_from_address = |addr: TransparentAddress| -> Result<
         TransparentAddressMetadata,
-        ErrorT<DbT, InputsErrT, FeeRuleT>,
+        CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, N>,
     > {
         match cache.get(&addr) {
             Some(result) => Ok(result.clone()),
@@ -898,22 +668,23 @@ where
     #[cfg(feature = "transparent-inputs")]
     let utxos_spent = {
         let mut utxos_spent: Vec<OutPoint> = vec![];
-        let add_transparent_input = |builder: &mut Builder<_, _>,
-                                     utxos_spent: &mut Vec<_>,
-                                     address_metadata: &TransparentAddressMetadata,
-                                     outpoint: OutPoint,
-                                     txout: TxOut|
-         -> Result<(), ErrorT<DbT, InputsErrT, FeeRuleT>> {
-            let secret_key = usk
-                .transparent()
-                .derive_secret_key(address_metadata.scope(), address_metadata.address_index())
-                .expect("spending key derivation should not fail");
+        let add_transparent_input =
+            |builder: &mut Builder<_, _>,
+             utxos_spent: &mut Vec<_>,
+             address_metadata: &TransparentAddressMetadata,
+             outpoint: OutPoint,
+             txout: TxOut|
+             -> Result<(), CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, N>> {
+                let secret_key = usk
+                    .transparent()
+                    .derive_secret_key(address_metadata.scope(), address_metadata.address_index())
+                    .expect("spending key derivation should not fail");
 
-            utxos_spent.push(outpoint.clone());
-            builder.add_transparent_input(secret_key, outpoint, txout)?;
+                utxos_spent.push(outpoint.clone());
+                builder.add_transparent_input(secret_key, outpoint, txout)?;
 
-            Ok(())
-        };
+                Ok(())
+            };
 
         for utxo in proposal_step.transparent_inputs() {
             add_transparent_input(
@@ -1031,7 +802,10 @@ where
         let add_sapling_output = |builder: &mut Builder<_, _>,
                                   sapling_output_meta: &mut Vec<_>,
                                   to: sapling::PaymentAddress|
-         -> Result<(), ErrorT<DbT, InputsErrT, FeeRuleT>> {
+         -> Result<
+            (),
+            CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, N>,
+        > {
             let memo = payment.memo().map_or_else(MemoBytes::empty, |m| m.clone());
             builder.add_sapling_output(sapling_external_ovk, to, payment.amount(), memo.clone())?;
             sapling_output_meta.push((
@@ -1043,50 +817,52 @@ where
         };
 
         #[cfg(feature = "orchard")]
-        let add_orchard_output = |builder: &mut Builder<_, _>,
-                                  orchard_output_meta: &mut Vec<_>,
-                                  to: orchard::Address|
-         -> Result<(), ErrorT<DbT, InputsErrT, FeeRuleT>> {
-            let memo = payment.memo().map_or_else(MemoBytes::empty, |m| m.clone());
-            builder.add_orchard_output(
-                orchard_external_ovk.clone(),
-                to,
-                payment.amount().into(),
-                memo.clone(),
-            )?;
-            orchard_output_meta.push((
-                Recipient::External(recipient_address.clone(), PoolType::ORCHARD),
-                payment.amount(),
-                Some(memo),
-            ));
-            Ok(())
-        };
+        let add_orchard_output =
+            |builder: &mut Builder<_, _>,
+             orchard_output_meta: &mut Vec<_>,
+             to: orchard::Address|
+             -> Result<(), CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, N>> {
+                let memo = payment.memo().map_or_else(MemoBytes::empty, |m| m.clone());
+                builder.add_orchard_output(
+                    orchard_external_ovk.clone(),
+                    to,
+                    payment.amount().into(),
+                    memo.clone(),
+                )?;
+                orchard_output_meta.push((
+                    Recipient::External(recipient_address.clone(), PoolType::ORCHARD),
+                    payment.amount(),
+                    Some(memo),
+                ));
+                Ok(())
+            };
 
-        let add_transparent_output = |builder: &mut Builder<_, _>,
-                                      transparent_output_meta: &mut Vec<_>,
-                                      to: TransparentAddress|
-         -> Result<(), ErrorT<DbT, InputsErrT, FeeRuleT>> {
-            // Always reject sending to one of our known ephemeral addresses.
-            #[cfg(feature = "transparent-inputs")]
-            if wallet_db
-                .find_account_for_ephemeral_address(&to)
-                .map_err(Error::DataSource)?
-                .is_some()
-            {
-                return Err(Error::PaysEphemeralTransparentAddress(to.encode(params)));
-            }
-            if payment.memo().is_some() {
-                return Err(Error::MemoForbidden);
-            }
-            builder.add_transparent_output(&to, payment.amount())?;
-            transparent_output_meta.push((
-                Recipient::External(recipient_address.clone(), PoolType::TRANSPARENT),
-                to,
-                payment.amount(),
-                StepOutputIndex::Payment(payment_index),
-            ));
-            Ok(())
-        };
+        let add_transparent_output =
+            |builder: &mut Builder<_, _>,
+             transparent_output_meta: &mut Vec<_>,
+             to: TransparentAddress|
+             -> Result<(), CreateErrT<DbT, InputsErrT, FeeRuleT, ChangeErrT, N>> {
+                // Always reject sending to one of our known ephemeral addresses.
+                #[cfg(feature = "transparent-inputs")]
+                if wallet_db
+                    .find_account_for_ephemeral_address(&to)
+                    .map_err(Error::DataSource)?
+                    .is_some()
+                {
+                    return Err(Error::PaysEphemeralTransparentAddress(to.encode(params)));
+                }
+                if payment.memo().is_some() {
+                    return Err(Error::MemoForbidden);
+                }
+                builder.add_transparent_output(&to, payment.amount())?;
+                transparent_output_meta.push((
+                    Recipient::External(recipient_address.clone(), PoolType::TRANSPARENT),
+                    to,
+                    payment.amount(),
+                    StepOutputIndex::Payment(payment_index),
+                ));
+                Ok(())
+            };
 
         match recipient_address
             .clone()
@@ -1371,36 +1147,33 @@ where
 #[cfg(feature = "transparent-inputs")]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-pub fn shield_transparent_funds<DbT, ParamsT, InputsT>(
+pub fn shield_transparent_funds<DbT, ParamsT, InputsT, ChangeT>(
     wallet_db: &mut DbT,
     params: &ParamsT,
     spend_prover: &impl SpendProver,
     output_prover: &impl OutputProver,
     input_selector: &InputsT,
+    change_strategy: &ChangeT,
     shielding_threshold: NonNegativeAmount,
     usk: &UnifiedSpendingKey,
     from_addrs: &[TransparentAddress],
+    to_account: <DbT as InputSource>::AccountId,
     min_confirmations: u32,
-) -> Result<
-    NonEmpty<TxId>,
-    Error<
-        <DbT as WalletRead>::Error,
-        <DbT as WalletCommitmentTrees>::Error,
-        InputsT::Error,
-        <InputsT::FeeRule as FeeRule>::Error,
-    >,
->
+) -> Result<NonEmpty<TxId>, ShieldErrT<DbT, InputsT, ChangeT>>
 where
     ParamsT: consensus::Parameters,
     DbT: WalletWrite + WalletCommitmentTrees + InputSource<Error = <DbT as WalletRead>::Error>,
     InputsT: ShieldingSelector<InputSource = DbT>,
+    ChangeT: ChangeStrategy<MetaSource = DbT>,
 {
     let proposal = propose_shielding(
         wallet_db,
         params,
         input_selector,
+        change_strategy,
         shielding_threshold,
         from_addrs,
+        to_account,
         min_confirmations,
     )?;
 

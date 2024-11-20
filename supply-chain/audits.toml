@@ -173,6 +173,16 @@ criteria = "safe-to-deploy"
 delta = "0.14.2 -> 0.14.5"
 notes = "I did not thoroughly check the safety argument for fold_impl, but it at least seems to be well documented."
 
+[[audits.home]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.5.5 -> 0.5.9"
+notes = """
+`unsafe` changes are to switch Windows logic from `SHGetFolderPathW` to
+`SHGetKnownFolderPath`. I checked that the parameters and return values were
+being handled correctly per the Windows documentation.
+"""
+
 [[audits.http-body]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
@@ -270,6 +280,12 @@ delta = "0.12.2 -> 0.12.3"
 who = "Daira-Emma Hopwood <daira@jacaranda.org>"
 criteria = "safe-to-run"
 delta = "0.9.9 -> 0.9.10"
+
+[[audits.pczt]]
+who = "Kris Nuttycombe <kris@nutty.land>"
+criteria = "safe-to-deploy"
+version = "0.0.0"
+notes = "Initial empty crate release."
 
 [[audits.pin-project-internal]]
 who = "Daira-Emma Hopwood <daira@jacaranda.org>"
@@ -566,6 +582,11 @@ criteria = "safe-to-deploy"
 delta = "0.25.2 -> 0.25.4"
 notes = "I have not checked consistency with the Mozilla IncludedCACertificateReportPEMCSV report."
 
+[[audits.which]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "6.0.1 -> 6.0.3"
+
 [[audits.winapi-util]]
 who = "Daira-Emma Hopwood <daira@jacaranda.org>"
 criteria = "safe-to-run"
@@ -647,14 +668,14 @@ end = "2025-04-22"
 
 [[trusted.incrementalmerkletree]]
 criteria = "safe-to-deploy"
-user-id = 6289 # Jack Grigg (str4d)
-start = "2021-12-17"
+user-id = 1244 # ebfull
+start = "2021-06-24"
 end = "2025-04-22"
 
 [[trusted.incrementalmerkletree]]
 criteria = "safe-to-deploy"
-user-id = 1244 # ebfull
-start = "2021-06-24"
+user-id = 6289 # Jack Grigg (str4d)
+start = "2021-12-17"
 end = "2025-04-22"
 
 [[trusted.incrementalmerkletree]]
@@ -670,10 +691,10 @@ start = "2024-09-25"
 end = "2025-10-02"
 
 [[trusted.orchard]]
-criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
-user-id = 6289 # Jack Grigg (str4d)
-start = "2021-01-07"
-end = "2025-04-22"
+criteria = "safe-to-deploy"
+user-id = 169181 # Kris Nuttycombe (nuttycom)
+start = "2024-08-12"
+end = "2025-08-12"
 
 [[trusted.orchard]]
 criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
@@ -682,13 +703,19 @@ start = "2022-10-19"
 end = "2025-04-22"
 
 [[trusted.orchard]]
-criteria = "safe-to-deploy"
+criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
+user-id = 6289 # Jack Grigg (str4d)
+start = "2021-01-07"
+end = "2025-04-22"
+
+[[trusted.orchard]]
+criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
 user-id = 169181 # Kris Nuttycombe (nuttycom)
 start = "2024-08-12"
 end = "2025-08-12"
 
-[[trusted.orchard]]
-criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
+[[trusted.sapling-crypto]]
+criteria = "safe-to-deploy"
 user-id = 169181 # Kris Nuttycombe (nuttycom)
 start = "2024-08-12"
 end = "2025-08-12"
@@ -700,16 +727,22 @@ start = "2024-01-26"
 end = "2025-04-22"
 
 [[trusted.sapling-crypto]]
-criteria = "safe-to-deploy"
-user-id = 169181 # Kris Nuttycombe (nuttycom)
-start = "2024-08-12"
-end = "2025-08-12"
-
-[[trusted.sapling-crypto]]
 criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
 user-id = 169181 # Kris Nuttycombe (nuttycom)
 start = "2024-08-12"
 end = "2025-08-12"
+
+[[trusted.schemerz]]
+criteria = "safe-to-deploy"
+user-id = 6289 # Jack Grigg (str4d)
+start = "2024-10-15"
+end = "2025-10-15"
+
+[[trusted.schemerz-rusqlite]]
+criteria = "safe-to-deploy"
+user-id = 6289 # Jack Grigg (str4d)
+start = "2024-10-15"
+end = "2025-10-15"
 
 [[trusted.shardtree]]
 criteria = "safe-to-deploy"
@@ -809,6 +842,12 @@ end = "2025-04-22"
 
 [[trusted.zcash_client_sqlite]]
 criteria = "safe-to-deploy"
+user-id = 6289 # Jack Grigg (str4d)
+start = "2020-06-25"
+end = "2025-10-22"
+
+[[trusted.zcash_client_sqlite]]
+criteria = "safe-to-deploy"
 user-id = 169181 # Kris Nuttycombe (nuttycom)
 start = "2024-03-25"
 end = "2025-04-22"
@@ -850,10 +889,10 @@ start = "2023-03-22"
 end = "2025-04-22"
 
 [[trusted.zcash_primitives]]
-criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
-user-id = 6289 # Jack Grigg (str4d)
-start = "2021-03-26"
-end = "2025-04-22"
+criteria = "safe-to-deploy"
+user-id = 169181 # Kris Nuttycombe (nuttycom)
+start = "2024-08-20"
+end = "2025-08-26"
 
 [[trusted.zcash_primitives]]
 criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
@@ -862,12 +901,6 @@ start = "2019-10-08"
 end = "2025-04-22"
 
 [[trusted.zcash_primitives]]
-criteria = "safe-to-deploy"
-user-id = 169181 # Kris Nuttycombe (nuttycom)
-start = "2024-08-20"
-end = "2025-08-26"
-
-[[trusted.zcash_proofs]]
 criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
 user-id = 6289 # Jack Grigg (str4d)
 start = "2021-03-26"
@@ -878,6 +911,12 @@ criteria = "safe-to-deploy"
 user-id = 169181 # Kris Nuttycombe (nuttycom)
 start = "2024-08-20"
 end = "2025-08-26"
+
+[[trusted.zcash_proofs]]
+criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
+user-id = 6289 # Jack Grigg (str4d)
+start = "2021-03-26"
+end = "2025-04-22"
 
 [[trusted.zcash_protocol]]
 criteria = "safe-to-deploy"

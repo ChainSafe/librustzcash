@@ -50,8 +50,8 @@ use zcash_client_backend::{
         self,
         chain::{BlockSource, ChainState, CommitmentTreeRoot},
         scanning::{ScanPriority, ScanRange},
-        Account, AccountBirthday, AccountPurpose, AccountSource, BlockMetadata,
-        DecryptedTransaction, InputSource, NullifierQuery, ScannedBlock, SeedRelevance,
+        Account, AccountBirthday, AccountMeta, AccountPurpose, AccountSource, BlockMetadata,
+        DecryptedTransaction, InputSource, NoteFilter, NullifierQuery, ScannedBlock, SeedRelevance,
         SentTransaction, SpendableNotes, TransactionDataRequest, WalletCommitmentTrees, WalletRead,
         WalletSummary, WalletWrite, SAPLING_SHARD_HEIGHT,
     },
@@ -128,7 +128,8 @@ pub mod error;
 pub mod wallet;
 use wallet::{
     commitment_tree::{self, put_shard_roots},
-    SubtreeScanProgress,
+    common::spendable_notes_meta,
+    SubtreeProgressEstimator,
 };
 
 #[cfg(test)]
@@ -364,6 +365,40 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> InputSource for 
             min_confirmations,
         )
     }
+
+    /// Returns metadata for the spendable notes in the wallet.
+    fn get_account_metadata(
+        &self,
+        account_id: Self::AccountId,
+        selector: &NoteFilter,
+        exclude: &[Self::NoteRef],
+    ) -> Result<AccountMeta, Self::Error> {
+        let chain_tip_height = wallet::chain_tip_height(self.conn.borrow())?
+            .ok_or(SqliteClientError::ChainHeightUnknown)?;
+
+        let sapling_pool_meta = spendable_notes_meta(
+            self.conn.borrow(),
+            ShieldedProtocol::Sapling,
+            chain_tip_height,
+            account_id,
+            selector,
+            exclude,
+        )?;
+
+        #[cfg(feature = "orchard")]
+        let orchard_pool_meta = spendable_notes_meta(
+            self.conn.borrow(),
+            ShieldedProtocol::Orchard,
+            chain_tip_height,
+            account_id,
+            selector,
+            exclude,
+        )?;
+        #[cfg(not(feature = "orchard"))]
+        let orchard_pool_meta = None;
+
+        Ok(AccountMeta::new(sapling_pool_meta, orchard_pool_meta))
+    }
 }
 
 impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> WalletRead for WalletDb<C, P> {
@@ -499,7 +534,7 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> WalletRead for W
             &self.conn.borrow().unchecked_transaction()?,
             &self.params,
             min_confirmations,
-            &SubtreeScanProgress,
+            &SubtreeProgressEstimator,
         )
     }
 
@@ -644,10 +679,10 @@ impl<C: Borrow<rusqlite::Connection>, P: consensus::Parameters> WalletRead for W
         let iter = wallet::transaction_data_requests(self.conn.borrow())?.into_iter();
 
         #[cfg(feature = "transparent-inputs")]
-        let iter = iter.chain(
-            wallet::transparent::transaction_data_requests(self.conn.borrow(), &self.params)?
-                .into_iter(),
-        );
+        let iter = iter.chain(wallet::transparent::transaction_data_requests(
+            self.conn.borrow(),
+            &self.params,
+        )?);
 
         Ok(iter.collect())
     }
@@ -1892,7 +1927,7 @@ mod tests {
     #[test]
     fn validate_seed() {
         let st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_account_from_sapling_activation(BlockHash([0; 32]))
             .build();
         let account = st.test_account().unwrap();
@@ -1922,7 +1957,7 @@ mod tests {
     #[test]
     pub(crate) fn get_next_available_address() {
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_account_from_sapling_activation(BlockHash([0; 32]))
             .build();
         let account = st.test_account().cloned().unwrap();
@@ -1944,7 +1979,7 @@ mod tests {
     #[test]
     pub(crate) fn import_account_hd_0() {
         let st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_account_from_sapling_activation(BlockHash([0; 32]))
             .set_account_index(zip32::AccountId::ZERO)
             .build();
@@ -1956,7 +1991,7 @@ mod tests {
     #[test]
     pub(crate) fn import_account_hd_1_then_2() {
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .build();
 
         let birthday = AccountBirthday::from_parts(
@@ -2047,7 +2082,7 @@ mod tests {
     #[test]
     pub(crate) fn import_account_hd_1_then_conflicts() {
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .build();
 
         let birthday = AccountBirthday::from_parts(
@@ -2079,7 +2114,7 @@ mod tests {
     #[test]
     pub(crate) fn import_account_ufvk_then_conflicts() {
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .build();
 
         let birthday = AccountBirthday::from_parts(
@@ -2124,7 +2159,7 @@ mod tests {
     #[test]
     pub(crate) fn create_account_then_conflicts() {
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .build();
 
         let birthday = AccountBirthday::from_parts(
@@ -2157,7 +2192,7 @@ mod tests {
 
         use crate::testing::BlockCache;
         let st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_block_cache(BlockCache::new())
             .with_account_from_sapling_activation(BlockHash([0; 32]))
             .build();
@@ -2190,7 +2225,7 @@ mod tests {
         use crate::testing::FsBlockCache;
 
         let mut st = TestBuilder::new()
-            .with_data_store_factory(TestDbFactory)
+            .with_data_store_factory(TestDbFactory::default())
             .with_block_cache(FsBlockCache::new())
             .build();
 
