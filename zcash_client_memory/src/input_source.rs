@@ -1,16 +1,15 @@
 use zcash_client_backend::data_api::{
     AccountMeta, InputSource, NoteFilter, PoolMeta, TransactionStatus, WalletRead,
 };
-use zcash_client_backend::wallet::WalletTransparentOutput;
 use zcash_primitives::{
     consensus::{self, BlockHeight},
-    legacy::TransparentAddress,
     transaction::components::OutPoint,
 };
-use zcash_protocol::{
-    value::Zatoshis,
-    ShieldedProtocol,
-    ShieldedProtocol::{Orchard, Sapling},
+use zcash_protocol::{value::Zatoshis, ShieldedProtocol, ShieldedProtocol::Sapling};
+#[cfg(feature = "transparent-inputs")]
+use {
+    zcash_client_backend::wallet::WalletTransparentOutput,
+    zcash_primitives::legacy::TransparentAddress,
 };
 
 use crate::{error::Error, to_spendable_notes, AccountId, MemoryWalletDb, NoteId};
@@ -81,11 +80,12 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
         };
 
         #[cfg(feature = "orchard")]
-        let orchard_eligible_notes = if sources.contains(&Orchard) {
+        let orchard_eligible_notes = if sources.contains(&zcash_protocol::ShieldedProtocol::Orchard)
+        {
             self.select_spendable_notes_from_pool(
                 account,
                 target_value,
-                &Orchard,
+                &zcash_protocol::ShieldedProtocol::Orchard,
                 anchor_height,
                 exclude,
             )?
@@ -313,6 +313,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         Ok(Some(PoolMeta::new(count, total)))
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn matches_note_filter(
         &self,
         note: &crate::ReceivedNote,

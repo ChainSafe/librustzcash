@@ -63,7 +63,7 @@ impl TransactionEntry {
     }
 
     pub(crate) fn raw(&self) -> Option<&[u8]> {
-        self.raw.as_ref().map(|v| v.as_slice())
+        self.raw.as_deref()
     }
 
     pub(crate) fn is_mined_or_unexpired_at(&self, height: BlockHeight) -> bool {
@@ -189,8 +189,7 @@ impl TransactionTable {
     pub(crate) fn get_tx_raw(&self, txid: &TxId) -> Option<&[u8]> {
         self.0
             .get(txid)
-            .map(|entry| entry.raw.as_ref().map(|v| v.as_slice()))
-            .flatten()
+            .and_then(|entry| entry.raw.as_deref())
     }
 
     pub(crate) fn unmine_transactions_greater_than(&mut self, height: BlockHeight) {

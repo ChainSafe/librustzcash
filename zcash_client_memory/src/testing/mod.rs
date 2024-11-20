@@ -1,13 +1,15 @@
 use std::convert::Infallible;
 
 use shardtree::store::ShardStore;
+#[cfg(feature = "transparent-inputs")]
+use zcash_client_backend::{data_api::InputSource, wallet::WalletTransparentOutput};
 use zcash_client_backend::{
     data_api::{
         testing::{DataStoreFactory, Reset, TestCache, TestState},
-        InputSource, OutputOfSentTx, WalletRead, WalletTest,
+        OutputOfSentTx, WalletRead, WalletTest,
     },
     proto::compact_formats::CompactBlock,
-    wallet::{Note, NoteId, ReceivedNote, Recipient, WalletTransparentOutput},
+    wallet::{Note, NoteId, ReceivedNote, Recipient},
 };
 use zcash_keys::address::Address;
 use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
@@ -49,10 +51,7 @@ impl TestCache for MemBlockCache {
     }
 
     fn insert(&mut self, cb: &CompactBlock) -> Self::InsertResult {
-        self.0
-            .write()
-            .unwrap()
-            .insert(cb.height().into(), cb.clone());
+        self.0.write().unwrap().insert(cb.height(), cb.clone());
     }
 
     fn truncate_to_height(&mut self, height: BlockHeight) {
@@ -78,8 +77,7 @@ where
 {
     #[allow(clippy::type_complexity)]
     fn get_sent_outputs(&self, txid: &TxId) -> Result<Vec<OutputOfSentTx>, Error> {
-        Ok(self
-            .sent_notes
+        self.sent_notes
             .iter()
             .filter(|(note_id, _)| note_id.txid() == txid)
             .map(|(_, note)| match note.to.clone() {
@@ -123,7 +121,7 @@ where
                     ephemeral_address,
                 ))
             })
-            .collect::<Result<_, Error>>()?)
+            .collect::<Result<_, Error>>()
     }
 
     /// Fetches the transparent output corresponding to the provided `outpoint`."]
@@ -301,7 +299,7 @@ where
                 self.sapling_tree
                     .store()
                     .for_each_checkpoint(usize::MAX, |id, cp| {
-                        checkpoints.push((id.clone(), cp.position()));
+                        checkpoints.push((*id, cp.position()));
                         Ok(())
                     })?;
             }
@@ -314,6 +312,8 @@ where
                         Ok(())
                     })?;
             }
+            #[cfg(not(feature = "orchard"))]
+            ShieldedProtocol::Orchard => {}
         }
 
         checkpoints.sort_by(|(a, _), (b, _)| a.cmp(b));

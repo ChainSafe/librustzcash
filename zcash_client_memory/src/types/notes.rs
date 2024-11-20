@@ -234,22 +234,24 @@ pub(crate) fn to_spendable_notes(
     let sapling = sapling_received_notes
         .iter()
         .map(|note| {
-            if let Note::Sapling(inner) = &note.note {
-                Ok(zcash_client_backend::wallet::ReceivedNote::from_parts(
-                    note.note_id,
-                    note.txid(),
-                    note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
-                    inner.clone(),
-                    note.recipient_key_scope
-                        .ok_or(Error::Missing("recipient key scope".into()))?,
-                    note.commitment_tree_position
-                        .ok_or(Error::Missing("commitment tree position".into()))?,
-                ))
-            } else {
-                Err(Error::Other("Note is not a sapling note".to_owned()))
+            match &note.note {
+                Note::Sapling(inner) => {
+                    Ok(zcash_client_backend::wallet::ReceivedNote::from_parts(
+                        note.note_id,
+                        note.txid(),
+                        note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
+                        inner.clone(),
+                        note.recipient_key_scope
+                            .ok_or(Error::Missing("recipient key scope".into()))?,
+                        note.commitment_tree_position
+                            .ok_or(Error::Missing("commitment tree position".into()))?,
+                    ))
+                }
+                #[cfg(feature = "orchard")]
+                _ => return Err(Error::Other("Note is not a sapling note".to_owned())),
             }
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, Error>>()?;
 
     #[cfg(feature = "orchard")]
     let orchard = orchard_received_notes
@@ -293,7 +295,7 @@ impl From<NoteId> for SentNoteId {
 
 impl From<&NoteId> for SentNoteId {
     fn from(note_id: &NoteId) -> Self {
-        SentNoteId::Shielded(note_id.clone())
+        SentNoteId::Shielded(*note_id)
     }
 }
 

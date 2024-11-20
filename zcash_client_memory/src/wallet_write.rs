@@ -7,7 +7,9 @@ use incrementalmerkletree::{Marking, Position, Retention};
 use rayon::prelude::*;
 use secrecy::ExposeSecret;
 use secrecy::SecretVec;
-use shardtree::{error::ShardTreeError, store::ShardStore};
+#[cfg(feature = "orchard")]
+use shardtree::error::ShardTreeError;
+use shardtree::store::ShardStore;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
@@ -695,8 +697,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 if let Some(mined_height) = self
                     .tx_table
                     .get(&txo.transaction_id)
-                    .map(|tx| tx.mined_height())
-                    .flatten()
+                    .and_then(|tx| tx.mined_height())
                 {
                     if mined_height <= truncation_height {
                         txo.max_observed_unspent_height = Some(truncation_height)

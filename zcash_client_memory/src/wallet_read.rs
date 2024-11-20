@@ -28,15 +28,14 @@ use zcash_primitives::{
 use zcash_protocol::{
     consensus::{self, BranchId},
     memo::Memo,
-    value::Zatoshis,
     PoolType,
 };
 use zip32::fingerprint::SeedFingerprint;
-use zip32::Scope;
+
 #[cfg(feature = "transparent-inputs")]
 use {
     zcash_client_backend::wallet::TransparentAddressMetadata,
-    zcash_primitives::legacy::TransparentAddress,
+    zcash_primitives::legacy::TransparentAddress, zcash_protocol::value::Zatoshis,
 };
 
 use crate::{error::Error, MemoryWalletBlock};
@@ -650,7 +649,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                         zcash_primitives::legacy::keys::NonHardenedChildIndex::from_index(
                             (*diversifier_index).try_into().unwrap(),
                         )
-                        .map(|i| TransparentAddressMetadata::new(Scope::External.into(), i));
+                        .map(|i| TransparentAddressMetadata::new(zip32::Scope::External.into(), i));
                     (ta.clone(), metadata)
                 })
             })

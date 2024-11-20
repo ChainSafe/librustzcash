@@ -21,8 +21,7 @@ impl MemBlockCache {
         self.0
             .read()
             .unwrap()
-            .get(&block_height)
-            .map(CompactBlock::clone)
+            .get(&block_height).cloned()
     }
 }
 

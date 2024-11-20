@@ -20,6 +20,8 @@ use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},
     ShardTree,
 };
+#[cfg(feature = "transparent-inputs")]
+use zcash_client_backend::wallet::WalletTransparentOutput;
 #[cfg(feature = "orchard")]
 use zcash_client_backend::{data_api::ORCHARD_SHARD_HEIGHT, wallet::WalletOrchardOutput};
 use zcash_client_backend::{
@@ -28,7 +30,7 @@ use zcash_client_backend::{
         Account as _, AccountBirthday, AccountPurpose, AccountSource, InputSource, Ratio,
         TransactionStatus, WalletRead, SAPLING_SHARD_HEIGHT,
     },
-    wallet::{NoteId, WalletSaplingOutput, WalletTransparentOutput},
+    wallet::{NoteId, WalletSaplingOutput},
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{
@@ -900,7 +902,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                     .iter()
                     .any(|(_, unified_address)| unified_address.transparent() == Some(address))
             })
-            .map(|(id, _)| id.clone()))
+            .map(|(id, _)| *id))
     }
 
     pub(crate) fn mark_transparent_output_spent(
