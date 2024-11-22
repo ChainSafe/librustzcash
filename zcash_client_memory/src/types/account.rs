@@ -11,13 +11,27 @@ use zip32::DiversifierIndex;
 use crate::error::Error;
 use crate::serialization::*;
 
-use zcash_client_backend::data_api::AccountBirthday;
+use crate::types::TransactionTable;
+use zcash_address::ZcashAddress;
+use zcash_client_backend::data_api::{AccountBirthday, GAP_LIMIT};
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{Account as _, AccountPurpose, AccountSource},
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey},
     wallet::NoteId,
 };
+use zcash_keys::address::Receiver;
+use zcash_primitives::legacy::TransparentAddress;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::{Network, NetworkType};
+#[cfg(feature = "transparent-inputs")]
+use {
+    zcash_client_backend::wallet::TransparentAddressMetadata,
+    zcash_primitives::legacy::keys::{
+        AccountPubKey, EphemeralIvk, IncomingViewingKey, NonHardenedChildIndex, TransparentKeyScope,
+    },
+};
+
 /// Internal representation of ID type for accounts. Will be unique for each account.
 #[derive(
     Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord, Serialize, Deserialize,
@@ -93,6 +107,68 @@ impl Accounts {
     pub(crate) fn account_ids(&self) -> impl Iterator<Item = &AccountId> {
         self.accounts.keys()
     }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub(crate) fn find_account_for_transparent_address(
+        &self,
+        address: &TransparentAddress,
+    ) -> Result<Option<AccountId>, Error> {
+        // Look for transparent receivers generated as part of a Unified Address
+        if let Some(id) = self
+            .accounts
+            .iter()
+            .find(|(_, account)| {
+                account
+                    .addresses()
+                    .iter()
+                    .any(|(_, unified_address)| unified_address.transparent() == Some(address))
+            })
+            .map(|(id, _)| id.clone())
+        {
+            Ok(Some(id))
+        } else {
+            // then look at ephemeral addresses
+            if let Some(id) = self.find_account_for_ephemeral_address(address)? {
+                Ok(Some(id))
+            } else {
+                for (account_id, account) in self.accounts.iter() {
+                    if let Some(_) = account.get_legacy_transparent_address()? {
+                        return Ok(Some(account_id.clone()));
+                    }
+                }
+                Ok(None)
+            }
+        }
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub(crate) fn find_account_for_ephemeral_address(
+        &self,
+        address: &TransparentAddress,
+    ) -> Result<Option<AccountId>, Error> {
+        for (account_id, account) in self.accounts.iter() {
+            let contains = account
+                .ephemeral_addresses()?
+                .iter()
+                .any(|(eph_addr, _)| eph_addr == address);
+            if contains {
+                return Ok(Some(*account_id));
+            }
+        }
+        Ok(None)
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub(crate) fn mark_ephemeral_address_as_seen(
+        &mut self,
+        address: &TransparentAddress,
+        tx_id: TxId,
+    ) -> Result<(), Error> {
+        for (_, account) in self.accounts.iter_mut() {
+            account.mark_ephemeral_address_as_seen(address, tx_id)?
+        }
+        Ok(())
+    }
 }
 
 impl Deref for Accounts {
@@ -106,6 +182,28 @@ impl Deref for Accounts {
 impl DerefMut for Accounts {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.accounts
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct EphemeralAddress {
+    pub(crate) address: TransparentAddress,
+    // Used implies seen
+    pub(crate) used: Option<TxId>,
+    pub(crate) seen: Option<TxId>,
+}
+
+impl EphemeralAddress {
+    fn mark_used(&mut self, tx: TxId) {
+        // We update both `used_in_tx` and `seen_in_tx` here, because a used address has
+        // necessarily been seen in a transaction. We will not treat this as extending the
+        // range of addresses that are safe to reserve unless and until the transaction is
+        // observed as mined.
+        self.used.replace(tx);
+        self.seen.replace(tx);
+    }
+    fn mark_seen(&mut self, tx: TxId) -> Option<TxId> {
+        self.seen.replace(tx)
     }
 }
 
@@ -133,6 +231,9 @@ pub struct Account {
     )]
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
 
+    #[cfg(feature = "transparent-inputs")]
+    pub(crate) ephemeral_addresses: BTreeMap<u32, EphemeralAddress>, // NonHardenedChildIndex (< 1 << 31)
+
     #[serde_as(as = "BTreeSet<NoteIdDef>")]
     _notes: BTreeSet<NoteId>,
 }
@@ -150,6 +251,8 @@ impl Account {
             kind,
             viewing_key,
             birthday,
+            #[cfg(feature = "transparent-inputs")]
+            ephemeral_addresses: BTreeMap::new(),
             _purpose: purpose,
             addresses: BTreeMap::new(),
             _notes: BTreeSet::new(),
@@ -166,12 +269,25 @@ impl Account {
             })?;
         let (ua, diversifier_index) = acc.default_address(ua_request)?;
         acc.addresses.insert(diversifier_index, ua);
-
+        #[cfg(feature = "transparent-inputs")]
+        acc.reserve_until(0)?;
         Ok(acc)
     }
 
     pub fn addresses(&self) -> &BTreeMap<DiversifierIndex, UnifiedAddress> {
         &self.addresses
+    }
+
+    pub fn select_receiving_address(
+        &self,
+        network: NetworkType,
+        receiver: &Receiver,
+    ) -> Result<Option<ZcashAddress>, Error> {
+        Ok(self
+            .addresses
+            .iter()
+            .map(|(_, ua)| ua.to_address(network))
+            .find(|addr| receiver.corresponds(addr)))
     }
 
     /// Returns the default Unified Address for the account,
@@ -230,6 +346,155 @@ impl Account {
 
     pub(crate) fn account_id(&self) -> AccountId {
         self.account_id
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub(crate) fn get_legacy_transparent_address(
+        &self,
+    ) -> Result<Option<(TransparentAddress, NonHardenedChildIndex)>, Error> {
+        Ok(self
+            .uivk()
+            .transparent()
+            .as_ref()
+            .map(|tivk| tivk.default_address()))
+    }
+}
+#[cfg(feature = "transparent-inputs")]
+impl Account {
+    pub fn ephemeral_addresses(
+        &self,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Error> {
+        Ok(self
+            .ephemeral_addresses
+            .iter()
+            .map(|(idx, addr)| {
+                (
+                    addr.address.clone(),
+                    TransparentAddressMetadata::new(
+                        TransparentKeyScope::EPHEMERAL,
+                        NonHardenedChildIndex::from_index(*idx).unwrap(),
+                    ),
+                )
+            })
+            .collect())
+    }
+    pub fn ephemeral_ivk(&self) -> Result<Option<EphemeralIvk>, Error> {
+        self.viewing_key
+            .transparent()
+            .map(AccountPubKey::derive_ephemeral_ivk)
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub fn first_unstored_index(&self) -> Result<u32, Error> {
+        if let Some((idx, _)) = self.ephemeral_addresses.last_key_value() {
+            if *idx >= (1 << 31) + GAP_LIMIT {
+                unreachable!("violates constraint index_range_and_address_nullity")
+            } else {
+                Ok(idx.checked_add(1).unwrap())
+            }
+        } else {
+            Ok(0)
+        }
+    }
+
+    pub fn first_unreserved_index(&self) -> Result<u32, Error> {
+        self.first_unstored_index()?
+            .checked_sub(GAP_LIMIT)
+            .ok_or(Error::CorruptedData(
+                "ephemeral_addresses corrupted".to_owned(),
+            ))
+    }
+
+    pub fn reserve_until(
+        &mut self,
+        next_to_reserve: u32,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Error> {
+        if let Some(ephemeral_ivk) = self.ephemeral_ivk()? {
+            let first_unstored = self.first_unstored_index()?;
+            let range_to_store = first_unstored..(next_to_reserve.checked_add(GAP_LIMIT).unwrap());
+            if range_to_store.is_empty() {
+                return Ok(Vec::new());
+            }
+            return range_to_store
+                .map(|raw_index| {
+                    NonHardenedChildIndex::from_index(raw_index)
+                        .map(|address_index| {
+                            ephemeral_ivk
+                                .derive_ephemeral_address(address_index)
+                                .map(|addr| {
+                                    self.ephemeral_addresses.insert(
+                                        raw_index,
+                                        EphemeralAddress {
+                                            address: addr,
+                                            seen: None,
+                                            used: None,
+                                        },
+                                    );
+                                    (
+                                        addr,
+                                        TransparentAddressMetadata::new(
+                                            TransparentKeyScope::EPHEMERAL,
+                                            address_index,
+                                        ),
+                                    )
+                                })
+                        })
+                        .unwrap()
+                        .map_err(Into::into)
+                })
+                .collect::<Result<Vec<_>, _>>();
+        }
+        Ok(Vec::new())
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub fn mark_ephemeral_address_as_used(
+        &mut self,
+        address: &TransparentAddress,
+        tx_id: TxId,
+    ) -> Result<(), Error> {
+        // TODO: ephemeral_address_reuse_check
+        for (idx, addr) in self.ephemeral_addresses.iter_mut() {
+            if addr.address == *address {
+                addr.mark_used(tx_id);
+
+                // Maintain the invariant that the last `GAP_LIMIT` addresses are used and unseen.
+                let next_to_reserve = idx.checked_add(1).expect("ensured by constraint");
+                self.reserve_until(next_to_reserve)?;
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "transparent-inputs")]
+    pub fn mark_ephemeral_address_as_seen(
+        &mut self,
+        // txns: &TransactionTable,
+        address: &TransparentAddress,
+        tx_id: TxId,
+    ) -> Result<(), Error> {
+        for (idx, addr) in self.ephemeral_addresses.iter_mut() {
+            if addr.address == *address {
+                // TODO: this
+                // Figure out which transaction was mined earlier: `tx_ref`, or any existing
+                // tx referenced by `seen_in_tx` for the given address. Prefer the existing
+                // reference in case of a tie or if both transactions are unmined.
+                // This slightly reduces the chance of unnecessarily reaching the gap limit
+                // too early in some corner cases (because the earlier transaction is less
+                // likely to be unmined).
+                //
+                // The query should always return a value if `tx_ref` is valid.
+
+                addr.mark_seen(tx_id);
+                // Maintain the invariant that the last `GAP_LIMIT` addresses are used and unseen.
+                let next_to_reserve = idx.checked_add(1).expect("ensured by constraint");
+                self.reserve_until(next_to_reserve)?;
+                return Ok(());
+            }
+        }
+        Ok(())
     }
 }
 

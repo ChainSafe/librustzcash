@@ -3,11 +3,12 @@ use incrementalmerkletree::{Marking, Position, Retention};
 use secrecy::SecretVec;
 use shardtree::{error::ShardTreeError, store::ShardStore};
 
+use std::cmp::{max, min};
+use std::time::UNIX_EPOCH;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap},
     ops::Range,
 };
-
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{
@@ -17,6 +18,7 @@ use zcash_primitives::{
 };
 use zcash_protocol::{
     consensus::{self, NetworkUpgrade},
+    PoolType,
     ShieldedProtocol::{self, Sapling},
 };
 
@@ -32,10 +34,12 @@ use zcash_client_backend::{
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
     wallet::{NoteId, Recipient, WalletTransparentOutput},
+    TransferType,
 };
 
 use zcash_client_backend::data_api::{
-    AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, WalletRead, WalletWrite,
+    AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, SentTransactionOutput,
+    WalletRead, WalletWrite,
 };
 
 use crate::{
@@ -619,6 +623,311 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         if let Some(height) = d_tx.mined_height() {
             self.set_transaction_status(d_tx.tx().txid(), TransactionStatus::Mined(height))?
         }
+
+        let funding_accounts = self.get_funding_accounts(d_tx.tx())?;
+        // TODO(#1305): Correctly track accounts that fund each transaction output.
+        let funding_account = funding_accounts.iter().next().copied();
+        if funding_accounts.len() > 1 {
+            tracing::warn!(
+                "More than one wallet account detected as funding transaction {:?}, selecting {:?}",
+                d_tx.tx().txid(),
+                funding_account.unwrap()
+            )
+        }
+
+        // A flag used to determine whether it is necessary to query for transactions that
+        // provided transparent inputs to this transaction, in order to be able to correctly
+        // recover transparent transaction history.
+        #[cfg(feature = "transparent-inputs")]
+        let mut tx_has_wallet_outputs = false;
+
+        for output in d_tx.sapling_outputs() {
+            #[cfg(feature = "transparent-inputs")]
+            {
+                tx_has_wallet_outputs = true;
+            }
+
+            match output.transfer_type() {
+                TransferType::Outgoing => {
+                    let recipient = {
+                        let receiver = Receiver::Sapling(output.note().recipient());
+                        let wallet_address = self
+                            .accounts
+                            .get(*output.account())
+                            .map(|acc| {
+                                acc.select_receiving_address(self.params.network_type(), &receiver)
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_else(|| {
+                                receiver.to_zcash_address(self.params.network_type())
+                            });
+
+                        Recipient::External(wallet_address, PoolType::SAPLING)
+                    };
+
+                    let sent_tx_output = SentTransactionOutput::from_parts(
+                        output.index(),
+                        recipient,
+                        output.note_value(),
+                        Some(output.memo().clone()),
+                    );
+                    self.sent_notes.put_sent_output(
+                        d_tx.tx().txid(),
+                        *output.account(),
+                        &sent_tx_output,
+                    );
+                }
+                TransferType::WalletInternal => {
+                    let recipient = Recipient::InternalAccount {
+                        receiving_account: *output.account(),
+                        external_address: None,
+                        note: Note::Sapling(output.note().clone()),
+                    };
+                    let sent_tx_output = SentTransactionOutput::from_parts(
+                        output.index(),
+                        recipient,
+                        output.note_value(),
+                        Some(output.memo().clone()),
+                    );
+
+                    self.received_notes
+                        .insert_received_note(ReceivedNote::from_sent_tx_output(
+                            d_tx.tx().txid(),
+                            &sent_tx_output,
+                        )?);
+
+                    self.sent_notes.put_sent_output(
+                        d_tx.tx().txid(),
+                        *output.account(),
+                        &sent_tx_output,
+                    );
+                }
+                TransferType::Incoming => {
+                    todo!("store decrypted tx sapling incoming")
+                }
+            }
+        }
+
+        #[cfg(feature = "orchard")]
+        for output in d_tx.orchard_outputs() {
+            #[cfg(feature = "transparent-inputs")]
+            {
+                tx_has_wallet_outputs = true;
+            }
+            match output.transfer_type() {
+                TransferType::Outgoing => {
+                    let recipient = {
+                        let receiver = Receiver::Orchard(output.note().recipient());
+                        let wallet_address = self
+                            .accounts
+                            .get(*output.account())
+                            .map(|acc| {
+                                acc.select_receiving_address(self.params.network_type(), &receiver)
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_else(|| {
+                                receiver.to_zcash_address(self.params.network_type())
+                            });
+
+                        Recipient::External(wallet_address, PoolType::ORCHARD)
+                    };
+
+                    let sent_tx_output = SentTransactionOutput::from_parts(
+                        output.index(),
+                        recipient,
+                        output.note_value(),
+                        Some(output.memo().clone()),
+                    );
+                    self.sent_notes.put_sent_output(
+                        d_tx.tx().txid(),
+                        *output.account(),
+                        &sent_tx_output,
+                    );
+                }
+                TransferType::WalletInternal => {
+                    let recipient = Recipient::InternalAccount {
+                        receiving_account: *output.account(),
+                        external_address: None,
+                        note: Note::Orchard(output.note().clone()),
+                    };
+                    let sent_tx_output = SentTransactionOutput::from_parts(
+                        output.index(),
+                        recipient,
+                        output.note_value(),
+                        Some(output.memo().clone()),
+                    );
+
+                    self.received_notes
+                        .insert_received_note(ReceivedNote::from_sent_tx_output(
+                            d_tx.tx().txid(),
+                            &sent_tx_output,
+                        )?);
+
+                    self.sent_notes.put_sent_output(
+                        d_tx.tx().txid(),
+                        *output.account(),
+                        &sent_tx_output,
+                    );
+                }
+                TransferType::Incoming => {
+                    todo!("store decrypted tx orchard incoming")
+                }
+            }
+        }
+
+        // If any of the utxos spent in the transaction are ours, mark them as spent.
+        #[cfg(feature = "transparent-inputs")]
+        for txin in d_tx
+            .tx()
+            .transparent_bundle()
+            .iter()
+            .flat_map(|b| b.vin.iter())
+        {
+            self.mark_transparent_output_spent(&d_tx.tx().txid(), &txin.prevout)?;
+        }
+
+        // This `if` is just an optimization for cases where we would do nothing in the loop.
+        if funding_account.is_some() || cfg!(feature = "transparent-inputs") {
+            for (output_index, txout) in d_tx
+                .tx()
+                .transparent_bundle()
+                .iter()
+                .flat_map(|b| b.vout.iter())
+                .enumerate()
+            {
+                if let Some(address) = txout.recipient_address() {
+                    tracing::debug!(
+                        "{:?} output {} has recipient {}",
+                        d_tx.tx().txid(),
+                        output_index,
+                        address.encode(self.params())
+                    );
+
+                    // The transaction is not necessarily mined yet, but we want to record
+                    // that an output to the address was seen in this tx anyway. This will
+                    // advance the gap regardless of whether it is mined, but an output in
+                    // an unmined transaction won't advance the range of safe indices.
+                    #[cfg(feature = "transparent-inputs")]
+                    self.accounts
+                        .mark_ephemeral_address_as_seen(&address, d_tx.tx().txid())?;
+
+                    // If the output belongs to the wallet, add it to `transparent_received_outputs`.
+                    #[cfg(feature = "transparent-inputs")]
+                    if let Some(account_id) = self
+                        .accounts
+                        .find_account_for_transparent_address(&address)?
+                    {
+                        tracing::debug!(
+                            "{:?} output {} belongs to account {:?}",
+                            d_tx.tx().txid(),
+                            output_index,
+                            account_id
+                        );
+                        let wallet_transparent_output = WalletTransparentOutput::from_parts(
+                            OutPoint::new(
+                                d_tx.tx().txid().into(),
+                                u32::try_from(output_index).unwrap(),
+                            ),
+                            txout.clone(),
+                            d_tx.mined_height(),
+                        )
+                        .unwrap();
+                        self.put_transparent_output(
+                            &wallet_transparent_output,
+                            &account_id,
+                            false,
+                        )?;
+
+                        // Since the wallet created the transparent output, we need to ensure
+                        // that any transparent inputs belonging to the wallet will be
+                        // discovered.
+                        tx_has_wallet_outputs = true;
+                    } else {
+                        tracing::debug!(
+                            "Address {} is not recognized as belonging to any of our accounts.",
+                            address.encode(self.params())
+                        );
+                    }
+
+                    // If a transaction we observe contains spends from our wallet, we will
+                    // store its transparent outputs in the same way they would be stored by
+                    // create_spend_to_address.
+                    if let Some(account_id) = funding_account {
+                        let receiver = Receiver::Transparent(address);
+
+                        #[cfg(feature = "transparent-inputs")]
+                        let recipient_addr = self
+                            .accounts
+                            .get(account_id)
+                            .map(|acc| {
+                                acc.select_receiving_address(self.params.network_type(), &receiver)
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_else(|| {
+                                receiver.to_zcash_address(self.params.network_type())
+                            });
+
+                        #[cfg(not(feature = "transparent-inputs"))]
+                        let recipient_addr = receiver.to_zcash_address(self.params.network_type());
+
+                        let recipient = Recipient::External(recipient_addr, PoolType::TRANSPARENT);
+
+                        let sent_tx_output = SentTransactionOutput::from_parts(
+                            output_index,
+                            recipient,
+                            txout.value,
+                            None,
+                        );
+                        self.sent_notes.put_sent_output(
+                            d_tx.tx().txid(),
+                            account_id,
+                            &sent_tx_output,
+                        );
+                        // Even though we know the funding account, we don't know that we have
+                        // information for all of the transparent inputs to the transaction.
+                        #[cfg(feature = "transparent-inputs")]
+                        {
+                            tx_has_wallet_outputs = true;
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "Unable to determine recipient address for tx {:?} output {}",
+                        d_tx.tx().txid(),
+                        output_index
+                    );
+                }
+            }
+        }
+
+        // If the transaction has outputs that belong to the wallet as well as transparent
+        // inputs, we may need to download the transactions corresponding to the transparent
+        // prevout references to determine whether the transaction was created (at least in
+        // part) by this wallet.
+        #[cfg(feature = "transparent-inputs")]
+        if tx_has_wallet_outputs {
+            if let Some(_) = d_tx.tx().transparent_bundle() {
+                // queue the transparent inputs for enhancement
+                self.transaction_data_request_queue
+                    .queue_status_retrieval(&d_tx.tx().txid());
+            }
+        }
+
+        #[cfg(feature = "transparent-inputs")]
+        {
+            let detectable_via_scanning = d_tx.tx().sapling_bundle().is_some();
+            #[cfg(feature = "orchard")]
+            let detectable_via_scanning =
+                detectable_via_scanning | d_tx.tx().orchard_bundle().is_some();
+
+            if d_tx.mined_height().is_none() && !detectable_via_scanning {
+                self.transaction_data_request_queue
+                    .queue_status_retrieval(&d_tx.tx().txid());
+            }
+        }
         Ok(())
     }
 
@@ -839,7 +1148,12 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                         )
                         .unwrap();
                         self.put_transparent_output(&txo, receiving_account, true)?;
-                        // TODO: mark ephemeral address as used
+                        if let Some(account) = self.accounts.get_mut(*receiving_account) {
+                            account.mark_ephemeral_address_as_used(
+                                ephemeral_address,
+                                sent_tx.tx().txid(),
+                            )?
+                        }
                     }
                     _ => {}
                 }
@@ -867,41 +1181,45 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     }
 
     #[cfg(feature = "transparent-inputs")]
-    /// Returns a vector with the next `n` previously unreserved ephemeral addresses for
-    /// the given account.
     fn reserve_next_n_ephemeral_addresses(
         &mut self,
         account_id: Self::AccountId,
         n: usize,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
-        let mut addresses = Vec::new();
+        // TODO: We need to implement first_unsafe_index to make sure we dont violate gap invarient
+        let first_unsafe = self.first_unsafe_index(account_id)?;
         if let Some(account) = self.accounts.get_mut(account_id) {
-            for _ in 0..n {
-                if let Some(address) =
-                    account.next_available_address(UnifiedAddressRequest::all().unwrap())?
-                {
-                    let t_address = address.transparent().unwrap().clone();
-                    addresses.push(t_address);
-                } else {
-                    return Err(Error::UnknownZip32Derivation);
-                }
+            let first_unreserved = account.first_unreserved_index()?;
+
+            let allocation = range_from(first_unreserved, u32::try_from(n).unwrap());
+
+            if allocation.len() < n {
+                return Err(AddressGenerationError::DiversifierSpaceExhausted.into());
             }
+            if allocation.end > first_unsafe {
+                return Err(Error::ReachedGapLimit(
+                    account_id,
+                    max(first_unreserved, first_unsafe),
+                ));
+            }
+            let _reserved = account.reserve_until(allocation.end)?;
+            self.get_known_ephemeral_addresses(account_id, Some(allocation))
         } else {
-            return Err(Error::AccountUnknown(account_id));
+            Err(Self::Error::AccountUnknown(account_id))
         }
-        addresses
-            .into_iter()
-            .map(|t_address| {
-                Ok((
-                    t_address,
-                    self.get_transparent_address_metadata(account_id, &t_address)?
-                        .unwrap(),
-                ))
-            })
-            .collect()
     }
 }
 
+fn range_from(i: u32, n: u32) -> Range<u32> {
+    let first = min(1 << 31, i);
+    let last = min(1 << 31, i.saturating_add(n));
+    first..last
+}
+
+use zcash_client_backend::wallet::{Note, WalletSaplingOutput};
+use zcash_keys::address::Receiver;
+use zcash_keys::encoding::AddressCodec;
+use zcash_keys::keys::AddressGenerationError;
 #[cfg(feature = "orchard")]
 use {incrementalmerkletree::frontier::Frontier, shardtree::store::Checkpoint};
 

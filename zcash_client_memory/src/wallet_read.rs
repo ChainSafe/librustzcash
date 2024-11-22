@@ -3,6 +3,7 @@ use nonempty::NonEmpty;
 use secrecy::{ExposeSecret, SecretVec};
 use shardtree::store::ShardStore as _;
 
+use std::ops::Range;
 use std::{
     collections::{hash_map::Entry, HashMap},
     num::NonZeroU32,
@@ -572,12 +573,12 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                         tx_data.sapling_bundle().cloned(),
                         tx_data.orchard_bundle().cloned(),
                     )
-                    .freeze()?)
+                        .freeze()?)
                 } else {
                     Err(Self::Error::CorruptedData(
-                    "Consensus branch ID not known, cannot parse this transaction until it is mined"
-                        .to_string(),
-                ))
+                        "Consensus branch ID not known, cannot parse this transaction until it is mined"
+                            .to_string(),
+                    ))
                 }
             })
             .transpose()
@@ -634,6 +635,26 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                 })
                 .collect(),
         })
+    }
+    #[cfg(feature = "transparent-inputs")]
+    fn get_known_ephemeral_addresses(
+        &self,
+        account_id: Self::AccountId,
+        index_range: Option<Range<u32>>,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
+        Ok(self
+            .accounts
+            .get(account_id)
+            .map(Account::ephemeral_addresses)
+            .unwrap_or_else(|| Ok(vec![]))?
+            .into_iter()
+            .filter(|(_addr, meta)| {
+                index_range
+                    .as_ref()
+                    .map(|range| range.contains(&meta.address_index().index()))
+                    .unwrap_or(true)
+            })
+            .collect::<Vec<_>>())
     }
 
     #[cfg(feature = "transparent-inputs")]
