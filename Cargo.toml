@@ -151,11 +151,7 @@ incrementalmerkletree-testing = "0.2"
 # Tor
 # - `arti-client` depends on `rusqlite`, and a version mismatch there causes a compilation
 #   failure due to incompatible `libsqlite3-sys` versions.
-arti-client = { version = "0.23", default-features = false, features = [
-    "compression",
-    "rustls",
-    "tokio",
-] }
+arti-client = { version = "0.23", default-features = false, features = ["compression", "rustls", "tokio"] }
 dynosaur = "0.1.1"
 tokio = "1"
 tor-rtcompat = "0.23"
