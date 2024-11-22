@@ -245,15 +245,18 @@ where
                         })
                     })
                     .collect::<Vec<_>>();
+
                 let received_txo = self
                     .transparent_received_outputs
                     .iter()
                     .filter(|(outpoint, _received_output)| outpoint.txid() == txid)
                     .collect::<Vec<_>>();
+
                 let sent_txo_value: u64 = received_txo
                     .iter()
                     .map(|(_, o)| u64::from(o.txout.value))
                     .sum();
+
                 // notes received by the transaction
                 let received_notes = self
                     .received_notes
@@ -289,6 +292,9 @@ where
                         // We do not know about any external outputs of the transaction.
                         && sent_notes.is_empty()
                 };
+                println!("received_notes: {:?}", received_notes);
+
+                let has_change = received_notes.iter().any(|note| note.is_change);
 
                 zcash_client_backend::data_api::testing::TransactionSummary::from_parts(
                     account_id,                                                                  // account_id
@@ -296,15 +302,14 @@ where
                     tx.expiry_height(), // expiry_height
                     tx.mined_height(),  // mined_height
                     ZatBalance::const_from_i64((balance_gained as i64) - (balance_lost as i64)), // account_value_delta
-                    tx.fee(),                                         // fee_paid
-                    spent_notes.len() + spent_utxos.len(),            // spent_note_count
-                    received_notes.iter().any(|note| note.is_change), // has_change
-                    sent_notes.len(), // sent_note_count (excluding change)
-                    received_notes.iter().filter(|note| !note.is_change).count()
-                        + received_txo.len(), // received_note_count (excluding change)
-                    0,                // TODO: memo_count
-                    false,            // TODO: expired_unmined
-                    is_shielding,     // is_shielding
+                    tx.fee(),                                                     // fee_paid
+                    spent_notes.len() + spent_utxos.len(), // spent_note_count
+                    has_change,                            // has_change
+                    sent_notes.len(),                      // sent_note_count (excluding change)
+                    received_notes.iter().filter(|note| !note.is_change).count(), // received_note_count (excluding change)
+                    0,            // TODO: memo_count
+                    false,        // TODO: expired_unmined
+                    is_shielding, // is_shielding
                 )
             })
             .collect())

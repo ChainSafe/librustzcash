@@ -32,7 +32,7 @@ use crate::{error::Error, Nullifier};
 
 /// Keeps track of notes that are spent in which transaction
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct ReceievdNoteSpends(
     #[serde_as(as = "BTreeMap<NoteIdDef, ByteArray<32>>")] BTreeMap<NoteId, TxId>,
 );
@@ -60,7 +60,7 @@ impl Deref for ReceievdNoteSpends {
 /// A note that has been received by the wallet
 /// TODO: Instead of Vec, perhaps we should identify by some unique ID
 #[derive(Serialize, Deserialize)]
-pub(crate) struct ReceivedNoteTable(pub Vec<ReceivedNote>);
+pub(crate) struct ReceivedNoteTable(Vec<ReceivedNote>);
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug, Clone)]
