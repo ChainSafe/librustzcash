@@ -238,11 +238,12 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub fn first_unsafe_index(&self, account_id: AccountId) -> Result<u32, Error> {
         let first_unmined_index = if let Some(account) = self.accounts.get(account_id) {
             let mut idx = 0;
-            for ((tidx, eph_addr)) in account.ephemeral_addresses.iter().rev() {
-                if let Some(_) = eph_addr
+            for (tidx, eph_addr) in account.ephemeral_addresses.iter().rev() {
+                if eph_addr
                     .seen
                     .and_then(|txid| self.tx_table.get(&txid))
                     .and_then(|tx| tx.mined_height())
+                    .is_some()
                 {
                     idx = tidx.checked_add(1).unwrap();
                     break;
@@ -924,14 +925,13 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 });
 
             // Compute the total blocks scanned so far above the starting height
-            let scanned_count = Some(
-                self.blocks
-                    .iter()
-                    .filter(|(height, _)| height > &birthday_height)
-                    .fold(0_u64, |acc, (_, block)| {
-                        acc + block.orchard_action_count.unwrap_or(0) as u64
-                    }),
-            );
+            let scanned_count = self
+                .blocks
+                .iter()
+                .filter(|(height, _)| height > &birthday_height)
+                .fold(0_u64, |acc, (_, block)| {
+                    acc + block.orchard_action_count.unwrap_or(0) as u64
+                });
 
             // We don't have complete information on how many outputs will exist in the shard at
             // the chain tip without having scanned the chain tip block, so we overestimate by
@@ -954,7 +954,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
             Ok(start_size.or(min_tree_size).zip(max_tree_size).map(
                 |(min_tree_size, max_tree_size)| {
-                    Ratio::new(scanned_count.unwrap_or(0), max_tree_size - min_tree_size)
+                    Ratio::new(scanned_count, max_tree_size - min_tree_size)
                 },
             ))
         }
@@ -997,8 +997,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         // otherwise return None
         let block = output
             .mined_height()
-            .map(|h| self.blocks.get(&h).map(|b| b.height))
-            .flatten();
+            .and_then(|h| self.blocks.get(&h).map(|b| b.height));
         let txid = TxId::from_bytes(output.outpoint().hash().to_vec().try_into().unwrap());
 
         // insert a new tx into the transactions table for the one that spent this output. If there is already one then do an update
@@ -1010,17 +1009,15 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         // otherwise return the height found by joining on the tx table
         let spent_height = self
             .transparent_received_output_spends
-            .get(&output.outpoint())
-            .map(|txid| {
+            .get(output.outpoint())
+            .and_then(|txid| {
                 self.tx_table
                     .tx_status(txid)
-                    .map(|status| match status {
+                    .and_then(|status| match status {
                         TransactionStatus::Mined(height) => Some(height),
                         _ => None,
                     })
-                    .flatten()
-            })
-            .flatten();
+            });
 
         // The max observed unspent height is either the spending transaction's mined height - 1, or
         // the current chain tip height if the UTXO was received via a path that confirmed that it was
@@ -1044,7 +1041,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().transaction_id = txid;
                 entry.get_mut().address = *address;
-                entry.get_mut().account_id = receiving_account.clone();
+                entry.get_mut().account_id = *receiving_account;
                 entry.get_mut().txout = output.txout().clone();
             }
             Entry::Vacant(entry) => {

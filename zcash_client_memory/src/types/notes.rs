@@ -4,7 +4,7 @@ use incrementalmerkletree::Position;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::{FromInto, TryFromInto};
-use zcash_protocol::ShieldedProtocol;
+
 
 use std::collections::BTreeSet;
 use std::{
@@ -318,7 +318,7 @@ pub(crate) fn to_spendable_notes(
                     note.note_id,
                     note.txid(),
                     note.output_index.try_into().unwrap(), // this overflow can never happen or else the chain is broken
-                    inner.clone(),
+                    *inner,
                     note.recipient_key_scope
                         .ok_or(Error::Missing("recipient key scope".into()))?,
                     note.commitment_tree_position
@@ -356,7 +356,7 @@ impl From<NoteId> for SentNoteId {
 
 impl From<&NoteId> for SentNoteId {
     fn from(note_id: &NoteId) -> Self {
-        SentNoteId::Shielded(note_id.clone())
+        SentNoteId::Shielded(*note_id)
     }
 }
 

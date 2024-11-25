@@ -1,7 +1,7 @@
 use zcash_client_backend::data_api::{
     AccountMeta, InputSource, NoteFilter, PoolMeta, TransactionStatus, WalletRead,
 };
-use zcash_client_backend::wallet::{Note, ReceivedNote};
+
 use zcash_primitives::transaction::components::OutPoint;
 use zcash_protocol::{
     consensus,
@@ -16,7 +16,6 @@ use {
     zcash_primitives::legacy::TransparentAddress,
 };
 
-use crate::transparent::{ReceivedTransparentOutput, TransparentReceivedOutputs};
 use crate::{error::Error, to_spendable_notes, AccountId, MemoryWalletDb, NoteId};
 
 impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
@@ -129,7 +128,7 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
                     .unwrap_or(false)
             })
             .filter_map(|(outpoint, txo, tx)| {
-                txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
+                txo.to_wallet_transparent_output(outpoint, tx.and_then(|tx| tx.mined_height()))
             })
             .collect();
         Ok(txos)
@@ -148,10 +147,9 @@ impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
             .transparent_received_outputs
             .get(outpoint)
             .map(|txo| (txo, self.tx_table.get(&txo.transaction_id)))
-            .map(|(txo, tx)| {
-                txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
-            })
-            .flatten())
+            .and_then(|(txo, tx)| {
+                txo.to_wallet_transparent_output(outpoint, tx.and_then(|tx| tx.mined_height()))
+            }))
     }
 
     /// Returns metadata for the spendable notes in the wallet.
@@ -317,6 +315,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         Ok(Some(PoolMeta::new(count, total)))
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn matches_note_filter(
         &self,
         note: &crate::ReceivedNote,
@@ -324,8 +323,8 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     ) -> Result<Option<bool>, Error> {
         match filter {
             NoteFilter::ExceedsMinValue(min_value) => Ok(Some(note.note.value() > *min_value)),
-            NoteFilter::ExceedsPriorSendPercentile(n) => todo!(),
-            NoteFilter::ExceedsBalancePercentage(p) => todo!(),
+            NoteFilter::ExceedsPriorSendPercentile(_n) => todo!(),
+            NoteFilter::ExceedsBalancePercentage(_p) => todo!(),
             // evaluate both conditions.
             // If one cannot be evaluated (e.g. it returns None) it is ignored
             NoteFilter::Combine(a, b) => {

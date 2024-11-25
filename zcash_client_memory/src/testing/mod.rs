@@ -1,7 +1,5 @@
-use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::InputSource;
 use zcash_client_backend::data_api::OutputOfSentTx;
 use zcash_client_backend::wallet::Note;
@@ -9,8 +7,7 @@ use zcash_client_backend::wallet::Recipient;
 use zcash_client_backend::wallet::WalletTransparentOutput;
 use zcash_client_backend::{
     data_api::{
-        chain::BlockSource,
-        testing::{DataStoreFactory, Reset, TestCache, TestState, TransactionSummary},
+        testing::{DataStoreFactory, Reset, TestCache, TestState},
         WalletRead, WalletTest,
     },
     proto::compact_formats::CompactBlock,
@@ -23,12 +20,11 @@ use zcash_protocol::ShieldedProtocol;
 use shardtree::store::ShardStore;
 use zcash_client_backend::wallet::NoteId;
 use zcash_client_backend::wallet::ReceivedNote;
-use zcash_primitives::transaction::components::OutPoint;
+
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::local_consensus::LocalNetwork;
 
-use crate::account;
 use crate::{Account, AccountId, Error, MemBlockCache, MemoryWalletDb, SentNoteId};
 
 pub mod pool;
@@ -63,10 +59,7 @@ impl TestCache for MemBlockCache {
     }
 
     fn insert(&mut self, cb: &CompactBlock) -> Self::InsertResult {
-        self.0
-            .write()
-            .unwrap()
-            .insert(cb.height().into(), cb.clone());
+        self.0.write().unwrap().insert(cb.height(), cb.clone());
     }
 
     fn truncate_to_height(&mut self, height: BlockHeight) {
@@ -92,7 +85,7 @@ where
 {
     #[allow(clippy::type_complexity)]
     fn get_sent_outputs(&self, txid: &TxId) -> Result<Vec<OutputOfSentTx>, Error> {
-        Ok(self
+        self
             .sent_notes
             .iter()
             .filter(|(note_id, _)| note_id.txid() == txid)
@@ -144,7 +137,7 @@ where
                     ephemeral_address,
                 ))
             })
-            .collect::<Result<_, Error>>()?)
+            .collect::<Result<_, Error>>()
     }
 
     #[doc = " Fetches the transparent output corresponding to the provided `outpoint`."]
@@ -156,16 +149,15 @@ where
     fn get_transparent_output(
         &self,
         outpoint: &zcash_primitives::transaction::components::OutPoint,
-        allow_unspendable: bool,
+        _allow_unspendable: bool,
     ) -> Result<Option<WalletTransparentOutput>, <Self as InputSource>::Error> {
         Ok(self
             .transparent_received_outputs
             .get(outpoint)
             .map(|txo| (txo, self.tx_table.get(&txo.transaction_id)))
-            .map(|(txo, tx)| {
-                txo.to_wallet_transparent_output(outpoint, tx.map(|tx| tx.mined_height()).flatten())
-            })
-            .flatten())
+            .and_then(|(txo, tx)| {
+                txo.to_wallet_transparent_output(outpoint, tx.and_then(|tx| tx.mined_height()))
+            }))
     }
 
     fn get_notes(
@@ -361,7 +353,7 @@ where
                 self.sapling_tree
                     .store()
                     .for_each_checkpoint(usize::MAX, |id, cp| {
-                        checkpoints.push((id.clone(), cp.position()));
+                        checkpoints.push((*id, cp.position()));
                         Ok(())
                     })?;
             }
@@ -370,10 +362,11 @@ where
                 self.orchard_tree
                     .store()
                     .for_each_checkpoint(usize::MAX, |id, cp| {
-                        checkpoints.push((id.clone(), cp.position()));
+                        checkpoints.push((*id, cp.position()));
                         Ok(())
                     })?;
             }
+            #[cfg(not(feature = "orchard"))]
             _ => {}
         }
 

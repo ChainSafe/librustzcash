@@ -11,7 +11,6 @@ use zip32::DiversifierIndex;
 use crate::error::Error;
 use crate::serialization::*;
 
-use crate::types::TransactionTable;
 use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::{AccountBirthday, GAP_LIMIT};
 use zcash_client_backend::{
@@ -23,7 +22,7 @@ use zcash_client_backend::{
 use zcash_keys::address::Receiver;
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::{Network, NetworkType};
+use zcash_protocol::consensus::NetworkType;
 #[cfg(feature = "transparent-inputs")]
 use {
     zcash_client_backend::wallet::TransparentAddressMetadata,
@@ -123,7 +122,7 @@ impl Accounts {
                     .iter()
                     .any(|(_, unified_address)| unified_address.transparent() == Some(address))
             })
-            .map(|(id, _)| id.clone())
+            .map(|(id, _)| *id)
         {
             Ok(Some(id))
         } else {
@@ -132,8 +131,8 @@ impl Accounts {
                 Ok(Some(id))
             } else {
                 for (account_id, account) in self.accounts.iter() {
-                    if let Some(_) = account.get_legacy_transparent_address()? {
-                        return Ok(Some(account_id.clone()));
+                    if account.get_legacy_transparent_address()?.is_some() {
+                        return Ok(Some(*account_id));
                     }
                 }
                 Ok(None)
@@ -285,8 +284,8 @@ impl Account {
     ) -> Result<Option<ZcashAddress>, Error> {
         Ok(self
             .addresses
-            .iter()
-            .map(|(_, ua)| ua.to_address(network))
+            .values()
+            .map(|ua| ua.to_address(network))
             .find(|addr| receiver.corresponds(addr)))
     }
 
@@ -369,7 +368,7 @@ impl Account {
             .iter()
             .map(|(idx, addr)| {
                 (
-                    addr.address.clone(),
+                    addr.address,
                     TransparentAddressMetadata::new(
                         TransparentKeyScope::EPHEMERAL,
                         NonHardenedChildIndex::from_index(*idx).unwrap(),

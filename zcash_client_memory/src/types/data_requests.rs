@@ -18,7 +18,7 @@ impl TransactionDataRequestQueue {
 
     pub fn queue_status_retrieval(&mut self, txid: &TxId) {
         self.0
-            .push_back(TransactionDataRequest::GetStatus(txid.clone()));
+            .push_back(TransactionDataRequest::GetStatus(*txid));
     }
 }
 

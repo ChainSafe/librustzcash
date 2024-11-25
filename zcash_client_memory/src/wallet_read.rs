@@ -16,11 +16,11 @@ use zip32::Scope;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, InputSource,
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance,
         Progress, Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
-    wallet::{NoteId, Recipient},
+    wallet::{NoteId},
 };
 use zcash_primitives::{
     block::BlockHash,
@@ -30,8 +30,8 @@ use zcash_primitives::{
 use zcash_protocol::{
     consensus::{self, BranchId},
     memo::Memo,
-    value::{ZatBalance, Zatoshis},
-    PoolType, ShieldedProtocol,
+    value::{Zatoshis},
+    PoolType,
 };
 
 use zcash_client_backend::data_api::{
@@ -45,7 +45,7 @@ use {
 };
 
 use super::{Account, AccountId, MemoryWalletDb};
-use crate::{error::Error, MemoryWalletBlock, Nullifier, SentNoteId};
+use crate::{error::Error, MemoryWalletBlock, Nullifier};
 
 impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     type Error = Error;
@@ -694,7 +694,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                             (*diversifier_index).try_into().unwrap(),
                         )
                         .map(|i| TransparentAddressMetadata::new(Scope::External.into(), i));
-                    (ta.clone(), metadata)
+                    (*ta, metadata)
                 })
             })
             .collect();
@@ -733,7 +733,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             if tx.is_mined_or_unexpired_at(summary_height)
                 && self.utxo_is_spendable(outpoint, summary_height, 0)?
             {
-                let address = txo.address.clone();
+                let address = txo.address;
                 let balance = balances.entry(address).or_insert(Zatoshis::ZERO);
                 *balance = balance.add(txo.txout.value).expect("balance overflow");
             }

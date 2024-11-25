@@ -4,9 +4,9 @@ use secrecy::SecretVec;
 use shardtree::{error::ShardTreeError, store::ShardStore};
 
 use std::cmp::{max, min};
-use std::time::UNIX_EPOCH;
+
 use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
 };
 use zcash_primitives::{
@@ -43,7 +43,7 @@ use zcash_client_backend::data_api::{
 };
 
 use crate::{
-    error::Error, transparent::ReceivedTransparentOutput, PRUNING_DEPTH, VERIFY_LOOKAHEAD,
+    error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD,
 };
 use crate::{MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
 use rayon::prelude::*;
@@ -754,7 +754,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                     let recipient = Recipient::InternalAccount {
                         receiving_account: *output.account(),
                         external_address: None,
-                        note: Note::Orchard(output.note().clone()),
+                        note: Note::Orchard(*output.note()),
                     };
                     let sent_tx_output = SentTransactionOutput::from_parts(
                         output.index(),
@@ -912,12 +912,10 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         // prevout references to determine whether the transaction was created (at least in
         // part) by this wallet.
         #[cfg(feature = "transparent-inputs")]
-        if tx_has_wallet_outputs {
-            if let Some(_) = d_tx.tx().transparent_bundle() {
-                // queue the transparent inputs for enhancement
-                self.transaction_data_request_queue
-                    .queue_status_retrieval(&d_tx.tx().txid());
-            }
+        if tx_has_wallet_outputs && d_tx.tx().transparent_bundle().is_some() {
+            // queue the transparent inputs for enhancement
+            self.transaction_data_request_queue
+                .queue_status_retrieval(&d_tx.tx().txid());
         }
 
         #[cfg(feature = "transparent-inputs")]
@@ -1009,8 +1007,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 if let Some(mined_height) = self
                     .tx_table
                     .get(&txo.transaction_id)
-                    .map(|tx| tx.mined_height())
-                    .flatten()
+                    .and_then(|tx| tx.mined_height())
                 {
                     if mined_height <= truncation_height {
                         txo.max_observed_unspent_height = Some(truncation_height)
@@ -1220,7 +1217,7 @@ fn range_from(i: u32, n: u32) -> Range<u32> {
     first..last
 }
 
-use zcash_client_backend::wallet::{Note, WalletSaplingOutput};
+use zcash_client_backend::wallet::{Note};
 use zcash_keys::address::Receiver;
 use zcash_keys::encoding::AddressCodec;
 use zcash_keys::keys::AddressGenerationError;
