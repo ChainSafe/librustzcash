@@ -45,7 +45,7 @@ use {
 };
 
 use super::{Account, AccountId, MemoryWalletDb};
-use crate::{error::Error, MemoryWalletBlock, SentNoteId};
+use crate::{error::Error, MemoryWalletBlock, Nullifier, SentNoteId};
 
 impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     type Error = Error;
@@ -595,13 +595,22 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                 .map(|(account_id, _, nf)| (account_id, nf))
                 .collect(),
             NullifierQuery::Unspent => nullifiers
-                .filter_map(|(account_id, txid, nf)| {
-                    let tx_status = self.tx_table.tx_status(&txid);
-                    let expiry_height = self.tx_table.expiry_height(&txid);
-                    if matches!(tx_status, Some(TransactionStatus::Mined(_)))
-                        || expiry_height.is_none()
-                    {
-                        None
+                .filter_map(|(account_id, _, nf)| {
+                    // find any tx we know of that spends this nullifier and if so require that it is unmined or expired
+                    if let Some((height, tx_index)) = self.nullifiers.get(&Nullifier::Sapling(nf)) {
+                        if let Some(spending_tx) =
+                            self.tx_table.get_by_height_and_index(*height, *tx_index)
+                        {
+                            if matches!(spending_tx.status(), TransactionStatus::Mined(_))
+                                || spending_tx.expiry_height().is_none()
+                            {
+                                None
+                            } else {
+                                Some((account_id, nf))
+                            }
+                        } else {
+                            None
+                        }
                     } else {
                         Some((account_id, nf))
                     }
@@ -622,13 +631,22 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                 .map(|(account_id, _, nf)| (account_id, nf))
                 .collect(),
             NullifierQuery::Unspent => nullifiers
-                .filter_map(|(account_id, txid, nf)| {
-                    let tx_status = self.tx_table.tx_status(&txid);
-                    let expiry_height = self.tx_table.expiry_height(&txid);
-                    if matches!(tx_status, Some(TransactionStatus::Mined(_)))
-                        || expiry_height.is_none()
-                    {
-                        None
+                .filter_map(|(account_id, _, nf)| {
+                    // find any tx we know of that spends this nullifier and if so require that it is unmined or expired
+                    if let Some((height, tx_index)) = self.nullifiers.get(&Nullifier::Orchard(nf)) {
+                        if let Some(spending_tx) =
+                            self.tx_table.get_by_height_and_index(*height, *tx_index)
+                        {
+                            if matches!(spending_tx.status(), TransactionStatus::Mined(_))
+                                || spending_tx.expiry_height().is_none()
+                            {
+                                None
+                            } else {
+                                Some((account_id, nf))
+                            }
+                        } else {
+                            None
+                        }
                     } else {
                         Some((account_id, nf))
                     }

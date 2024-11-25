@@ -8,7 +8,7 @@ use serde_with::FromInto;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_protocol::PoolType;
 
-/// Maps a nullifier to the block height and transaction index where it was spent.
+/// Maps a nullifier to the block height and transaction index (NOT txid!) where it was spent.
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub(crate) struct NullifierMap(

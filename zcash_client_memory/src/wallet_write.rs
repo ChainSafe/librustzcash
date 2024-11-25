@@ -76,8 +76,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
                 .ok_or_else(|| Self::Error::InvalidSeedLength)?;
             let account_index = self
-                .max_zip32_account_index(&seed_fingerprint)
-                .unwrap()
+                .max_zip32_account_index(&seed_fingerprint)?
                 .map(|a| a.next().ok_or_else(|| Self::Error::AccountOutOfRange))
                 .transpose()?
                 .unwrap_or(zip32::AccountId::ZERO);
@@ -321,6 +320,11 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
 
                 // Mark the Sapling nullifiers of the spent notes as spent in the `sapling_spends` map.
                 for spend in transaction.sapling_spends() {
+                    println!(
+                        "marking note {:?} as spent in transaction {:?}",
+                        spend.nf(),
+                        txid
+                    );
                     self.mark_sapling_note_spent(*spend.nf(), txid)?;
                 }
 

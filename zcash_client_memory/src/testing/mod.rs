@@ -28,6 +28,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::local_consensus::LocalNetwork;
 
+use crate::account;
 use crate::{Account, AccountId, Error, MemBlockCache, MemoryWalletDb, SentNoteId};
 
 pub mod pool;
@@ -213,13 +214,16 @@ where
         &self,
     ) -> Result<Vec<zcash_client_backend::data_api::testing::TransactionSummary<AccountId>>, Error>
     {
-        Ok(self
+        let mut history = self
             .tx_table
             .iter()
             .map(|(txid, tx)| {
                 // find all the notes associated with this transaction
+                // A transaction may send and/or receive one or more notes
 
-                // notes spent by the transaction
+                // notes spent (consumed) by the transaction
+                println!("received_note_spends: {:?}", self.received_note_spends);
+
                 let spent_notes = self
                     .received_note_spends
                     .iter()
@@ -264,10 +268,33 @@ where
                     .filter(|received_note| received_note.txid() == *txid)
                     .collect::<Vec<_>>();
 
-                let account_id = sent_notes
-                    .first()
-                    .map(|(_, note)| note.from_account_id)
-                    .unwrap_or_default();
+                // A transaction can send and receive notes to/from multiple accounts
+                // For a transaction to be visible to this wallet it must have either scanned it from the chain
+                // or been created by this wallet.
+                let receiving_account_id = received_notes.first().map(|note| note.account_id());
+                let sending_account_id = sent_notes.first().map(|(_, note)| note.from_account_id);
+                let account_id = match (receiving_account_id, sending_account_id) {
+                    (Some(receiving), Some(sending)) => {
+                        if receiving == sending {
+                            receiving
+                        } else {
+                            // This transaction is associated with multiple accounts
+                            // This should not happen
+                            return Err(Error::Other(
+                                "Transaction associated with multiple accounts".to_string(),
+                            ));
+                        }
+                    }
+                    (Some(account_id), _) => account_id,
+                    (_, Some(account_id)) => account_id,
+                    _ => {
+                        // This transaction is not associated with any account
+                        // This should not happen
+                        return Err(Error::Other(
+                            "Transaction not associated with any account".to_string(),
+                        ));
+                    }
+                };
 
                 let balance_gained: u64 = received_notes
                     .iter()
@@ -296,23 +323,31 @@ where
 
                 let has_change = received_notes.iter().any(|note| note.is_change);
 
-                zcash_client_backend::data_api::testing::TransactionSummary::from_parts(
-                    account_id,                                                                  // account_id
-                    *txid,              // txid
-                    tx.expiry_height(), // expiry_height
-                    tx.mined_height(),  // mined_height
-                    ZatBalance::const_from_i64((balance_gained as i64) - (balance_lost as i64)), // account_value_delta
-                    tx.fee(),                                                     // fee_paid
-                    spent_notes.len() + spent_utxos.len(), // spent_note_count
-                    has_change,                            // has_change
-                    sent_notes.len(),                      // sent_note_count (excluding change)
-                    received_notes.iter().filter(|note| !note.is_change).count(), // received_note_count (excluding change)
-                    0,            // TODO: memo_count
-                    false,        // TODO: expired_unmined
-                    is_shielding, // is_shielding
+                Ok(
+                    zcash_client_backend::data_api::testing::TransactionSummary::from_parts(
+                        account_id,                                                                  // account_id
+                        *txid,              // txid
+                        tx.expiry_height(), // expiry_height
+                        tx.mined_height(),  // mined_height
+                        ZatBalance::const_from_i64((balance_gained as i64) - (balance_lost as i64)), // account_value_delta
+                        tx.fee(),                              // fee_paid
+                        spent_notes.len() + spent_utxos.len(), // spent_note_count
+                        has_change,                            // has_change
+                        sent_notes.len(),                      // sent_note_count (excluding change)
+                        received_notes.iter().filter(|note| !note.is_change).count(), // received_note_count (excluding change)
+                        0,            // TODO: memo_count
+                        false,        // TODO: expired_unmined
+                        is_shielding, // is_shielding
+                    ),
                 )
             })
-            .collect())
+            .collect::<Result<Vec<_>, Error>>()?;
+        history.sort_by(|a, b| {
+            b.mined_height()
+                .cmp(&a.mined_height())
+                .then(b.txid().cmp(&a.txid()))
+        });
+        Ok(history)
     }
 
     fn get_checkpoint_history(

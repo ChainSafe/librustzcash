@@ -86,11 +86,11 @@ impl Accounts {
         birthday: AccountBirthday,
         purpose: AccountPurpose,
     ) -> Result<(AccountId, Account), Error> {
+        self.nonce += 1;
         let account_id = AccountId(self.nonce);
 
         let acc = Account::new(account_id, kind, viewing_key, birthday, purpose)?;
 
-        self.nonce += 1;
         self.accounts.insert(account_id, acc.clone());
 
         Ok((account_id, acc))

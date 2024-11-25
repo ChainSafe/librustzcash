@@ -88,6 +88,11 @@ fn checkpoint_gaps() {
 }
 
 #[test]
+fn scan_cached_blocks_detects_change_notes() {
+    testing::pool::scan_cached_blocks_finds_change_notes::<SaplingPoolTester>()
+}
+
+#[test]
 fn scan_cached_blocks_detects_spends_out_of_order() {
     testing::pool::scan_cached_blocks_detects_spends_out_of_order::<SaplingPoolTester>()
 }

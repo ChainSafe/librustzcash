@@ -115,6 +115,16 @@ impl TransactionTable {
         self.0.get(&txid)
     }
 
+    pub(crate) fn get_by_height_and_index(
+        &self,
+        height: BlockHeight,
+        index: u32,
+    ) -> Option<&TransactionEntry> {
+        self.0
+            .values()
+            .find(|entry| entry.block == Some(height) && entry.tx_index == Some(index))
+    }
+
     /// Inserts information about a MINED transaction that was observed to
     /// contain a note related to this wallet
     pub(crate) fn put_tx_meta(&mut self, tx_meta: WalletTx<AccountId>, height: BlockHeight) {
