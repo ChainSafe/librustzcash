@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::convert::{identity, Infallible};
 
 use zcash_client_backend::data_api::InputSource;
 use zcash_client_backend::data_api::OutputOfSentTx;
@@ -214,8 +214,6 @@ where
                 // A transaction may send and/or receive one or more notes
 
                 // notes spent (consumed) by the transaction
-                println!("received_note_spends: {:?}", self.received_note_spends);
-
                 let spent_notes = self
                     .received_note_spends
                     .iter()
@@ -262,31 +260,34 @@ where
 
                 // A transaction can send and receive notes to/from multiple accounts
                 // For a transaction to be visible to this wallet it must have either scanned it from the chain
-                // or been created by this wallet.
+                // or been created by this wallet so there are number of ways we can detect the account ID
                 let receiving_account_id = received_notes.first().map(|note| note.account_id());
                 let sending_account_id = sent_notes.first().map(|(_, note)| note.from_account_id);
-                let account_id = match (receiving_account_id, sending_account_id) {
-                    (Some(receiving), Some(sending)) => {
-                        if receiving == sending {
-                            receiving
-                        } else {
-                            // This transaction is associated with multiple accounts
-                            // This should not happen
-                            return Err(Error::Other(
-                                "Transaction associated with multiple accounts".to_string(),
-                            ));
-                        }
-                    }
-                    (Some(account_id), _) => account_id,
-                    (_, Some(account_id)) => account_id,
-                    _ => {
-                        // This transaction is not associated with any account
-                        // This should not happen
-                        return Err(Error::Other(
-                            "Transaction not associated with any account".to_string(),
-                        ));
-                    }
-                };
+                let receiving_transparent_account_id = received_txo
+                    .first()
+                    .map(|(_, received)| received.account_id);
+                let sent_txo_account_id = spent_utxos
+                    .first()
+                    .map(|(outpoint, _)| {
+                        // any spent txo was first a received txo
+                        self.transparent_received_outputs
+                            .get(outpoint)
+                            .map(|txo| txo.account_id)
+                    })
+                    .flatten();
+
+                // take the first non-none account_id
+                let account_id = vec![
+                    receiving_account_id,
+                    sending_account_id,
+                    receiving_transparent_account_id,
+                    sent_txo_account_id,
+                ]
+                .into_iter()
+                .find_map(identity)
+                .ok_or(Error::Other(
+                    format!("Account id could not be found for tx: {}", txid).to_string(),
+                ))?;
 
                 let balance_gained: u64 = received_notes
                     .iter()
@@ -311,7 +312,6 @@ where
                         // We do not know about any external outputs of the transaction.
                         && sent_notes.is_empty()
                 };
-                println!("received_notes: {:?}", received_notes);
 
                 let has_change = received_notes.iter().any(|note| note.is_change);
 
@@ -339,6 +339,7 @@ where
                 .cmp(&a.mined_height())
                 .then(b.txid().cmp(&a.txid()))
         });
+        println!("tx history: {:?}", history);
         Ok(history)
     }
 

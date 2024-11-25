@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::{FromInto, TryFromInto};
 
-
 use std::collections::BTreeSet;
 use std::{
     collections::BTreeMap,
@@ -230,9 +229,22 @@ impl ReceivedNoteTable {
     }
 
     pub fn insert_received_note(&mut self, note: ReceivedNote) {
-        // ensure note_id is unique. Replace any note with a matching note_id
-        self.0.retain(|n| n.note_id != note.note_id);
-        self.0.push(note);
+        // ensure note_id is unique.
+        // follow upsert rules to update the note if it already exists
+        if self
+            .0
+            .iter_mut()
+            .find(|n| n.note_id == note.note_id)
+            .map(|n| {
+                n.nf = note.nf.or(n.nf);
+                n.is_change = note.is_change || n.is_change;
+                n.commitment_tree_position =
+                    note.commitment_tree_position.or(n.commitment_tree_position);
+            })
+            .is_none()
+        {
+            self.0.push(note);
+        }
     }
 
     #[cfg(feature = "orchard")]
