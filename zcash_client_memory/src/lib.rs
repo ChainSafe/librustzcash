@@ -2,8 +2,6 @@
 use incrementalmerkletree::{Address, Marking, Position, Retention};
 use scanning::ScanQueue;
 
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, FromInto};
 use shardtree::{
     store::{memory::MemoryShardStore, ShardStore as _},
     ShardTree,
@@ -73,17 +71,12 @@ pub(crate) const PRUNING_DEPTH: u32 = 100;
 /// The number of blocks to verify ahead when the chain tip is updated.
 pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 
-use types::serialization::*;
 use zcash_primitives::transaction::Transaction;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
-#[serde_as]
-#[derive(Serialize, Deserialize)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
-    #[serde(skip)]
     params: P,
     accounts: Accounts,
-    #[serde_as(as = "BTreeMap<FromInto<u32>, _>")]
     blocks: BTreeMap<BlockHeight, MemoryWalletBlock>,
     tx_table: TransactionTable,
     received_notes: ReceivedNoteTable,
@@ -95,18 +88,15 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
 
     tx_locator: TxLocatorMap,
     scan_queue: ScanQueue,
-    #[serde_as(as = "MemoryShardTreeDef")]
     sapling_tree: ShardTree<
         MemoryShardStore<sapling::Node, BlockHeight>,
         { SAPLING_SHARD_HEIGHT * 2 },
         SAPLING_SHARD_HEIGHT,
     >,
     /// Stores the block height corresponding to the last note commitment in a shard
-    #[serde_as(as = "BTreeMap<TreeAddressDef, FromInto<u32>>")]
     sapling_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 
     #[cfg(feature = "orchard")]
-    #[serde_as(as = "MemoryShardTreeDef")]
     orchard_tree: ShardTree<
         MemoryShardStore<orchard::tree::MerkleHashOrchard, BlockHeight>,
         { ORCHARD_SHARD_HEIGHT * 2 },
@@ -114,7 +104,6 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     >,
     #[cfg(feature = "orchard")]
     /// Stores the block height corresponding to the last note commitment in a shard
-    #[serde_as(as = "BTreeMap<TreeAddressDef, FromInto<u32>>")]
     orchard_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 
     transparent_received_outputs: TransparentReceivedOutputs,
@@ -1073,17 +1062,17 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use ciborium::into_writer;
+// #[cfg(test)]
+// mod test {
+//     use ciborium::into_writer;
 
-    use crate::MemoryWalletDb;
-    #[test]
-    fn test_empty_wallet_serialization() {
-        let network = zcash_primitives::consensus::Network::TestNetwork;
-        let wallet = MemoryWalletDb::new(network, 100);
-        let mut wallet_ser = vec![];
-        into_writer(&wallet, &mut wallet_ser).unwrap();
-        println!("Empty Wallet Size: {}", wallet_ser.len());
-    }
-}
+//     use crate::MemoryWalletDb;
+//     #[test]
+//     fn test_empty_wallet_serialization() {
+//         let network = zcash_primitives::consensus::Network::TestNetwork;
+//         let wallet = MemoryWalletDb::new(network, 100);
+//         let mut wallet_ser = vec![];
+//         into_writer(&wallet, &mut wallet_ser).unwrap();
+//         println!("Empty Wallet Size: {}", wallet_ser.len());
+//     }
+// }

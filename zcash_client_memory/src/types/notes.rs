@@ -1,9 +1,4 @@
-use crate::serialization::*;
 use incrementalmerkletree::Position;
-
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use serde_with::{FromInto, TryFromInto};
 
 use std::collections::BTreeSet;
 use std::{
@@ -30,11 +25,8 @@ use {
 use crate::{error::Error, Nullifier};
 
 /// Keeps track of notes that are spent in which transaction
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct ReceievdNoteSpends(
-    #[serde_as(as = "BTreeMap<NoteIdDef, ByteArray<32>>")] BTreeMap<NoteId, TxId>,
-);
+#[derive(Debug)]
+pub(crate) struct ReceievdNoteSpends(BTreeMap<NoteId, TxId>);
 
 impl ReceievdNoteSpends {
     pub fn new() -> Self {
@@ -58,30 +50,22 @@ impl Deref for ReceievdNoteSpends {
 
 /// A note that has been received by the wallet
 /// TODO: Instead of Vec, perhaps we should identify by some unique ID
-#[derive(Serialize, Deserialize)]
 pub(crate) struct ReceivedNoteTable(Vec<ReceivedNote>);
 
-#[serde_as]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct ReceivedNote {
     // Uniquely identifies this note
-    #[serde_as(as = "NoteIdDef")]
     pub(crate) note_id: NoteId,
-    #[serde_as(as = "ByteArray<32>")]
     pub(crate) txid: TxId,
     // output_index: sapling, action_index: orchard
     pub(crate) output_index: u32,
     pub(crate) account_id: AccountId,
     //sapling: (diversifier, value, rcm) orchard: (diversifier, value, rho, rseed)
-    #[serde_as(as = "NoteDef")]
     pub(crate) note: Note,
     pub(crate) nf: Option<Nullifier>,
     pub(crate) is_change: bool,
-    #[serde_as(as = "MemoBytesDef")]
     pub(crate) memo: Memo,
-    #[serde_as(as = "Option<FromInto<u64>>")]
     pub(crate) commitment_tree_position: Option<Position>,
-    #[serde_as(as = "Option<ScopeDef>")]
     pub(crate) recipient_key_scope: Option<Scope>,
 }
 impl ReceivedNote {
@@ -349,15 +333,10 @@ pub(crate) fn to_spendable_notes(
     ))
 }
 
-#[serde_as]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize, Debug)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug)]
 pub enum SentNoteId {
-    Shielded(#[serde_as(as = "NoteIdDef")] NoteId),
-    Transparent {
-        #[serde_as(as = "ByteArray<32>")]
-        txid: TxId,
-        output_index: u32,
-    },
+    Shielded(NoteId),
+    Transparent { txid: TxId, output_index: u32 },
 }
 
 impl From<NoteId> for SentNoteId {
@@ -381,7 +360,6 @@ impl SentNoteId {
     }
 }
 
-#[derive(Serialize, Deserialize)]
 pub(crate) struct SentNoteTable(BTreeMap<SentNoteId, SentNote>);
 
 impl SentNoteTable {
@@ -494,14 +472,10 @@ impl Deref for SentNoteTable {
     }
 }
 
-#[serde_as]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub(crate) struct SentNote {
     pub(crate) from_account_id: AccountId,
-    #[serde_as(as = "RecipientDef<AccountId, Note, OutPoint>")]
     pub(crate) to: Recipient<AccountId, Note, OutPoint>,
-    #[serde_as(as = "TryFromInto<u64>")]
     pub(crate) value: Zatoshis,
-    #[serde_as(as = "MemoBytesDef")]
     pub(crate) memo: Memo,
 }

@@ -36,7 +36,6 @@ nonempty.workspace = true
 prost.workspace = true
 group.workspace = true
 jubjub.workspace = true
-serde = { workspace = true, features = ["rc"] }
 
 # - Secret management
 secrecy.workspace = true
@@ -55,7 +54,6 @@ shardtree = { workspace = true, features = ["legacy-api"] }
 thiserror = "1.0.61"
 
 rayon.workspace = true
-serde_with = "3.9.0"
 async-trait = { version = "0.1" }
 
 # - Test dependencies

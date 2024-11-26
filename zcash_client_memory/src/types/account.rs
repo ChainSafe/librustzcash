@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use std::{
     collections::{BTreeMap, BTreeSet},
     ops::{Deref, DerefMut},
@@ -9,7 +7,6 @@ use zcash_keys::keys::{AddressGenerationError, UnifiedIncomingViewingKey};
 use zip32::DiversifierIndex;
 
 use crate::error::Error;
-use crate::serialization::*;
 
 use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::{AccountBirthday, GAP_LIMIT};
@@ -32,9 +29,7 @@ use {
 };
 
 /// Internal representation of ID type for accounts. Will be unique for each account.
-#[derive(
-    Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 pub struct AccountId(u32);
 
 impl From<u32> for AccountId {
@@ -61,7 +56,6 @@ impl ConditionallySelectable for AccountId {
 
 /// This is the top-level struct that handles accounts. We could theoretically have this just be a Vec
 /// but we want to have control over the internal AccountId values. The account ids are unique.
-#[derive(Serialize, Deserialize)]
 pub(crate) struct Accounts {
     nonce: u32,
     accounts: BTreeMap<AccountId, Account>,
@@ -183,7 +177,7 @@ impl DerefMut for Accounts {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub(crate) struct EphemeralAddress {
     pub(crate) address: TransparentAddress,
     // Used implies seen
@@ -206,30 +200,15 @@ impl EphemeralAddress {
 }
 
 /// An internal representation account stored in the database.
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Account {
     account_id: AccountId,
-
-    #[serde_as(as = "AccountSourceDef")]
     kind: AccountSource,
-
-    #[serde_as(as = "BytesVec<UnifiedFullViewingKey>")]
     viewing_key: UnifiedFullViewingKey,
-
-    #[serde_as(as = "AccountBirthdayDef")]
     birthday: AccountBirthday,
-
     /// Stores diversified Unified Addresses that have been generated from accounts in the wallet.
-    #[serde_as(
-        as = "BTreeMap<serde_with::FromInto<DiversifierIndexDef>, serde_with::FromInto<UnifiedAddressDef>>"
-    )]
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
-
-    #[cfg(feature = "transparent-inputs")]
     pub(crate) ephemeral_addresses: BTreeMap<u32, EphemeralAddress>, // NonHardenedChildIndex (< 1 << 31)
-
-    #[serde_as(as = "BTreeSet<NoteIdDef>")]
     _notes: BTreeSet<NoteId>,
 }
 
@@ -547,7 +526,7 @@ mod serialization {
                         AccountPurpose::ViewOnly => Some(1),
                     },
                 },
-                viewing_key: acc.viewing_key.to_bytes().to_vec(),
+                viewing_key: acc.viewing_key.encode(&EncodingParams),
                 birthday: Some(acc.birthday().clone().into()),
                 addresses: acc
                     .addresses()
@@ -566,8 +545,8 @@ mod serialization {
                             index,
                             proto::EphemeralAddress {
                                 address: address.address.encode(&EncodingParams),
-                                used_in_tx: address.used.map(|u| u.to_array().to_vec()),
-                                seen_in_tx: address.seen.map(|s| s.to_array().to_vec()),
+                                used_in_tx: address.used.map(|u| u.as_ref().to_vec()),
+                                seen_in_tx: address.seen.map(|s| s.as_ref().to_vec()),
                             },
                         )
                     })
@@ -598,7 +577,8 @@ mod serialization {
                     },
                     _ => unreachable!(),
                 },
-                viewing_key: UnifiedFullViewingKey::from_bytes(&acc.viewing_key).unwrap(),
+                viewing_key: UnifiedFullViewingKey::decode(&EncodingParams, &acc.viewing_key)
+                    .unwrap(),
                 birthday: acc.birthday.unwrap().into(),
                 addresses: acc
                     .addresses
@@ -627,14 +607,16 @@ mod serialization {
                                 .unwrap(),
                                 used: address
                                     .used_in_tx
-                                    .map(|u| TxId::from_array(u.try_into().unwrap())),
+                                    .map(|u| TxId::from_bytes(u.try_into().unwrap())),
                                 seen: address
                                     .seen_in_tx
-                                    .map(|s| TxId::from_array(s.try_into().unwrap())),
+                                    .map(|s| TxId::from_bytes(s.try_into().unwrap())),
                             },
                         )
                     })
                     .collect(),
+                #[cfg(not(feature = "transparent-inputs"))]
+                ephemeral_addresses: Default::default(),
                 _notes: Default::default(),
             }
         }

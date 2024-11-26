@@ -3,7 +3,6 @@ use std::{
     ops::Deref,
 };
 
-use serde::{Deserialize, Serialize};
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{Transaction, TxId},
@@ -15,39 +14,24 @@ use zcash_client_backend::{data_api::TransactionStatus, wallet::WalletTx};
 use crate::AccountId;
 
 use crate::error::Error;
-use crate::types::serialization::*;
-use serde_with::serde_as;
-use serde_with::{FromInto, TryFromInto};
 /// Maps a block height and transaction index to a transaction ID.
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-pub(crate) struct TxLocatorMap(
-    #[serde_as(as = "BTreeMap<(FromInto<u32>, _), ByteArray<32>>")]
-    BTreeMap<(BlockHeight, u32), TxId>,
-);
+pub(crate) struct TxLocatorMap(BTreeMap<(BlockHeight, u32), TxId>);
 
 /// A table of received notes. Corresponds to sapling_received_notes and orchard_received_notes tables.
-#[serde_as]
-#[derive(Serialize, Deserialize)]
 pub(crate) struct TransactionEntry {
     // created: String,
     /// mined_height is rolled into into a txn status
-    #[serde(with = "TransactionStatusDef")]
     tx_status: TransactionStatus,
-    #[serde_as(as = "Option<FromInto<u32>>")]
     block: Option<BlockHeight>,
     tx_index: Option<u32>,
-    #[serde_as(as = "Option<FromInto<u32>>")]
     expiry_height: Option<BlockHeight>,
     raw: Option<Vec<u8>>,
-    #[serde_as(as = "Option<TryFromInto<u64>>")]
     fee: Option<Zatoshis>,
     /// - `target_height`: stores the target height for which the transaction was constructed, if
     ///   known. This will ordinarily be null for transactions discovered via chain scanning; it
     ///   will only be set for transactions created using this wallet specifically, and not any
     ///   other wallet that uses the same seed (including previous installations of the same
     ///   wallet application.)
-    #[serde_as(as = "Option<FromInto<u32>>")]
     _target_height: Option<BlockHeight>,
 }
 impl TransactionEntry {
@@ -94,11 +78,8 @@ impl TransactionEntry {
         }
     }
 }
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-pub(crate) struct TransactionTable(
-    #[serde_as(as = "BTreeMap<ByteArray<32>, _>")] BTreeMap<TxId, TransactionEntry>,
-);
+
+pub(crate) struct TransactionTable(BTreeMap<TxId, TransactionEntry>);
 
 impl TransactionTable {
     pub(crate) fn new() -> Self {
@@ -218,9 +199,7 @@ impl TransactionTable {
     }
 
     pub(crate) fn get_tx_raw(&self, txid: &TxId) -> Option<&[u8]> {
-        self.0
-            .get(txid)
-            .and_then(|entry| entry.raw.as_deref())
+        self.0.get(txid).and_then(|entry| entry.raw.as_deref())
     }
 
     pub(crate) fn unmine_transactions_greater_than(&mut self, height: BlockHeight) {

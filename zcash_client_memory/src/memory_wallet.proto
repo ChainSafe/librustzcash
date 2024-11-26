@@ -26,7 +26,7 @@ message Account {
 
     optional AccountPurpose purpose = 6; // spending or view-only
 
-    bytes viewing_key = 7; // the viewing key for this account
+    string viewing_key = 7; // the viewing key for this account
     AccountBirthday birthday = 8; // the block height at which this account was created
     repeated Address addresses = 9; // account addresses
     map<uint32, EphemeralAddress> ephemeralAddresses = 10; // map from index to encoded unified address
