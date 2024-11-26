@@ -501,6 +501,32 @@ mod serialization {
     use super::*;
     use crate::proto::memwallet as proto;
 
+    impl From<Accounts> for proto::Accounts {
+        fn from(accounts: Accounts) -> Self {
+            Self {
+                account_nonce: accounts.nonce,
+                accounts: accounts
+                    .accounts
+                    .into_iter()
+                    .map(|(id, acc)| (id.0, acc.into()))
+                    .collect(),
+            }
+        }
+    }
+
+    impl From<proto::Accounts> for Accounts {
+        fn from(accounts: proto::Accounts) -> Self {
+            Self {
+                nonce: accounts.account_nonce,
+                accounts: accounts
+                    .accounts
+                    .into_iter()
+                    .map(|(id, acc)| (AccountId(id), acc.into()))
+                    .collect(),
+            }
+        }
+    }
+
     impl From<Account> for proto::Account {
         fn from(acc: Account) -> Self {
             Self {
