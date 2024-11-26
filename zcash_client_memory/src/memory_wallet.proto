@@ -1,0 +1,67 @@
+syntax = "proto3";
+package memwallet;
+
+
+// message MemoryWallet {
+//     uint32 protoVersion = 1;         // the version of this wire format, for storage
+   
+//     Accounts accounts = 2;   // the accounts in this wallet
+   
+//     map<uint32, MemoryWalletBlock> blocks = 3; // map from block height to block data
+// }
+
+
+
+// message Accounts {
+//     uint32 accountNonce = 2;         // the nonce for the next account
+//     map<uint32, MemoryWalletAccount> accounts = 3; // map from account index to account data
+// }
+
+message Account {
+    uint32 accountId = 1;         // the index of this account
+    AccountKind kind = 2; // derived or imported
+
+    optional bytes seedFingerprint = 3;
+    optional uint32 accountIndex = 5; // HD index to derive account from seed
+
+    optional AccountPurpose purpose = 6; // spending or view-only
+
+    bytes viewing_key = 7; // the viewing key for this account
+    AccountBirthday birthday = 8; // the block height at which this account was created
+    repeated Address addresses = 9; // account addresses
+    map<uint32, EphemeralAddress> ephemeralAddresses = 10; // map from index to encoded unified address
+
+}
+
+enum AccountKind {
+    Derived = 0;
+    Imported = 1;
+}
+
+enum AccountPurpose {
+    Spending = 0;
+    ViewOnly = 1;
+}
+
+message AccountBirthday {
+    ChainState priorChainState = 1; // the chain state at the block height before the account was created
+    optional uint32 recover_until = 2; // the block height until which the account should stop being in recovery mode
+}
+
+message Address {
+    bytes diversifierIndex = 1;
+    string address = 2;
+}
+
+message EphemeralAddress {
+    string address = 1;
+    optional bytes usedInTx = 2;
+    optional bytes seenInTx = 3; 
+}
+
+message ChainState {
+    uint32 blockHeight = 1; // the height of this block
+    bytes block_hash = 2;
+    bytes final_sapling_tree = 3;
+    bytes final_orchard_tree = 4;
+}

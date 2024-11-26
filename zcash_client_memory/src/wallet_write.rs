@@ -42,9 +42,7 @@ use zcash_client_backend::data_api::{
     WalletRead, WalletWrite,
 };
 
-use crate::{
-    error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD,
-};
+use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
 use crate::{MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
 use rayon::prelude::*;
 
@@ -92,7 +90,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 },
                 ufvk,
                 birthday.clone(),
-                AccountPurpose::Spending,
             )?;
 
             Ok((id, usk))
@@ -1073,7 +1070,6 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             AccountSource::Imported { purpose },
             unified_key.to_owned(),
             birthday.clone(),
-            purpose,
         )?;
         Ok(account)
     }
@@ -1217,7 +1213,7 @@ fn range_from(i: u32, n: u32) -> Range<u32> {
     first..last
 }
 
-use zcash_client_backend::wallet::{Note};
+use zcash_client_backend::wallet::Note;
 use zcash_keys::address::Receiver;
 use zcash_keys::encoding::AddressCodec;
 use zcash_keys::keys::AddressGenerationError;

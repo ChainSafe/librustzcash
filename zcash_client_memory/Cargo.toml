@@ -7,6 +7,7 @@ license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 categories.workspace = true
+build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -66,6 +67,7 @@ time.workspace = true
 ciborium = "0.2.2"
 serde_json.workspace = true
 postcard = { version = "1.0.10", features = ["alloc"] }
+pretty_assertions = "1.4.1"
 
 
 [features]
@@ -88,4 +90,7 @@ transparent-inputs = ["dep:bip32", "zcash_keys/transparent-inputs", "zcash_clien
 
 ## Exposes unstable APIs. Their behaviour may change at any time.
 unstable = ["zcash_client_backend/unstable"]
+
+[build-dependencies]
+prost-build = "0.13.3"
 

@@ -56,6 +56,12 @@ pub(crate) use types::*;
 pub mod block_source;
 pub use block_source::*;
 
+pub mod proto {
+    pub mod memwallet {
+        include!(concat!(env!("OUT_DIR"), "/memwallet.rs"));
+    }
+}
+
 #[cfg(test)]
 pub mod testing;
 
@@ -155,11 +161,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         kind: AccountSource,
         viewing_key: UnifiedFullViewingKey,
         birthday: AccountBirthday,
-        purpose: AccountPurpose,
     ) -> Result<(AccountId, Account), Error> {
         let (id, account) =
             self.accounts
-                .new_account(kind, viewing_key.to_owned(), birthday.clone(), purpose)?;
+                .new_account(kind, viewing_key.to_owned(), birthday.clone())?;
 
         // If a birthday frontier is available, insert it into the note commitment tree. If the
         // birthday frontier is the empty frontier, we don't need to do anything.
