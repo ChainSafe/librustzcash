@@ -176,18 +176,51 @@ enum PoolType {
 
 
 message TransactionEntry {
-    TransactionStatus tx_status = 2;
-    optional uint32 block = 3;
-    optional uint32 tx_index = 4;
-    optional uint32 expiry_height = 5;
-    optional bytes raw_tx = 6;
-    optional uint64 fee = 7;
-    optional uint32 target_height = 8;
-    optional uint32 mined_height = 9;
+    TransactionStatus tx_status = 1;
+    optional uint32 block = 2;
+    optional uint32 tx_index = 3;
+    optional uint32 expiry_height = 4;
+    optional bytes raw_tx = 5;
+    optional uint64 fee = 6;
+    optional uint32 target_height = 7;
+    optional uint32 mined_height = 8;
 }
 
 enum TransactionStatus {
     TxidNotRecognized = 0;
     NotInMainChain = 1;
     Mined = 2;
+}
+
+message ReceivedTransparentOutput {
+    bytes transaction_id = 1;
+    uint32 account_id = 2;
+    string address = 3;
+    TxOut txout = 4;
+    optional uint32 max_observed_unspent_height = 5;
+}
+
+message TxOut {
+    uint64 value = 1;
+    bytes script = 2;
+}
+
+
+
+
+message TransactionDataRequest {
+    TransactionDataRequestType request_type = 1;
+    // for the GetStatus and Enhancement variants
+    optional bytes tx_id = 2;
+
+    // for the SpendsFromAddress variant
+    optional bytes address = 3;
+    optional uint32 block_range_start = 4;
+    optional uint32 block_range_end = 5;
+}
+
+enum TransactionDataRequestType {
+    GetStatus = 0;
+    Enhancement = 1;
+    SpendsFromAddress = 2;
 }

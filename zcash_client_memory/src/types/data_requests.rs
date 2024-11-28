@@ -22,3 +22,67 @@ impl Deref for TransactionDataRequestQueue {
         &self.0
     }
 }
+
+mod serialization {
+    use super::*;
+    use crate::proto::memwallet as proto;
+    use zcash_keys::encoding::AddressCodec;
+    use zcash_primitives::{
+        consensus::Network::MainNetwork as EncodingParams, legacy::TransparentAddress,
+    };
+
+    impl From<TransactionDataRequest> for proto::TransactionDataRequest {
+        fn from(request: TransactionDataRequest) -> Self {
+            match request {
+                TransactionDataRequest::GetStatus(txid) => Self {
+                    request_type: proto::TransactionDataRequestType::GetStatus as i32,
+                    tx_id: Some(txid.as_ref().to_vec()),
+                    address: None,
+                    block_range_start: None,
+                    block_range_end: None,
+                },
+                TransactionDataRequest::Enhancement(txid) => Self {
+                    request_type: proto::TransactionDataRequestType::Enhancement as i32,
+                    tx_id: Some(txid.as_ref().to_vec()),
+                    address: None,
+                    block_range_start: None,
+                    block_range_end: None,
+                },
+                TransactionDataRequest::SpendsFromAddress {
+                    address,
+                    block_range_start,
+                    block_range_end,
+                } => Self {
+                    request_type: proto::TransactionDataRequestType::SpendsFromAddress as i32,
+                    tx_id: None,
+                    address: Some(address.encode(&EncodingParams).as_bytes().to_vec()),
+                    block_range_start: Some(block_range_start.into()),
+                    block_range_end: block_range_end.map(Into::into),
+                },
+            }
+        }
+    }
+
+    impl From<proto::TransactionDataRequest> for TransactionDataRequest {
+        fn from(request: proto::TransactionDataRequest) -> Self {
+            match request.request_type {
+                0 => TransactionDataRequest::GetStatus(TxId::from_bytes(
+                    request.tx_id.unwrap().try_into().unwrap(),
+                )),
+                1 => TransactionDataRequest::Enhancement(TxId::from_bytes(
+                    request.tx_id.unwrap().try_into().unwrap(),
+                )),
+                2 => TransactionDataRequest::SpendsFromAddress {
+                    address: TransparentAddress::decode(
+                        &EncodingParams,
+                        &String::from_utf8(request.address.unwrap()).unwrap(),
+                    )
+                    .unwrap(),
+                    block_range_start: request.block_range_start.unwrap().into(),
+                    block_range_end: request.block_range_end.map(Into::into),
+                },
+                _ => panic!("invalid request type"),
+            }
+        }
+    }
+}

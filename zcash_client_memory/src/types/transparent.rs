@@ -161,3 +161,53 @@ impl Deref for TransparentSpendCache {
         &self.0
     }
 }
+
+mod serialization {
+    use super::*;
+    use crate::proto::memwallet as proto;
+    use zcash_keys::encoding::AddressCodec;
+    use zcash_primitives::{consensus::Network::MainNetwork as EncodingParams, legacy::Script};
+    use zcash_protocol::value::Zatoshis;
+
+    impl From<ReceivedTransparentOutput> for proto::ReceivedTransparentOutput {
+        fn from(output: ReceivedTransparentOutput) -> Self {
+            Self {
+                transaction_id: output.transaction_id.as_ref().to_vec(),
+                account_id: *output.account_id,
+                address: output.address.encode(&EncodingParams),
+                txout: Some(output.txout.into()),
+                max_observed_unspent_height: output.max_observed_unspent_height.map(|h| h.into()),
+            }
+        }
+    }
+
+    impl From<proto::ReceivedTransparentOutput> for ReceivedTransparentOutput {
+        fn from(output: proto::ReceivedTransparentOutput) -> Self {
+            Self {
+                transaction_id: TxId::from_bytes(output.transaction_id.clone().try_into().unwrap()),
+                account_id: output.account_id.into(),
+                address: TransparentAddress::decode(&EncodingParams, &output.address).unwrap(),
+                txout: output.txout.unwrap().into(),
+                max_observed_unspent_height: output.max_observed_unspent_height.map(|h| h.into()),
+            }
+        }
+    }
+
+    impl From<TxOut> for proto::TxOut {
+        fn from(txout: TxOut) -> Self {
+            Self {
+                script: txout.script_pubkey.0,
+                value: txout.value.into(),
+            }
+        }
+    }
+
+    impl From<proto::TxOut> for TxOut {
+        fn from(txout: proto::TxOut) -> Self {
+            Self {
+                script_pubkey: Script(txout.script),
+                value: Zatoshis::try_from(txout.value).unwrap(),
+            }
+        }
+    }
+}
