@@ -173,3 +173,21 @@ enum PoolType {
     ShieldedSapling = 1;
     ShieldedOrchard = 2;
 }
+
+
+message TransactionEntry {
+    TransactionStatus tx_status = 2;
+    optional uint32 block = 3;
+    optional uint32 tx_index = 4;
+    optional uint32 expiry_height = 5;
+    optional bytes raw_tx = 6;
+    optional uint64 fee = 7;
+    optional uint32 target_height = 8;
+    optional uint32 mined_height = 9;
+}
+
+enum TransactionStatus {
+    TxidNotRecognized = 0;
+    NotInMainChain = 1;
+    Mined = 2;
+}

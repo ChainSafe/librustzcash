@@ -252,3 +252,56 @@ impl TxLocatorMap {
         self.0.entry(k)
     }
 }
+
+mod serialization {
+    use super::*;
+    use crate::proto::memwallet as proto;
+
+    impl From<TransactionEntry> for proto::TransactionEntry {
+        fn from(entry: TransactionEntry) -> Self {
+            Self {
+                tx_status: match entry.tx_status {
+                    TransactionStatus::TxidNotRecognized => {
+                        proto::TransactionStatus::TxidNotRecognized.into()
+                    }
+                    TransactionStatus::NotInMainChain => {
+                        proto::TransactionStatus::NotInMainChain.into()
+                    }
+                    TransactionStatus::Mined(_) => proto::TransactionStatus::Mined.into(),
+                },
+                block: entry.block.map(Into::into),
+                tx_index: entry.tx_index,
+                expiry_height: entry.expiry_height.map(Into::into),
+                raw_tx: entry.raw,
+                fee: entry.fee.map(Into::into),
+                target_height: entry._target_height.map(Into::into),
+                mined_height: match entry.tx_status {
+                    TransactionStatus::Mined(height) => Some(height.into()),
+                    _ => None,
+                },
+            }
+        }
+    }
+
+    impl From<proto::TransactionEntry> for TransactionEntry {
+        fn from(entry: proto::TransactionEntry) -> Self {
+            Self {
+                tx_status: match entry.tx_status() {
+                    proto::TransactionStatus::TxidNotRecognized => {
+                        TransactionStatus::TxidNotRecognized
+                    }
+                    proto::TransactionStatus::NotInMainChain => TransactionStatus::NotInMainChain,
+                    proto::TransactionStatus::Mined => {
+                        TransactionStatus::Mined(entry.mined_height.unwrap().into())
+                    }
+                },
+                block: entry.block.map(Into::into),
+                tx_index: entry.tx_index.map(Into::into),
+                expiry_height: entry.expiry_height.map(Into::into),
+                raw: entry.raw_tx,
+                fee: entry.fee.map(|fee| fee.try_into().unwrap()),
+                _target_height: entry.target_height.map(Into::into),
+            }
+        }
+    }
+}
