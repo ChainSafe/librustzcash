@@ -175,7 +175,9 @@ mod serialization {
     use super::*;
     use crate::proto::memwallet as proto;
     use zcash_keys::encoding::AddressCodec;
-    use zcash_primitives::consensus::Network::MainNetwork as EncodingParams;
+    use zcash_primitives::{
+        consensus::Network::MainNetwork as EncodingParams, legacy::TransparentAddress,
+    };
 
     impl From<SentNote> for proto::SentNote {
         fn from(note: SentNote) -> Self {
@@ -188,12 +190,29 @@ mod serialization {
         }
     }
 
+    impl From<proto::SentNote> for SentNote {
+        fn from(note: proto::SentNote) -> Self {
+            Self {
+                from_account_id: note.from_account_id.into(),
+                to: note.to.unwrap().into(),
+                value: Zatoshis::from_u64(note.value).unwrap(),
+                memo: Memo::from_bytes(&note.memo).unwrap(),
+            }
+        }
+    }
+
     impl From<OutPoint> for proto::OutPoint {
         fn from(outpoint: OutPoint) -> Self {
             Self {
                 hash: outpoint.txid().as_ref().to_vec(),
                 n: outpoint.n(),
             }
+        }
+    }
+
+    impl From<proto::OutPoint> for OutPoint {
+        fn from(outpoint: proto::OutPoint) -> Self {
+            Self::new(outpoint.hash.try_into().unwrap(), outpoint.n)
         }
     }
 
@@ -242,6 +261,37 @@ mod serialization {
                     account_id: Some(*receiving_account),
                     outpoint_metadata: None,
                     note: Some(note.into()),
+                },
+            }
+        }
+    }
+
+    impl From<proto::Recipient> for Recipient<AccountId, Note, OutPoint> {
+        fn from(recipient: proto::Recipient) -> Self {
+            match recipient.recipient_type {
+                0 => Recipient::External(
+                    recipient.address.unwrap().parse().unwrap(),
+                    match recipient.pool_type.unwrap() {
+                        0 => PoolType::Transparent,
+                        1 => PoolType::Shielded(Sapling),
+                        #[cfg(feature = "orchard")]
+                        2 => PoolType::Shielded(Orchard),
+                        _ => unreachable!(),
+                    },
+                ),
+                1 => Recipient::EphemeralTransparent {
+                    receiving_account: recipient.account_id.unwrap().into(),
+                    ephemeral_address: TransparentAddress::decode(
+                        &EncodingParams,
+                        &recipient.address.unwrap(),
+                    )
+                    .unwrap(),
+                    outpoint_metadata: recipient.outpoint_metadata.unwrap().into(),
+                },
+                _ => Recipient::InternalAccount {
+                    receiving_account: recipient.account_id.unwrap().into(),
+                    external_address: recipient.address.map(|a| a.parse().unwrap()),
+                    note: recipient.note.unwrap().into(),
                 },
             }
         }

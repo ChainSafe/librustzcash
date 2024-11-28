@@ -48,3 +48,39 @@ impl From<orchard::note::Nullifier> for Nullifier {
         Nullifier::Orchard(n)
     }
 }
+
+mod serialization {
+    use super::*;
+    use crate::proto::memwallet as proto;
+
+    impl From<Nullifier> for proto::Nullifier {
+        fn from(nullifier: Nullifier) -> Self {
+            match nullifier {
+                Nullifier::Sapling(n) => Self {
+                    protocol: proto::ShieldedProtocol::Sapling.into(),
+                    nullifier: n.to_vec(),
+                },
+                #[cfg(feature = "orchard")]
+                Nullifier::Orchard(n) => Self {
+                    protocol: proto::ShieldedProtocol::Orchard.into(),
+                    nullifier: n.to_bytes().to_vec(),
+                },
+            }
+        }
+    }
+
+    impl From<proto::Nullifier> for Nullifier {
+        fn from(nullifier: proto::Nullifier) -> Self {
+            match nullifier.protocol {
+                0 => Nullifier::Sapling(
+                    sapling::Nullifier::from_slice(&nullifier.nullifier).unwrap(),
+                ),
+                1 => Nullifier::Orchard(
+                    orchard::note::Nullifier::from_bytes(&nullifier.nullifier.try_into().unwrap())
+                        .unwrap(),
+                ),
+                _ => panic!("invalid protocol"),
+            }
+        }
+    }
+}
