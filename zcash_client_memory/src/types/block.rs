@@ -92,8 +92,8 @@ mod serialization {
                         let note_id = memo.note_id.unwrap();
                         (
                             NoteId::new(
-                                TxId::from_bytes(note_id.tx_id.try_into().unwrap()),
-                                match note_id.protocol {
+                                note_id.tx_id.unwrap().into(),
+                                match note_id.pool {
                                     0 => zcash_protocol::ShieldedProtocol::Sapling,
                                     #[cfg(feature = "orchard")]
                                     1 => zcash_protocol::ShieldedProtocol::Orchard,

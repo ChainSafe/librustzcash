@@ -2,15 +2,92 @@ syntax = "proto3";
 package memwallet;
 
 
-// message MemoryWallet {
-//     uint32 protoVersion = 1;         // the version of this wire format, for storage
+message MemoryWallet {
+    uint32 protoVersion = 1;         // the version of this wire format, for storage
    
-//     Accounts accounts = 2;   // the accounts in this wallet
+    Accounts accounts = 2;   // the accounts in this wallet
    
-//     map<uint32, MemoryWalletBlock> blocks = 3; // map from block height to block data
-// }
+    map<uint32, WalletBlock> blocks = 3; // map from block height to block data
+    repeated TransactionTableRecord tx_table = 4; // map from transaction id to transaction data
+    
+    repeated ReceivedNote received_note_table = 5; // the notes received by this wallet
+    repeated ReceivedNoteSpendRecord received_note_spends = 6; // the notes spent by this wallet
+    repeated NullifierRecord nullifiers = 7; // the nullifiers for notes spent by this wallet
 
+    repeated SentNoteRecord sent_notes = 8;
 
+    repeated TxLocatorRecord tx_locator = 9;
+    repeated ScanQueueRecord scan_queue = 10;
+
+    bytes sapling_tree = 11;
+    repeated TreeEndHeightsRecord sapling_tree_shard_end_heights = 12;
+
+    bytes orchard_tree = 13;
+    repeated TreeEndHeightsRecord orchard_tree_shard_end_heights = 14;
+
+    repeated TransparentReceivedOutputRecord transparent_received_outputs = 15;
+    repeated TransparentReceivedOutputSpendRecord transparent_received_output_spends = 16;
+    repeated TransparentSpendCacheRecord transparent_spend_map = 17;
+    
+    repeated TransactionDataRequest transaction_data_requests = 18;
+}
+
+message TxId {
+    bytes hash = 1;
+}
+
+message TransactionTableRecord {
+    TxId tx_id = 1;
+    TransactionEntry tx_entry = 2;
+}
+
+// associates a note and a transaction where it was spent
+message ReceivedNoteSpendRecord {
+    NoteId note_id = 1;
+    TxId tx_id = 2;
+}
+
+// records where a nullifier was spent by block height and tx index in that block
+message NullifierRecord {
+    Nullifier nullifier = 1;
+    uint32 block_height = 2;
+    uint32 tx_index = 3;
+}
+
+message SentNoteRecord {
+    NoteId sent_note_id = 1;
+    SentNote sent_note = 2;
+}
+
+// Maps a block height and transaction index to a transaction ID.
+message TxLocatorRecord {
+    uint32 block_height = 1;
+    uint32 tx_index = 2;
+    TxId tx_id = 3;
+}
+
+// Stores the block height corresponding to the last note commitment in a shard
+// as defined by its level and index in the tree
+message TreeEndHeightsRecord {
+    uint32 level = 1;
+    uint32 index = 2;
+    uint32 block_height = 3;
+}
+
+message TransparentReceivedOutputRecord {
+    OutPoint outpoint = 1;
+    ReceivedTransparentOutput output = 2;
+}
+
+message TransparentReceivedOutputSpendRecord {
+    OutPoint outpoint = 1;
+    TxId tx_id = 2;
+}
+
+message TransparentSpendCacheRecord {
+    TxId tx_id = 1;
+    OutPoint outpoint = 2;
+}
 
 message Accounts {
     map<uint32, Account> accounts = 1; // map from account index to account data
@@ -81,9 +158,10 @@ message WalletBlock {
     optional uint32 orchard_action_count = 9; // the number of Orchard actions in this block
 }
 
+// A unique identifier for a shielded note or transparent utxo
 message NoteId {
-    bytes tx_id = 1;
-    ShieldedProtocol protocol = 2;
+    TxId tx_id = 1;
+    PoolType pool = 2;
     uint32 output_index = 3;
 }
 
@@ -119,7 +197,7 @@ enum RSeedType {
 
 message ReceivedNote {
     NoteId note_id = 1;
-    bytes tx_id = 2;
+    TxId tx_id = 2;
     uint32 output_index = 3;
     uint32 account_id = 4;
     Note note = 5;
@@ -211,7 +289,7 @@ message TxOut {
 message TransactionDataRequest {
     TransactionDataRequestType request_type = 1;
     // for the GetStatus and Enhancement variants
-    optional bytes tx_id = 2;
+    optional TxId tx_id = 2;
 
     // for the SpendsFromAddress variant
     optional bytes address = 3;
@@ -223,4 +301,29 @@ enum TransactionDataRequestType {
     GetStatus = 0;
     Enhancement = 1;
     SpendsFromAddress = 2;
+}
+
+message ScanQueueRecord {
+    uint32 start_height = 1;
+    uint32 end_height = 2;
+    ScanPriority priority = 3;
+}
+
+
+enum ScanPriority {
+    /// Block ranges that are ignored have lowest priority.
+    Ignored = 0;
+    /// Block ranges that have already been scanned will not be re-scanned.
+    Scanned = 1;
+    /// Block ranges to be scanned to advance the fully-scanned height.
+    Historic = 2;
+    /// Block ranges adjacent to heights at which the user opened the wallet.
+    OpenAdjacent = 3;
+    /// Blocks that must be scanned to complete note commitment tree shards adjacent to found notes.
+    FoundNote = 4;
+    /// Blocks that must be scanned to complete the latest note commitment tree shard.
+    ChainTip = 5;
+    /// A previously scanned range that must be verified to check it is still in the
+    /// main chain, has highest priority.
+    Verify = 6;
 }

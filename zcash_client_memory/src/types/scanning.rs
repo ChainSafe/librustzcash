@@ -156,3 +156,49 @@ impl DerefMut for ScanQueue {
         &mut self.0[..]
     }
 }
+
+mod serialization {
+    use super::*;
+    use crate::proto::memwallet as proto;
+
+    impl From<(BlockHeight, BlockHeight, ScanPriority)> for proto::ScanQueueRecord {
+        fn from(
+            (start_height, end_height, priority): (BlockHeight, BlockHeight, ScanPriority),
+        ) -> Self {
+            Self {
+                start_height: start_height.into(),
+                end_height: end_height.into(),
+                priority: match priority {
+                    ScanPriority::Ignored => proto::ScanPriority::Ignored as i32,
+                    ScanPriority::Scanned => proto::ScanPriority::Scanned as i32,
+                    ScanPriority::Historic => proto::ScanPriority::Historic as i32,
+                    ScanPriority::OpenAdjacent => proto::ScanPriority::OpenAdjacent as i32,
+                    ScanPriority::FoundNote => proto::ScanPriority::FoundNote as i32,
+                    ScanPriority::ChainTip => proto::ScanPriority::ChainTip as i32,
+                    ScanPriority::Verify => proto::ScanPriority::Verify as i32,
+                },
+            }
+        }
+    }
+
+    impl From<proto::ScanQueueRecord> for (BlockHeight, BlockHeight, ScanPriority) {
+        fn from(record: proto::ScanQueueRecord) -> Self {
+            (
+                record.start_height.into(),
+                record.end_height.into(),
+                match record.priority {
+                    x if x == proto::ScanPriority::Ignored as i32 => ScanPriority::Ignored,
+                    x if x == proto::ScanPriority::Scanned as i32 => ScanPriority::Scanned,
+                    x if x == proto::ScanPriority::Historic as i32 => ScanPriority::Historic,
+                    x if x == proto::ScanPriority::OpenAdjacent as i32 => {
+                        ScanPriority::OpenAdjacent
+                    }
+                    x if x == proto::ScanPriority::FoundNote as i32 => ScanPriority::FoundNote,
+                    x if x == proto::ScanPriority::ChainTip as i32 => ScanPriority::ChainTip,
+                    x if x == proto::ScanPriority::Verify as i32 => ScanPriority::Verify,
+                    _ => unreachable!(),
+                },
+            )
+        }
+    }
+}

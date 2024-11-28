@@ -80,7 +80,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     blocks: BTreeMap<BlockHeight, MemoryWalletBlock>,
     tx_table: TransactionTable,
     received_notes: ReceivedNoteTable,
-    received_note_spends: ReceievdNoteSpends,
+    received_note_spends: ReceievedNoteSpends,
     nullifiers: NullifierMap,
 
     /// Stores the outputs of transactions created by the wallet.
@@ -132,7 +132,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
             sent_notes: SentNoteTable::new(),
             nullifiers: NullifierMap::new(),
             tx_locator: TxLocatorMap::new(),
-            received_note_spends: ReceievdNoteSpends::new(),
+            received_note_spends: ReceievedNoteSpends::new(),
             scan_queue: ScanQueue::new(),
             transparent_received_outputs: TransparentReceivedOutputs::new(),
             transparent_received_output_spends: TransparentReceivedOutputSpends::new(),
@@ -1059,6 +1059,33 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
 
         Ok(output.outpoint().clone())
+    }
+}
+
+mod serialization {
+    use super::*;
+    use crate::proto::memwallet as proto;
+
+    impl From<&TxId> for proto::TxId {
+        fn from(txid: &TxId) -> Self {
+            proto::TxId {
+                hash: txid.as_ref().to_vec(),
+            }
+        }
+    }
+
+    impl From<TxId> for proto::TxId {
+        fn from(txid: TxId) -> Self {
+            proto::TxId {
+                hash: txid.as_ref().to_vec(),
+            }
+        }
+    }
+
+    impl From<proto::TxId> for TxId {
+        fn from(txid: proto::TxId) -> Self {
+            TxId::from_bytes(txid.hash.try_into().unwrap())
+        }
     }
 }
 

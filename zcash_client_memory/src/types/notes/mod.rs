@@ -2,7 +2,7 @@ mod received;
 mod sent;
 
 pub(crate) use received::{
-    to_spendable_notes, ReceievdNoteSpends, ReceivedNote, ReceivedNoteTable,
+    to_spendable_notes, ReceievedNoteSpends, ReceivedNote, ReceivedNoteTable,
 };
 pub(crate) use sent::SentNoteTable;
 
@@ -18,8 +18,8 @@ mod serialization {
     impl From<NoteId> for proto::NoteId {
         fn from(note_id: NoteId) -> Self {
             Self {
-                tx_id: note_id.txid().as_ref().to_vec(),
-                protocol: match note_id.protocol() {
+                tx_id: Some(note_id.txid().into()),
+                pool: match note_id.protocol() {
                     zcash_protocol::ShieldedProtocol::Sapling => 0,
                     #[cfg(feature = "orchard")]
                     zcash_protocol::ShieldedProtocol::Orchard => 1,
@@ -32,11 +32,12 @@ mod serialization {
     impl From<proto::NoteId> for NoteId {
         fn from(note_id: proto::NoteId) -> Self {
             Self::new(
-                TxId::from_bytes(note_id.tx_id.clone().try_into().unwrap()),
-                match note_id.protocol() {
-                    proto::ShieldedProtocol::Sapling => zcash_protocol::ShieldedProtocol::Sapling,
+                note_id.tx_id.clone().unwrap().into(),
+                match note_id.pool() {
+                    proto::PoolType::ShieldedSapling => zcash_protocol::ShieldedProtocol::Sapling,
                     #[cfg(feature = "orchard")]
-                    proto::ShieldedProtocol::Orchard => zcash_protocol::ShieldedProtocol::Orchard,
+                    proto::PoolType::ShieldedOrchard => zcash_protocol::ShieldedProtocol::Orchard,
+                    _ => panic!("invalid pool"),
                 },
                 note_id.output_index.try_into().unwrap(),
             )

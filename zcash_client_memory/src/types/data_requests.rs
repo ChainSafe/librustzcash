@@ -36,14 +36,14 @@ mod serialization {
             match request {
                 TransactionDataRequest::GetStatus(txid) => Self {
                     request_type: proto::TransactionDataRequestType::GetStatus as i32,
-                    tx_id: Some(txid.as_ref().to_vec()),
+                    tx_id: Some(txid.into()),
                     address: None,
                     block_range_start: None,
                     block_range_end: None,
                 },
                 TransactionDataRequest::Enhancement(txid) => Self {
                     request_type: proto::TransactionDataRequestType::Enhancement as i32,
-                    tx_id: Some(txid.as_ref().to_vec()),
+                    tx_id: Some(txid.into()),
                     address: None,
                     block_range_start: None,
                     block_range_end: None,
@@ -66,12 +66,8 @@ mod serialization {
     impl From<proto::TransactionDataRequest> for TransactionDataRequest {
         fn from(request: proto::TransactionDataRequest) -> Self {
             match request.request_type {
-                0 => TransactionDataRequest::GetStatus(TxId::from_bytes(
-                    request.tx_id.unwrap().try_into().unwrap(),
-                )),
-                1 => TransactionDataRequest::Enhancement(TxId::from_bytes(
-                    request.tx_id.unwrap().try_into().unwrap(),
-                )),
+                0 => TransactionDataRequest::GetStatus(request.tx_id.unwrap().into()),
+                1 => TransactionDataRequest::Enhancement(request.tx_id.unwrap().into()),
                 2 => TransactionDataRequest::SpendsFromAddress {
                     address: TransparentAddress::decode(
                         &EncodingParams,

@@ -26,9 +26,9 @@ use crate::{error::Error, Nullifier};
 
 /// Keeps track of notes that are spent in which transaction
 #[derive(Debug)]
-pub(crate) struct ReceievdNoteSpends(BTreeMap<NoteId, TxId>);
+pub(crate) struct ReceievedNoteSpends(BTreeMap<NoteId, TxId>);
 
-impl ReceievdNoteSpends {
+impl ReceievedNoteSpends {
     pub fn new() -> Self {
         Self(BTreeMap::new())
     }
@@ -40,7 +40,7 @@ impl ReceievdNoteSpends {
     }
 }
 
-impl Deref for ReceievdNoteSpends {
+impl Deref for ReceievedNoteSpends {
     type Target = BTreeMap<NoteId, TxId>;
 
     fn deref(&self) -> &Self::Target {
@@ -368,7 +368,7 @@ mod serialization {
         fn from(value: ReceivedNote) -> Self {
             Self {
                 note_id: Some(value.note_id.into()),
-                tx_id: value.txid.as_ref().to_vec(),
+                tx_id: Some(value.txid.into()),
                 output_index: value.output_index,
                 account_id: *value.account_id,
                 note: Some(value.note.into()),
@@ -389,7 +389,7 @@ mod serialization {
         fn from(value: proto::ReceivedNote) -> Self {
             Self {
                 note_id: value.note_id.unwrap().into(),
-                txid: TxId::from_bytes(value.tx_id.as_slice().try_into().unwrap()),
+                txid: value.tx_id.unwrap().into(),
                 output_index: value.output_index,
                 account_id: value.account_id.into(),
                 note: value.note.unwrap().into(),
