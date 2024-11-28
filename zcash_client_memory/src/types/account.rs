@@ -56,9 +56,10 @@ impl ConditionallySelectable for AccountId {
 
 /// This is the top-level struct that handles accounts. We could theoretically have this just be a Vec
 /// but we want to have control over the internal AccountId values. The account ids are unique.
+#[derive(Debug, Clone)]
 pub(crate) struct Accounts {
-    nonce: u32,
-    accounts: BTreeMap<AccountId, Account>,
+    pub(crate) nonce: u32,
+    pub(crate) accounts: BTreeMap<AccountId, Account>,
 }
 
 impl Accounts {

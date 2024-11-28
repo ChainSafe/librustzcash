@@ -17,8 +17,8 @@ use super::AccountId;
 use crate::Error;
 
 /// Stores the transparent outputs received by the wallet.
-#[derive(Default)]
-pub struct TransparentReceivedOutputs(BTreeMap<OutPoint, ReceivedTransparentOutput>);
+#[derive(Debug, Default, Clone)]
+pub struct TransparentReceivedOutputs(pub(crate) BTreeMap<OutPoint, ReceivedTransparentOutput>);
 
 impl TransparentReceivedOutputs {
     pub fn new() -> Self {
@@ -58,8 +58,8 @@ impl DerefMut for TransparentReceivedOutputs {
 }
 
 /// A junction table between received transparent outputs and the transactions that spend them.
-#[derive(Default)]
-pub struct TransparentReceivedOutputSpends(BTreeMap<OutPoint, TxId>);
+#[derive(Debug, Default)]
+pub struct TransparentReceivedOutputSpends(pub(crate) BTreeMap<OutPoint, TxId>);
 
 impl TransparentReceivedOutputSpends {
     pub fn new() -> Self {
@@ -88,6 +88,7 @@ impl Deref for TransparentReceivedOutputSpends {
 }
 
 // transparent_received_outputs
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceivedTransparentOutput {
     // Reference to the transaction in which this TXO was created
     pub(crate) transaction_id: TxId,
@@ -136,8 +137,8 @@ impl ReceivedTransparentOutput {
 ///
 /// Output may be attempted to be spent in multiple transactions, even though only one will ever be mined
 /// which is why can cannot just rely on TransparentReceivedOutputSpends or implement this as as map
-#[derive(Default)]
-pub struct TransparentSpendCache(BTreeSet<(TxId, OutPoint)>);
+#[derive(Debug, Default)]
+pub struct TransparentSpendCache(pub(crate) BTreeSet<(TxId, OutPoint)>);
 
 impl TransparentSpendCache {
     pub fn new() -> Self {

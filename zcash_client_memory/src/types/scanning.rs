@@ -9,6 +9,7 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 
 /// A queue of scanning ranges. Contains the start and end heights of each range, along with the
 /// priority of scanning that range.
+#[derive(Debug, Clone)]
 pub(crate) struct ScanQueue(Vec<(BlockHeight, BlockHeight, ScanPriority)>);
 
 impl ScanQueue {

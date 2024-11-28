@@ -24,7 +24,7 @@ use {
 
 use crate::{error::Error, Nullifier};
 
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
 pub enum SentNoteId {
     Shielded(NoteId),
     Transparent { txid: TxId, output_index: u32 },
@@ -51,7 +51,8 @@ impl SentNoteId {
     }
 }
 
-pub(crate) struct SentNoteTable(BTreeMap<SentNoteId, SentNote>);
+#[derive(Debug, Clone)]
+pub(crate) struct SentNoteTable(pub(crate) BTreeMap<SentNoteId, SentNote>);
 
 impl SentNoteTable {
     pub fn new() -> Self {
@@ -163,7 +164,7 @@ impl Deref for SentNoteTable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct SentNote {
     pub(crate) from_account_id: AccountId,
     pub(crate) to: Recipient<AccountId, Note, OutPoint>,
@@ -197,6 +198,27 @@ mod serialization {
                 to: note.to.unwrap().into(),
                 value: Zatoshis::from_u64(note.value).unwrap(),
                 memo: Memo::from_bytes(&note.memo).unwrap(),
+            }
+        }
+    }
+
+    impl From<SentNoteId> for proto::NoteId {
+        fn from(note_id: SentNoteId) -> Self {
+            match note_id {
+                SentNoteId::Shielded(note_id) => proto::NoteId {
+                    tx_id: Some(note_id.txid().into()),
+                    output_index: note_id.output_index().into(),
+                    pool: match note_id.protocol() {
+                        Sapling => proto::PoolType::ShieldedSapling as i32,
+                        #[cfg(feature = "orchard")]
+                        Orchard => proto::PoolType::ShieldedOrchard as i32,
+                    },
+                },
+                SentNoteId::Transparent { txid, output_index } => proto::NoteId {
+                    tx_id: Some(txid.into()),
+                    output_index: output_index.into(),
+                    pool: proto::PoolType::Transparent as i32,
+                },
             }
         }
     }

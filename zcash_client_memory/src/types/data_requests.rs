@@ -2,8 +2,8 @@ use std::{collections::VecDeque, ops::Deref};
 
 use zcash_client_backend::data_api::TransactionDataRequest;
 use zcash_primitives::transaction::TxId;
-#[derive(Default)]
-pub struct TransactionDataRequestQueue(VecDeque<TransactionDataRequest>);
+#[derive(Debug, Default)]
+pub struct TransactionDataRequestQueue(pub(crate) VecDeque<TransactionDataRequest>);
 
 impl TransactionDataRequestQueue {
     pub fn new() -> Self {

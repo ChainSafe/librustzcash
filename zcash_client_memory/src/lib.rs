@@ -74,6 +74,7 @@ pub(crate) const VERIFY_LOOKAHEAD: u32 = 10;
 use zcash_primitives::transaction::Transaction;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
+#[derive(Debug)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
     params: P,
     accounts: Accounts,
@@ -1063,6 +1064,8 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 }
 
 mod serialization {
+    use consensus::Parameters;
+
     use super::*;
     use crate::proto::memwallet as proto;
 
@@ -1085,6 +1088,156 @@ mod serialization {
     impl From<proto::TxId> for TxId {
         fn from(txid: proto::TxId) -> Self {
             TxId::from_bytes(txid.hash.try_into().unwrap())
+        }
+    }
+
+    impl<P: Parameters> From<MemoryWalletDb<P>> for proto::MemoryWallet {
+        fn from(wallet: MemoryWalletDb<P>) -> Self {
+            Self {
+                accounts: Some(proto::Accounts {
+                    accounts: wallet
+                        .accounts
+                        .accounts
+                        .into_iter()
+                        .map(|(id, account)| (*id, proto::Account::from(account)))
+                        .collect(),
+                    account_nonce: wallet.accounts.nonce,
+                }),
+
+                blocks: wallet
+                    .blocks
+                    .clone()
+                    .into_iter()
+                    .map(|(height, block)| (height.into(), proto::WalletBlock::from(block)))
+                    .collect(),
+
+                tx_table: wallet
+                    .tx_table
+                    .0
+                    .into_iter()
+                    .map(|(txid, tx)| proto::TransactionTableRecord {
+                        tx_id: Some(txid.into()),
+                        tx_entry: Some(tx.into()),
+                    })
+                    .collect(),
+
+                received_note_table: wallet
+                    .received_notes
+                    .into_iter()
+                    .map(|note| proto::ReceivedNote::from(note.clone()))
+                    .collect(),
+
+                received_note_spends: wallet
+                    .received_note_spends
+                    .0
+                    .into_iter()
+                    .map(|(note_id, tx_id)| proto::ReceivedNoteSpendRecord {
+                        note_id: Some(note_id.into()),
+                        tx_id: Some(tx_id.into()),
+                    })
+                    .collect(),
+
+                nullifiers: wallet
+                    .nullifiers
+                    .0
+                    .into_iter()
+                    .map(|(nullifier, (height, tx_index))| proto::NullifierRecord {
+                        block_height: height.into(),
+                        tx_index: tx_index as u32,
+                        nullifier: Some(nullifier.into()),
+                    })
+                    .collect(),
+
+                sent_notes: wallet
+                    .sent_notes
+                    .0
+                    .into_iter()
+                    .map(|(id, note)| proto::SentNoteRecord {
+                        sent_note_id: Some(id.into()),
+                        sent_note: Some(proto::SentNote::from(note)),
+                    })
+                    .collect(),
+
+                tx_locator: wallet
+                    .tx_locator
+                    .0
+                    .into_iter()
+                    .map(|((height, tx_index), txid)| proto::TxLocatorRecord {
+                        block_height: height.into(),
+                        tx_index: tx_index as u32,
+                        tx_id: Some(txid.into()),
+                    })
+                    .collect(),
+
+                scan_queue: wallet
+                    .scan_queue
+                    .into_iter()
+                    .map(|r| proto::ScanQueueRecord::from(*r))
+                    .collect(),
+
+                sapling_tree: Vec::new(),
+                sapling_tree_shard_end_heights: wallet
+                    .sapling_tree_shard_end_heights
+                    .into_iter()
+                    .map(|(address, height)| proto::TreeEndHeightsRecord {
+                        level: address.level().into(),
+                        index: address.index().into(),
+                        block_height: height.into(),
+                    })
+                    .collect(),
+
+                orchard_tree: Vec::new(),
+                orchard_tree_shard_end_heights: wallet
+                    .orchard_tree_shard_end_heights
+                    .into_iter()
+                    .map(|(address, height)| proto::TreeEndHeightsRecord {
+                        level: address.level().into(),
+                        index: address.index().into(),
+                        block_height: height.into(),
+                    })
+                    .collect(),
+
+                transparent_received_outputs: wallet
+                    .transparent_received_outputs
+                    .0
+                    .into_iter()
+                    .map(
+                        |(outpoint, output)| proto::TransparentReceivedOutputRecord {
+                            outpoint: Some(proto::OutPoint::from(outpoint)),
+                            output: Some(proto::ReceivedTransparentOutput::from(output)),
+                        },
+                    )
+                    .collect(),
+
+                transparent_received_output_spends: wallet
+                    .transparent_received_output_spends
+                    .0
+                    .into_iter()
+                    .map(
+                        |(outpoint, txid)| proto::TransparentReceivedOutputSpendRecord {
+                            outpoint: Some(proto::OutPoint::from(outpoint)),
+                            tx_id: Some(txid.into()),
+                        },
+                    )
+                    .collect(),
+
+                transparent_spend_map: wallet
+                    .transparent_spend_map
+                    .0
+                    .into_iter()
+                    .map(|(txid, outpoint)| proto::TransparentSpendCacheRecord {
+                        tx_id: Some(txid.into()),
+                        outpoint: Some(proto::OutPoint::from(outpoint)),
+                    })
+                    .collect(),
+
+                transaction_data_requests: wallet
+                    .transaction_data_request_queue
+                    .0
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            }
         }
     }
 }

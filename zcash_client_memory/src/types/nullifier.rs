@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Deref};
 
 use zcash_primitives::consensus::BlockHeight;
 use zcash_protocol::PoolType;
 
 /// Maps a nullifier to the block height and transaction index (NOT txid!) where it was spent.
-pub(crate) struct NullifierMap(BTreeMap<Nullifier, (BlockHeight, u32)>);
+#[derive(Debug, Clone)]
+pub(crate) struct NullifierMap(pub(crate) BTreeMap<Nullifier, (BlockHeight, u32)>);
 
 impl NullifierMap {
     pub fn new() -> Self {
@@ -16,6 +17,14 @@ impl NullifierMap {
 
     pub fn get(&self, nullifier: &Nullifier) -> Option<&(BlockHeight, u32)> {
         self.0.get(nullifier)
+    }
+}
+
+impl Deref for NullifierMap {
+    type Target = BTreeMap<Nullifier, (BlockHeight, u32)>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

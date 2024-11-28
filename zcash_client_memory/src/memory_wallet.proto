@@ -1,35 +1,32 @@
 syntax = "proto3";
 package memwallet;
 
-
 message MemoryWallet {
-    uint32 protoVersion = 1;         // the version of this wire format, for storage
+    Accounts accounts = 1;   // the accounts in this wallet
    
-    Accounts accounts = 2;   // the accounts in this wallet
-   
-    map<uint32, WalletBlock> blocks = 3; // map from block height to block data
-    repeated TransactionTableRecord tx_table = 4; // map from transaction id to transaction data
+    map<uint32, WalletBlock> blocks = 2; // map from block height to block data
+    repeated TransactionTableRecord tx_table = 3; // map from transaction id to transaction data
     
-    repeated ReceivedNote received_note_table = 5; // the notes received by this wallet
-    repeated ReceivedNoteSpendRecord received_note_spends = 6; // the notes spent by this wallet
-    repeated NullifierRecord nullifiers = 7; // the nullifiers for notes spent by this wallet
+    repeated ReceivedNote received_note_table = 4; // the notes received by this wallet
+    repeated ReceivedNoteSpendRecord received_note_spends = 5; // the notes spent by this wallet
+    repeated NullifierRecord nullifiers = 6; // the nullifiers for notes spent by this wallet
 
-    repeated SentNoteRecord sent_notes = 8;
+    repeated SentNoteRecord sent_notes = 7;
 
-    repeated TxLocatorRecord tx_locator = 9;
-    repeated ScanQueueRecord scan_queue = 10;
+    repeated TxLocatorRecord tx_locator = 8;
+    repeated ScanQueueRecord scan_queue = 9;
 
-    bytes sapling_tree = 11;
-    repeated TreeEndHeightsRecord sapling_tree_shard_end_heights = 12;
+    bytes sapling_tree = 10;
+    repeated TreeEndHeightsRecord sapling_tree_shard_end_heights = 11;
 
-    bytes orchard_tree = 13;
-    repeated TreeEndHeightsRecord orchard_tree_shard_end_heights = 14;
+    bytes orchard_tree = 12;
+    repeated TreeEndHeightsRecord orchard_tree_shard_end_heights = 13;
 
-    repeated TransparentReceivedOutputRecord transparent_received_outputs = 15;
-    repeated TransparentReceivedOutputSpendRecord transparent_received_output_spends = 16;
-    repeated TransparentSpendCacheRecord transparent_spend_map = 17;
+    repeated TransparentReceivedOutputRecord transparent_received_outputs = 14;
+    repeated TransparentReceivedOutputSpendRecord transparent_received_output_spends = 15;
+    repeated TransparentSpendCacheRecord transparent_spend_map = 16;
     
-    repeated TransactionDataRequest transaction_data_requests = 18;
+    repeated TransactionDataRequest transaction_data_requests = 17;
 }
 
 message TxId {
@@ -70,7 +67,7 @@ message TxLocatorRecord {
 // as defined by its level and index in the tree
 message TreeEndHeightsRecord {
     uint32 level = 1;
-    uint32 index = 2;
+    uint64 index = 2;
     uint32 block_height = 3;
 }
 
