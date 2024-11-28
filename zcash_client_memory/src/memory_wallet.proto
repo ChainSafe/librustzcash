@@ -125,7 +125,7 @@ message ReceivedNote {
     Note note = 5;
     optional Nullifier nullifier = 6;
     bool is_change = 7;
-    Memo memo = 8;
+    bytes memo = 8;
     optional uint64 commitment_tree_position = 9;
     optional Scope recipient_key_scope = 10;
 }
@@ -135,7 +135,41 @@ message Nullifier {
     bytes nullifier = 2;
 }
 
+message OutPoint {
+    bytes hash = 1;
+    uint32 n = 2;
+}
+
 enum Scope {
     Internal = 0;
     External = 1;
+}
+
+message SentNote {
+    uint32 from_account_id = 1;
+    Recipient to = 2;
+    uint64 value = 3;
+    bytes memo = 4;
+}
+
+message Recipient {
+    RecipientType recipient_type = 1;
+
+    optional string address = 2; // either the zcash address if external or transparent address if EphemeralTransparent
+    optional PoolType pool_type = 3; // the shielded protocol if External
+    optional uint32 account_id = 4; // the account id if EphemeralTransparent or InternalAccount
+    optional OutPoint outpoint_metadata = 5; // the outpoint metadata if InternalAccount
+    optional Note note = 6; // the note if InternalAccount
+}
+
+enum RecipientType {
+    ExternalRecipient = 0;
+    EphemeralTransparent = 1;
+    InternalAccount = 2;
+}
+
+enum PoolType {
+    Transparent = 0;
+    ShieldedSapling = 1;
+    ShieldedOrchard = 2;
 }

@@ -170,3 +170,80 @@ pub(crate) struct SentNote {
     pub(crate) value: Zatoshis,
     pub(crate) memo: Memo,
 }
+
+mod serialization {
+    use super::*;
+    use crate::proto::memwallet as proto;
+    use zcash_keys::encoding::AddressCodec;
+    use zcash_primitives::consensus::Network::MainNetwork as EncodingParams;
+
+    impl From<SentNote> for proto::SentNote {
+        fn from(note: SentNote) -> Self {
+            Self {
+                from_account_id: *note.from_account_id,
+                to: Some(note.to.into()),
+                value: note.value.into(),
+                memo: note.memo.encode().as_array().to_vec(),
+            }
+        }
+    }
+
+    impl From<OutPoint> for proto::OutPoint {
+        fn from(outpoint: OutPoint) -> Self {
+            Self {
+                hash: outpoint.txid().as_ref().to_vec(),
+                n: outpoint.n(),
+            }
+        }
+    }
+
+    impl From<Recipient<AccountId, Note, OutPoint>> for proto::Recipient {
+        fn from(recipient: Recipient<AccountId, Note, OutPoint>) -> Self {
+            match recipient {
+                Recipient::External(address, pool_type) => proto::Recipient {
+                    recipient_type: proto::RecipientType::ExternalRecipient as i32,
+
+                    address: Some(address.to_string()),
+                    pool_type: Some(match pool_type {
+                        PoolType::Transparent => proto::PoolType::Transparent,
+                        PoolType::Shielded(Sapling) => proto::PoolType::ShieldedSapling,
+                        #[cfg(feature = "orchard")]
+                        PoolType::Shielded(Orchard) => proto::PoolType::ShieldedOrchard,
+                    } as i32),
+
+                    account_id: None,
+                    outpoint_metadata: None,
+                    note: None,
+                },
+                Recipient::EphemeralTransparent {
+                    receiving_account,
+                    ephemeral_address,
+                    outpoint_metadata,
+                } => proto::Recipient {
+                    recipient_type: proto::RecipientType::ExternalRecipient as i32,
+
+                    address: Some(ephemeral_address.encode(&EncodingParams)),
+                    pool_type: Some(proto::PoolType::Transparent as i32),
+
+                    account_id: Some(*receiving_account),
+                    outpoint_metadata: Some(outpoint_metadata.into()),
+                    note: None,
+                },
+                Recipient::InternalAccount {
+                    receiving_account,
+                    external_address,
+                    note,
+                } => proto::Recipient {
+                    recipient_type: proto::RecipientType::ExternalRecipient as i32,
+
+                    address: external_address.map(|a| a.to_string()),
+                    pool_type: None,
+
+                    account_id: Some(*receiving_account),
+                    outpoint_metadata: None,
+                    note: Some(note.into()),
+                },
+            }
+        }
+    }
+}

@@ -374,15 +374,33 @@ mod serialization {
                 note: Some(value.note.into()),
                 nullifier: value.nf.map(|nf| nf.into()),
                 is_change: value.is_change,
-                memo: Some(proto::Memo {
-                    note_id: Some(value.note_id.into()),
-                    memo: value.memo.encode().as_array().to_vec(),
-                }),
+                memo: value.memo.encode().as_array().to_vec(),
                 commitment_tree_position: value.commitment_tree_position.map(|pos| pos.into()),
                 recipient_key_scope: match value.recipient_key_scope {
                     Some(Scope::Internal) => Some(proto::Scope::Internal as i32),
                     Some(Scope::External) => Some(proto::Scope::External as i32),
                     None => None,
+                },
+            }
+        }
+    }
+
+    impl From<proto::ReceivedNote> for ReceivedNote {
+        fn from(value: proto::ReceivedNote) -> Self {
+            Self {
+                note_id: value.note_id.unwrap().into(),
+                txid: TxId::from_bytes(value.tx_id.as_slice().try_into().unwrap()),
+                output_index: value.output_index,
+                account_id: value.account_id.into(),
+                note: value.note.unwrap().into(),
+                nf: value.nullifier.map(|nf| nf.into()),
+                is_change: value.is_change,
+                memo: Memo::from_bytes(&value.memo).unwrap(),
+                commitment_tree_position: value.commitment_tree_position.map(|pos| pos.into()),
+                recipient_key_scope: match value.recipient_key_scope {
+                    Some(0) => Some(Scope::Internal),
+                    Some(1) => Some(Scope::External),
+                    _ => None,
                 },
             }
         }

@@ -13,6 +13,7 @@ mod serialization {
     };
     use jubjub::Fr;
     use zcash_client_backend::wallet::{Note, NoteId};
+    use zcash_primitives::transaction::TxId;
 
     impl From<NoteId> for proto::NoteId {
         fn from(note_id: NoteId) -> Self {
@@ -28,6 +29,20 @@ mod serialization {
         }
     }
 
+    impl From<proto::NoteId> for NoteId {
+        fn from(note_id: proto::NoteId) -> Self {
+            Self::new(
+                TxId::from_bytes(note_id.tx_id.clone().try_into().unwrap()),
+                match note_id.protocol() {
+                    proto::ShieldedProtocol::Sapling => zcash_protocol::ShieldedProtocol::Sapling,
+                    #[cfg(feature = "orchard")]
+                    proto::ShieldedProtocol::Orchard => zcash_protocol::ShieldedProtocol::Orchard,
+                },
+                note_id.output_index.try_into().unwrap(),
+            )
+        }
+    }
+
     impl From<Nullifier> for proto::Nullifier {
         fn from(nullifier: Nullifier) -> Self {
             match nullifier {
@@ -40,6 +55,21 @@ mod serialization {
                     protocol: proto::ShieldedProtocol::Orchard.into(),
                     nullifier: n.to_bytes().to_vec(),
                 },
+            }
+        }
+    }
+
+    impl From<proto::Nullifier> for Nullifier {
+        fn from(nullifier: proto::Nullifier) -> Self {
+            match nullifier.protocol {
+                0 => Nullifier::Sapling(
+                    sapling::Nullifier::from_slice(&nullifier.nullifier).unwrap(),
+                ),
+                1 => Nullifier::Orchard(
+                    orchard::note::Nullifier::from_bytes(&nullifier.nullifier.try_into().unwrap())
+                        .unwrap(),
+                ),
+                _ => panic!("invalid protocol"),
             }
         }
     }
