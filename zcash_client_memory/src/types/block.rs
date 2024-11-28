@@ -56,19 +56,7 @@ mod serialization {
                     ._memos
                     .into_iter()
                     .map(|(note_id, memo)| proto::Memo {
-                        note_id: Some(proto::NoteId {
-                            tx_id: note_id.txid().as_ref().to_vec(),
-                            protocol: match note_id.protocol() {
-                                zcash_protocol::ShieldedProtocol::Sapling => {
-                                    proto::ShieldedProtocol::Sapling.into()
-                                }
-                                #[cfg(feature = "orchard")]
-                                zcash_protocol::ShieldedProtocol::Orchard => {
-                                    proto::ShieldedProtocol::Orchard.into()
-                                }
-                            },
-                            output_index: note_id.output_index() as u32,
-                        }),
+                        note_id: Some(note_id.into()),
                         memo: memo.as_array().to_vec(),
                     })
                     .collect(),

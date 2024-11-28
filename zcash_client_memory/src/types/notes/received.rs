@@ -7,11 +7,11 @@ use std::{
 };
 use zip32::Scope;
 
-use zcash_primitives::transaction::{components::OutPoint, TxId};
-use zcash_protocol::{memo::Memo, value::Zatoshis, PoolType, ShieldedProtocol::Sapling};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::{memo::Memo, PoolType, ShieldedProtocol::Sapling};
 
 use zcash_client_backend::{
-    data_api::{SentTransaction, SentTransactionOutput, SpendableNotes},
+    data_api::{SentTransactionOutput, SpendableNotes},
     wallet::{Note, NoteId, Recipient, WalletSaplingOutput},
 };
 
@@ -360,234 +360,31 @@ impl SentNoteId {
     }
 }
 
-pub(crate) struct SentNoteTable(BTreeMap<SentNoteId, SentNote>);
-
-impl SentNoteTable {
-    pub fn new() -> Self {
-        Self(BTreeMap::new())
-    }
-
-    pub fn insert_sent_output(
-        &mut self,
-        tx: &SentTransaction<AccountId>,
-        output: &SentTransactionOutput<AccountId>,
-    ) {
-        let pool_type = match output.recipient() {
-            Recipient::External(_, pool_type) => *pool_type,
-            Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
-            Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
-        };
-        match pool_type {
-            PoolType::Transparent => {
-                // we kind of are in a tricky spot here since NoteId cannot represent a transparent note..
-                // just make it a sapling one for now until we figure out a better way to represent this
-                let note_id = SentNoteId::Transparent {
-                    txid: tx.tx().txid(),
-                    output_index: output.output_index().try_into().unwrap(),
-                };
-                self.0.insert(
-                    note_id,
-                    SentNote {
-                        from_account_id: *tx.account_id(),
-                        to: output.recipient().clone(),
-                        value: output.value(),
-                        memo: Memo::Empty, // transparent notes don't have memos
-                    },
-                );
-            }
-            PoolType::Shielded(protocol) => {
-                let note_id = NoteId::new(
-                    tx.tx().txid(),
-                    protocol,
-                    output.output_index().try_into().unwrap(),
-                );
-                self.0.insert(
-                    note_id.into(),
-                    SentNote {
-                        from_account_id: *tx.account_id(),
-                        to: output.recipient().clone(),
-                        value: output.value(),
-                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
-                    },
-                );
-            }
-        }
-    }
-
-    pub fn put_sent_output(
-        &mut self,
-        txid: TxId,
-        from_account_id: AccountId,
-        output: &SentTransactionOutput<AccountId>,
-    ) {
-        let pool_type = match output.recipient() {
-            Recipient::External(_, pool_type) => *pool_type,
-            Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
-            Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
-        };
-        match pool_type {
-            PoolType::Transparent => {
-                // we kind of are in a tricky spot here since NoteId cannot represent a transparent note..
-                // just make it a sapling one for now until we figure out a better way to represent this
-                let note_id = SentNoteId::Transparent {
-                    txid,
-                    output_index: output.output_index().try_into().unwrap(),
-                };
-                self.0.insert(
-                    note_id,
-                    SentNote {
-                        from_account_id,
-                        to: output.recipient().clone(),
-                        value: output.value(),
-                        memo: Memo::Empty, // transparent notes don't have memos
-                    },
-                );
-            }
-            PoolType::Shielded(protocol) => {
-                let note_id =
-                    NoteId::new(txid, protocol, output.output_index().try_into().unwrap());
-                self.0.insert(
-                    note_id.into(),
-                    SentNote {
-                        from_account_id,
-                        to: output.recipient().clone(),
-                        value: output.value(),
-                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
-                    },
-                );
-            }
-        }
-    }
-
-    pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {
-        self.0.get(&note_id.into())
-    }
-}
-
-impl Deref for SentNoteTable {
-    type Target = BTreeMap<SentNoteId, SentNote>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct SentNote {
-    pub(crate) from_account_id: AccountId,
-    pub(crate) to: Recipient<AccountId, Note, OutPoint>,
-    pub(crate) value: Zatoshis,
-    pub(crate) memo: Memo,
-}
-
 mod serialization {
-    use jubjub::Fr;
-
     use super::*;
     use crate::proto::memwallet as proto;
 
-    impl From<Note> for proto::Note {
-        fn from(note: Note) -> Self {
-            match note {
-                Note::Sapling(note) => Self {
-                    protocol: proto::ShieldedProtocol::Sapling.into(),
-                    recipient: note.recipient().to_bytes().to_vec(),
-                    value: note.value().inner(),
-                    rseed: match note.rseed() {
-                        sapling::Rseed::AfterZip212(inner) => Some(proto::RSeed {
-                            rseed_type: Some(proto::RSeedType::AfterZip212 as i32),
-                            payload: inner.to_vec(),
-                        }),
-                        sapling::Rseed::BeforeZip212(inner) => Some(proto::RSeed {
-                            rseed_type: Some(proto::RSeedType::BeforeZip212 as i32),
-                            payload: inner.to_bytes().to_vec(),
-                        }),
-                    },
-                    rho: None,
-                },
-                #[cfg(feature = "orchard")]
-                Note::Orchard(note) => Self {
-                    protocol: proto::ShieldedProtocol::Orchard.into(),
-                    recipient: note.recipient().to_raw_address_bytes().to_vec(),
-                    value: note.value().inner(),
-                    rseed: Some(proto::RSeed {
-                        rseed_type: None,
-                        payload: note.rseed().as_bytes().to_vec(),
-                    }),
-                    rho: Some(note.rho().to_bytes().to_vec()),
+    impl From<ReceivedNote> for proto::ReceivedNote {
+        fn from(value: ReceivedNote) -> Self {
+            Self {
+                note_id: Some(value.note_id.into()),
+                tx_id: value.txid.as_ref().to_vec(),
+                output_index: value.output_index,
+                account_id: *value.account_id,
+                note: Some(value.note.into()),
+                nullifier: value.nf.map(|nf| nf.into()),
+                is_change: value.is_change,
+                memo: Some(proto::Memo {
+                    note_id: Some(value.note_id.into()),
+                    memo: value.memo.encode().as_array().to_vec(),
+                }),
+                commitment_tree_position: value.commitment_tree_position.map(|pos| pos.into()),
+                recipient_key_scope: match value.recipient_key_scope {
+                    Some(Scope::Internal) => Some(proto::Scope::Internal as i32),
+                    Some(Scope::External) => Some(proto::Scope::External as i32),
+                    None => None,
                 },
             }
-        }
-    }
-
-    impl From<proto::Note> for Note {
-        fn from(note: proto::Note) -> Self {
-            match note.protocol {
-                0 => {
-                    let recipient =
-                        sapling::PaymentAddress::from_bytes(&note.recipient.try_into().unwrap())
-                            .unwrap();
-                    let value = sapling::value::NoteValue::from_raw(note.value);
-                    let rseed = match note.rseed {
-                        Some(proto::RSeed {
-                            rseed_type: Some(0),
-                            payload,
-                        }) => sapling::Rseed::BeforeZip212(
-                            Fr::from_bytes(&payload.try_into().unwrap()).unwrap(),
-                        ),
-                        Some(proto::RSeed {
-                            rseed_type: Some(1),
-                            payload,
-                        }) => sapling::Rseed::AfterZip212(payload.try_into().unwrap()),
-                        _ => panic!("rseed is required"),
-                    };
-                    Self::Sapling(sapling::Note::from_parts(recipient, value, rseed))
-                }
-                1 => {
-                    let recipient = orchard::Address::from_raw_address_bytes(
-                        &note.recipient.try_into().unwrap(),
-                    )
-                    .unwrap();
-                    let value = orchard::value::NoteValue::from_raw(note.value);
-                    let rho =
-                        orchard::note::Rho::from_bytes(&note.rho.unwrap().try_into().unwrap())
-                            .unwrap();
-                    let rseed = orchard::note::RandomSeed::from_bytes(
-                        note.rseed.unwrap().payload.try_into().unwrap(),
-                        &rho,
-                    )
-                    .unwrap();
-                    Self::Orchard(orchard::Note::from_parts(recipient, value, rho, rseed).unwrap())
-                }
-                _ => panic!("invalid protocol"),
-            }
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use crate::proto::memwallet as proto;
-        use pretty_assertions::assert_eq;
-
-        #[test]
-        fn test_note_roundtrip() {
-            let note = Note::Sapling(sapling::note::Note::from_parts(
-                sapling::PaymentAddress::from_bytes(&[
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x8e,
-                    0x11, 0x9d, 0x72, 0x99, 0x2b, 0x56, 0x0d, 0x26, 0x50, 0xff, 0xe0, 0xbe, 0x7f,
-                    0x35, 0x42, 0xfd, 0x97, 0x00, 0x3c, 0xb7, 0xcc, 0x3a, 0xbf, 0xf8, 0x1a, 0x7f,
-                    0x90, 0x37, 0xf3, 0xea,
-                ])
-                .unwrap(),
-                sapling::value::NoteValue::from_raw(99),
-                sapling::Rseed::AfterZip212([0; 32]),
-            ));
-
-            let proto_note: proto::Note = note.clone().into();
-            let recovered: Note = proto_note.into();
-
-            assert_eq!(note, recovered);
         }
     }
 }
