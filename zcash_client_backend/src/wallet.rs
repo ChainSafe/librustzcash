@@ -70,7 +70,7 @@ impl NoteId {
 /// * for external unified addresses, the pool to which the payment is sent;
 /// * for ephemeral transparent addresses, the internal account ID and metadata about the outpoint;
 /// * for wallet-internal outputs, the internal account ID and metadata about the note.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Recipient<AccountId, N, O> {
     External(ZcashAddress, PoolType),
     EphemeralTransparent {

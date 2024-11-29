@@ -17,7 +17,7 @@ use super::AccountId;
 use crate::Error;
 
 /// Stores the transparent outputs received by the wallet.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct TransparentReceivedOutputs(pub(crate) BTreeMap<OutPoint, ReceivedTransparentOutput>);
 
 impl TransparentReceivedOutputs {
@@ -58,7 +58,7 @@ impl DerefMut for TransparentReceivedOutputs {
 }
 
 /// A junction table between received transparent outputs and the transactions that spend them.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct TransparentReceivedOutputSpends(pub(crate) BTreeMap<OutPoint, TxId>);
 
 impl TransparentReceivedOutputSpends {
@@ -137,7 +137,7 @@ impl ReceivedTransparentOutput {
 ///
 /// Output may be attempted to be spent in multiple transactions, even though only one will ever be mined
 /// which is why can cannot just rely on TransparentReceivedOutputSpends or implement this as as map
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct TransparentSpendCache(pub(crate) BTreeSet<(TxId, OutPoint)>);
 
 impl TransparentSpendCache {

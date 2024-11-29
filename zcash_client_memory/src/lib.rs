@@ -119,6 +119,29 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     transaction_data_request_queue: TransactionDataRequestQueue,
 }
 
+impl<P: consensus::Parameters + PartialEq> PartialEq for MemoryWalletDb<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.params == other.params
+            && self.accounts == other.accounts
+            && self.blocks == other.blocks
+            && self.tx_table == other.tx_table
+            && self.received_notes == other.received_notes
+            && self.received_note_spends == other.received_note_spends
+            && self.nullifiers == other.nullifiers
+            && self.sent_notes == other.sent_notes
+            && self.tx_locator == other.tx_locator
+            && self.scan_queue == other.scan_queue
+            // && self.sapling_tree == other.sapling_tree
+            && self.sapling_tree_shard_end_heights == other.sapling_tree_shard_end_heights
+            // && self.orchard_tree == other.orchard_tree
+            && self.orchard_tree_shard_end_heights == other.orchard_tree_shard_end_heights
+            && self.transparent_received_outputs == other.transparent_received_outputs
+            && self.transparent_received_output_spends == other.transparent_received_output_spends
+            && self.transparent_spend_map == other.transparent_spend_map
+            && self.transaction_data_request_queue == other.transaction_data_request_queue
+    }
+}
+
 impl<P: consensus::Parameters> MemoryWalletDb<P> {
     pub fn new(params: P, max_checkpoints: usize) -> Self {
         Self {
@@ -1104,7 +1127,7 @@ mod serialization {
                         .accounts
                         .clone()
                         .into_iter()
-                        .map(|(id, account)| (*id, proto::Account::from(account)))
+                        .map(|(_, account)| proto::Account::from(account))
                         .collect(),
                     account_nonce: wallet.accounts.nonce,
                 }),
@@ -1113,7 +1136,7 @@ mod serialization {
                     .blocks
                     .clone()
                     .into_iter()
-                    .map(|(height, block)| (height.into(), proto::WalletBlock::from(block)))
+                    .map(|(_, block)| proto::WalletBlock::from(block))
                     .collect(),
 
                 tx_table: wallet
@@ -1257,9 +1280,13 @@ mod serialization {
         }
     }
 
-    impl From<proto::MemoryWallet> for MemoryWalletDb<zcash_primitives::consensus::MainNetwork> {
-        fn from(proto_wallet: proto::MemoryWallet) -> Self {
-            let mut wallet = MemoryWalletDb::new(zcash_primitives::consensus::MAIN_NETWORK, 100);
+    impl<P: Parameters> MemoryWalletDb<P> {
+        pub fn new_from_proto(
+            proto_wallet: proto::MemoryWallet,
+            params: P,
+            max_checkpoints: usize,
+        ) -> Self {
+            let mut wallet = MemoryWalletDb::new(params, max_checkpoints);
 
             wallet.accounts = proto_wallet
                 .accounts
@@ -1267,7 +1294,8 @@ mod serialization {
                     let accounts = proto_accounts
                         .accounts
                         .into_iter()
-                        .map(|(id, proto_account)| {
+                        .map(|proto_account| {
+                            let id = proto_account.account_id;
                             let account = Account::from(proto_account);
                             (AccountId::from(id), account)
                         })
@@ -1282,9 +1310,11 @@ mod serialization {
             wallet.blocks = proto_wallet
                 .blocks
                 .into_iter()
-                .map(|(height, proto_block)| {
-                    let block = MemoryWalletBlock::from(proto_block);
-                    (height.into(), block)
+                .map(|proto_block| {
+                    (
+                        proto_block.height.into(),
+                        MemoryWalletBlock::from(proto_block),
+                    )
                 })
                 .collect();
 

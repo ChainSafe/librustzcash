@@ -4,7 +4,7 @@ package memwallet;
 message MemoryWallet {
     Accounts accounts = 1;   // the accounts in this wallet
    
-    map<uint32, WalletBlock> blocks = 2; // map from block height to block data
+    repeated WalletBlock blocks = 2; // map from block height to block data
     repeated TransactionTableRecord tx_table = 3; // map from transaction id to transaction data
     
     repeated ReceivedNote received_note_table = 4; // the notes received by this wallet
@@ -103,7 +103,7 @@ message TransparentSpendCacheRecord {
 }
 
 message Accounts {
-    map<uint32, Account> accounts = 1; // map from account index to account data
+    repeated Account accounts = 1; // map from account index to account data
     uint32 accountNonce = 2;         // the nonce for the next account
 }
 
@@ -119,8 +119,12 @@ message Account {
     string viewing_key = 7; // the viewing key for this account
     AccountBirthday birthday = 8; // the block height at which this account was created
     repeated Address addresses = 9; // account addresses
-    map<uint32, EphemeralAddress> ephemeral_addresses = 10; // map from index to encoded unified address
 
+    message EphemeralAddressRecord {
+        uint32 index = 1;
+        EphemeralAddress ephemeral_address = 2;
+    }
+    repeated EphemeralAddressRecord ephemeral_addresses = 10; // map from index to encoded unified address
 }
 
 enum AccountKind {

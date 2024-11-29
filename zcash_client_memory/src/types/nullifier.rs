@@ -4,7 +4,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_protocol::PoolType;
 
 /// Maps a nullifier to the block height and transaction index (NOT txid!) where it was spent.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NullifierMap(pub(crate) BTreeMap<Nullifier, (BlockHeight, u32)>);
 
 impl NullifierMap {

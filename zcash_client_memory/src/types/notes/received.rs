@@ -25,7 +25,7 @@ use {
 use crate::{error::Error, Nullifier};
 
 /// Keeps track of notes that are spent in which transaction
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ReceievedNoteSpends(pub(crate) BTreeMap<NoteId, TxId>);
 
 impl ReceievedNoteSpends {
@@ -50,10 +50,10 @@ impl Deref for ReceievedNoteSpends {
 
 /// A note that has been received by the wallet
 /// TODO: Instead of Vec, perhaps we should identify by some unique ID
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ReceivedNoteTable(pub(crate) Vec<ReceivedNote>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ReceivedNote {
     // Uniquely identifies this note
     pub(crate) note_id: NoteId,

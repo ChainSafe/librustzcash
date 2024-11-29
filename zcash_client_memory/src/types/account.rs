@@ -56,7 +56,7 @@ impl ConditionallySelectable for AccountId {
 
 /// This is the top-level struct that handles accounts. We could theoretically have this just be a Vec
 /// but we want to have control over the internal AccountId values. The account ids are unique.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Accounts {
     pub(crate) nonce: u32,
     pub(crate) accounts: BTreeMap<AccountId, Account>,
@@ -178,7 +178,7 @@ impl DerefMut for Accounts {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EphemeralAddress {
     pub(crate) address: TransparentAddress,
     // Used implies seen
@@ -211,6 +211,23 @@ pub struct Account {
     addresses: BTreeMap<DiversifierIndex, UnifiedAddress>,
     pub(crate) ephemeral_addresses: BTreeMap<u32, EphemeralAddress>, // NonHardenedChildIndex (< 1 << 31)
     _notes: BTreeSet<NoteId>,
+}
+
+impl PartialEq for Account {
+    fn eq(&self, other: &Self) -> bool {
+        self.account_id == other.account_id
+            && self.kind == other.kind
+            && self
+                .viewing_key
+                .encode(&zcash_primitives::consensus::MainNetwork)
+                == other
+                    .viewing_key
+                    .encode(&zcash_primitives::consensus::MainNetwork)
+            && self.birthday == other.birthday
+            && self.addresses == other.addresses
+            && self.ephemeral_addresses == other.ephemeral_addresses
+            && self._notes == other._notes
+    }
 }
 
 impl Account {
@@ -509,7 +526,7 @@ mod serialization {
                 accounts: accounts
                     .accounts
                     .into_iter()
-                    .map(|(id, acc)| (id.0, acc.into()))
+                    .map(|(_, acc)| acc.into())
                     .collect(),
             }
         }
@@ -522,7 +539,7 @@ mod serialization {
                 accounts: accounts
                     .accounts
                     .into_iter()
-                    .map(|(id, acc)| (AccountId(id), acc.into()))
+                    .map(|acc| (AccountId(acc.account_id), acc.into()))
                     .collect(),
             }
         }
@@ -567,15 +584,13 @@ mod serialization {
                 ephemeral_addresses: acc
                     .ephemeral_addresses
                     .into_iter()
-                    .map(|(index, address)| {
-                        (
-                            index,
-                            proto::EphemeralAddress {
-                                address: address.address.encode(&EncodingParams),
-                                used_in_tx: address.used.map(|u| u.as_ref().to_vec()),
-                                seen_in_tx: address.seen.map(|s| s.as_ref().to_vec()),
-                            },
-                        )
+                    .map(|(index, address)| proto::account::EphemeralAddressRecord {
+                        index: index.into(),
+                        ephemeral_address: Some(proto::EphemeralAddress {
+                            address: address.address.encode(&EncodingParams),
+                            used_in_tx: address.used.map(|u| u.as_ref().to_vec()),
+                            seen_in_tx: address.seen.map(|s| s.as_ref().to_vec()),
+                        }),
                     })
                     .collect(),
                 #[cfg(not(feature = "transparent-inputs"))]
@@ -623,9 +638,10 @@ mod serialization {
                 ephemeral_addresses: acc
                     .ephemeral_addresses
                     .into_iter()
-                    .map(|(index, address)| {
+                    .map(|address_record| {
+                        let address = address_record.ephemeral_address.unwrap();
                         (
-                            index,
+                            address_record.index,
                             EphemeralAddress {
                                 address: TransparentAddress::decode(
                                     &EncodingParams,

@@ -51,7 +51,7 @@ impl SentNoteId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SentNoteTable(pub(crate) BTreeMap<SentNoteId, SentNote>);
 
 impl SentNoteTable {
@@ -164,7 +164,7 @@ impl Deref for SentNoteTable {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SentNote {
     pub(crate) from_account_id: AccountId,
     pub(crate) to: Recipient<AccountId, Note, OutPoint>,

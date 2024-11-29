@@ -78,7 +78,7 @@ impl TestCache for MemBlockCache {
 
 impl<P> Reset for MemoryWalletDb<P>
 where
-    P: zcash_primitives::consensus::Parameters + Clone + Debug,
+    P: zcash_primitives::consensus::Parameters + Clone + Debug + PartialEq,
 {
     type Handle = ();
 
@@ -90,7 +90,7 @@ where
 
 impl<P> WalletTest for MemoryWalletDb<P>
 where
-    P: zcash_primitives::consensus::Parameters + Clone + Debug,
+    P: zcash_primitives::consensus::Parameters + Clone + Debug + PartialEq,
 {
     #[allow(clippy::type_complexity)]
     fn get_sent_outputs(&self, txid: &TxId) -> Result<Vec<OutputOfSentTx>, Error> {
@@ -388,10 +388,10 @@ where
     fn finally(&self) {
         // ensure the wallet state at the conclusion of each test can be round-tripped through serialization
         let proto = crate::proto::memwallet::MemoryWallet::from(self);
-        let recovered_wallet = MemoryWalletDb::from(proto.clone());
-        let recovered_wallet_proto = crate::proto::memwallet::MemoryWallet::from(&recovered_wallet);
+        let recovered_wallet =
+            MemoryWalletDb::new_from_proto(proto.clone(), self.params.clone(), 100);
 
-        pretty_assertions::assert_eq!(proto, recovered_wallet_proto);
+        assert_eq!(self, &recovered_wallet);
         // pretty_assertions::assert_eq!(format!("{:?}", self), format!("{:?}", &recovered_wallet));
 
         // // ensure the trees can be roundtripped

@@ -15,7 +15,7 @@ use crate::AccountId;
 
 use crate::error::Error;
 /// Maps a block height and transaction index to a transaction ID.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TxLocatorMap(pub(crate) BTreeMap<(BlockHeight, u32), TxId>);
 
 impl Deref for TxLocatorMap {
@@ -27,7 +27,7 @@ impl Deref for TxLocatorMap {
 }
 
 /// A table of received notes. Corresponds to sapling_received_notes and orchard_received_notes tables.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TransactionEntry {
     // created: String,
     /// mined_height is rolled into into a txn status
@@ -89,7 +89,7 @@ impl TransactionEntry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct TransactionTable(pub(crate) BTreeMap<TxId, TransactionEntry>);
 
 impl TransactionTable {

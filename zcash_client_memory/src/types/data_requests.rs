@@ -2,7 +2,7 @@ use std::{collections::VecDeque, ops::Deref};
 
 use zcash_client_backend::data_api::TransactionDataRequest;
 use zcash_primitives::transaction::TxId;
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct TransactionDataRequestQueue(pub(crate) VecDeque<TransactionDataRequest>);
 
 impl TransactionDataRequestQueue {

@@ -686,7 +686,7 @@ pub enum TransactionDataRequest {
 }
 
 /// Metadata about the status of a transaction obtained by inspecting the chain state.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TransactionStatus {
     /// The requested transaction ID was not recognized by the node.
     TxidNotRecognized,
@@ -1974,7 +1974,7 @@ impl<AccountId> SentTransactionOutput<AccountId> {
 
 /// A data structure used to set the birthday height for an account, and ensure that the initial
 /// note commitment tree state is recorded at that height.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AccountBirthday {
     prior_chain_state: ChainState,
     recover_until: Option<BlockHeight>,
