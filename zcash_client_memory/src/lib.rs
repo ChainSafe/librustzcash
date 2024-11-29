@@ -1,12 +1,12 @@
 #![allow(dead_code)]
-use incrementalmerkletree::{Address, Marking, Position, Retention};
+use incrementalmerkletree::{Address, Level, Marking, Position, Retention};
 use scanning::ScanQueue;
 
 use shardtree::{
-    store::{memory::MemoryShardStore, ShardStore},
-    ShardTree,
+    store::{memory::MemoryShardStore, Checkpoint, ShardStore},
+    LocatedPrunableTree, PrunableTree, ShardTree,
 };
-use std::{cmp::min, usize};
+use std::{cmp::min, io::Cursor, usize};
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     num::NonZeroU32,
@@ -24,7 +24,8 @@ use zcash_protocol::{
 use zip32::fingerprint::SeedFingerprint;
 
 use zcash_client_backend::{
-    serialization::shardtree::write_shard, wallet::WalletTransparentOutput,
+    serialization::shardtree::{read_shard, write_shard},
+    wallet::WalletTransparentOutput,
 };
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -1067,6 +1068,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
 
 mod serialization {
     use consensus::Parameters;
+    use transparent::ReceivedTransparentOutput;
 
     use super::*;
     use crate::proto::memwallet as proto;
@@ -1095,8 +1097,6 @@ mod serialization {
 
     impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
         fn from(wallet: &MemoryWalletDb<P>) -> Self {
-            // serialize the shard trees
-
             Self {
                 accounts: Some(proto::Accounts {
                     accounts: wallet
@@ -1256,6 +1256,196 @@ mod serialization {
             }
         }
     }
+
+    impl From<proto::MemoryWallet> for MemoryWalletDb<zcash_primitives::consensus::MainNetwork> {
+        fn from(proto_wallet: proto::MemoryWallet) -> Self {
+            let mut wallet = MemoryWalletDb::new(zcash_primitives::consensus::MAIN_NETWORK, 100);
+
+            wallet.accounts = proto_wallet
+                .accounts
+                .map(|proto_accounts| {
+                    let accounts = proto_accounts
+                        .accounts
+                        .into_iter()
+                        .map(|(id, proto_account)| {
+                            let account = Account::from(proto_account);
+                            (AccountId::from(id), account)
+                        })
+                        .collect();
+                    Accounts {
+                        accounts,
+                        nonce: proto_accounts.account_nonce,
+                    }
+                })
+                .unwrap();
+
+            wallet.blocks = proto_wallet
+                .blocks
+                .into_iter()
+                .map(|(height, proto_block)| {
+                    let block = MemoryWalletBlock::from(proto_block);
+                    (height.into(), block)
+                })
+                .collect();
+
+            wallet.tx_table = TransactionTable(
+                proto_wallet
+                    .tx_table
+                    .into_iter()
+                    .map(|proto_tx| {
+                        let txid = proto_tx.tx_id.unwrap();
+                        let tx = proto_tx.tx_entry.unwrap();
+                        (txid.into(), tx.into())
+                    })
+                    .collect(),
+            );
+
+            wallet.received_notes = ReceivedNoteTable(
+                proto_wallet
+                    .received_note_table
+                    .into_iter()
+                    .map(ReceivedNote::from)
+                    .collect(),
+            );
+
+            wallet.received_note_spends = ReceievedNoteSpends(
+                proto_wallet
+                    .received_note_spends
+                    .into_iter()
+                    .map(|proto_spend| {
+                        let note_id = proto_spend.note_id.unwrap();
+                        let tx_id = proto_spend.tx_id.unwrap();
+                        (note_id.into(), tx_id.into())
+                    })
+                    .collect(),
+            );
+
+            wallet.nullifiers = NullifierMap(
+                proto_wallet
+                    .nullifiers
+                    .into_iter()
+                    .map(|proto_nullifier| {
+                        let block_height = proto_nullifier.block_height.into();
+                        let tx_index = proto_nullifier.tx_index;
+                        let nullifier = proto_nullifier.nullifier.unwrap().into();
+                        (nullifier, (block_height, tx_index))
+                    })
+                    .collect(),
+            );
+
+            wallet.sent_notes = SentNoteTable(
+                proto_wallet
+                    .sent_notes
+                    .into_iter()
+                    .map(|proto_sent_note| {
+                        let sent_note_id = proto_sent_note.sent_note_id.unwrap();
+                        let sent_note = proto_sent_note.sent_note.unwrap();
+                        (sent_note_id.into(), SentNote::from(sent_note))
+                    })
+                    .collect(),
+            );
+
+            wallet.tx_locator = TxLocatorMap(
+                proto_wallet
+                    .tx_locator
+                    .into_iter()
+                    .map(|proto_locator| {
+                        let block_height = proto_locator.block_height.into();
+                        let tx_index = proto_locator.tx_index;
+                        let tx_id = proto_locator.tx_id.unwrap().into();
+                        ((block_height, tx_index), tx_id)
+                    })
+                    .collect(),
+            );
+
+            wallet.scan_queue = ScanQueue(
+                proto_wallet
+                    .scan_queue
+                    .into_iter()
+                    .map(|item| item.into())
+                    .collect(),
+            );
+
+            wallet.sapling_tree =
+                tree_from_protobuf(proto_wallet.sapling_tree.unwrap(), 100, 16.into()).unwrap();
+            wallet.sapling_tree_shard_end_heights = proto_wallet
+                .sapling_tree_shard_end_heights
+                .into_iter()
+                .map(|proto_end_height| {
+                    let address = Address::from_parts(
+                        Level::from(u8::try_from(proto_end_height.level).unwrap()),
+                        proto_end_height.index.into(),
+                    );
+                    let height = proto_end_height.block_height.into();
+                    (address, height)
+                })
+                .collect();
+
+            wallet.orchard_tree =
+                tree_from_protobuf(proto_wallet.orchard_tree.unwrap(), 100, 16.into()).unwrap();
+            wallet.orchard_tree_shard_end_heights = proto_wallet
+                .orchard_tree_shard_end_heights
+                .into_iter()
+                .map(|proto_end_height| {
+                    let address = Address::from_parts(
+                        Level::from(u8::try_from(proto_end_height.level).unwrap()),
+                        proto_end_height.index.into(),
+                    );
+                    let height = proto_end_height.block_height.into();
+                    (address, height)
+                })
+                .collect();
+
+            wallet.transparent_received_outputs = TransparentReceivedOutputs(
+                proto_wallet
+                    .transparent_received_outputs
+                    .into_iter()
+                    .map(|proto_output| {
+                        let outpoint = proto_output.outpoint.unwrap();
+                        let output = proto_output.output.unwrap();
+                        (
+                            OutPoint::from(outpoint),
+                            ReceivedTransparentOutput::from(output),
+                        )
+                    })
+                    .collect(),
+            );
+
+            wallet.transparent_received_output_spends = TransparentReceivedOutputSpends(
+                proto_wallet
+                    .transparent_received_output_spends
+                    .into_iter()
+                    .map(|proto_spend| {
+                        let outpoint = proto_spend.outpoint.unwrap();
+                        let txid = proto_spend.tx_id.unwrap().into();
+                        (OutPoint::from(outpoint), txid)
+                    })
+                    .collect(),
+            );
+
+            wallet.transparent_spend_map = TransparentSpendCache(
+                proto_wallet
+                    .transparent_spend_map
+                    .into_iter()
+                    .map(|proto_spend| {
+                        let txid = proto_spend.tx_id.unwrap().into();
+                        let outpoint = proto_spend.outpoint.unwrap();
+                        (txid, OutPoint::from(outpoint))
+                    })
+                    .collect(),
+            );
+
+            wallet.transaction_data_request_queue = TransactionDataRequestQueue(
+                proto_wallet
+                    .transaction_data_requests
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            );
+
+            wallet
+        }
+    }
 }
 
 fn tree_to_protobuf<
@@ -1277,24 +1467,11 @@ fn tree_to_protobuf<
         .map(|shard_root| {
             let shard = tree.store().get_shard(*shard_root)?.unwrap();
 
-            let root_hash = shard
-                .root()
-                .annotation()
-                .and_then(|ann| {
-                    ann.as_ref().map(|rc| {
-                        let mut root_hash = vec![];
-                        rc.write(&mut root_hash)?;
-                        Ok::<_, Error>(root_hash)
-                    })
-                })
-                .transpose()?;
-
             let mut shard_data = Vec::new();
             write_shard(&mut shard_data, &shard.root())?;
 
             Ok(TreeShard {
                 shard_index: shard_root.index(),
-                root_hash,
                 shard_data,
             })
         })
@@ -1319,6 +1496,37 @@ fn tree_to_protobuf<
         shards,
         checkpoints,
     }))
+}
+
+fn tree_from_protobuf<
+    H: Clone + incrementalmerkletree::Hashable + PartialEq + zcash_primitives::merkle_tree::HashSer,
+    const DEPTH: u8,
+    const SHARD_HEIGHT: u8,
+>(
+    proto_tree: proto::memwallet::ShardTree,
+    max_checkpoints: usize,
+    shard_root_level: Level,
+) -> Result<ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>, Error> {
+    let mut tree = ShardTree::new(MemoryShardStore::empty(), max_checkpoints);
+
+    let cap = read_shard(Cursor::new(&proto_tree.cap))?;
+    tree.store_mut().put_cap(cap)?;
+
+    for proto_shard in proto_tree.shards {
+        let shard_root = Address::from_parts(shard_root_level, proto_shard.shard_index);
+        let shard_tree = read_shard(&mut Cursor::new(proto_shard.shard_data))?;
+        let shard = LocatedPrunableTree::from_parts(shard_root, shard_tree);
+        tree.store_mut().put_shard(shard)?;
+    }
+
+    for proto_checkpoint in proto_tree.checkpoints {
+        tree.store_mut().add_checkpoint(
+            BlockHeight::from(proto_checkpoint.checkpoint_id),
+            Checkpoint::at_position(proto_checkpoint.position.into()),
+        )?;
+    }
+
+    Ok(tree)
 }
 
 // #[cfg(test)]

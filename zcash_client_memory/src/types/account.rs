@@ -543,7 +543,7 @@ mod serialization {
                     AccountSource::Imported { .. } => None,
                 },
                 account_index: match acc.kind {
-                    AccountSource::Derived { .. } => Some(0), // TODO: find how to extract the account index
+                    AccountSource::Derived { account_index, .. } => Some(account_index.into()),
                     AccountSource::Imported { .. } => None,
                 },
                 purpose: match acc.kind {
@@ -593,7 +593,7 @@ mod serialization {
                         seed_fingerprint: SeedFingerprint::from_bytes(
                             acc.seed_fingerprint().try_into().unwrap(),
                         ),
-                        account_index: zip32::AccountId::default(), // todo find how to extract the account index
+                        account_index: acc.account_index.unwrap().try_into().unwrap(),
                     },
                     1 => AccountSource::Imported {
                         purpose: match acc.purpose.unwrap() {

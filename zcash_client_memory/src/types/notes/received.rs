@@ -51,7 +51,7 @@ impl Deref for ReceievedNoteSpends {
 /// A note that has been received by the wallet
 /// TODO: Instead of Vec, perhaps we should identify by some unique ID
 #[derive(Debug, Clone)]
-pub(crate) struct ReceivedNoteTable(Vec<ReceivedNote>);
+pub(crate) struct ReceivedNoteTable(pub(crate) Vec<ReceivedNote>);
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReceivedNote {

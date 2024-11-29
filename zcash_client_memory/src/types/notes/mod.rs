@@ -4,7 +4,7 @@ mod sent;
 pub(crate) use received::{
     to_spendable_notes, ReceievedNoteSpends, ReceivedNote, ReceivedNoteTable,
 };
-pub(crate) use sent::{SentNoteId, SentNoteTable};
+pub(crate) use sent::{SentNote, SentNoteId, SentNoteTable};
 
 mod serialization {
     use crate::{

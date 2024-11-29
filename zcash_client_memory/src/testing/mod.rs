@@ -1,7 +1,9 @@
 use std::convert::{identity, Infallible};
+use std::fmt::Debug;
 
 use zcash_client_backend::data_api::InputSource;
 use zcash_client_backend::data_api::OutputOfSentTx;
+use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::proto;
 use zcash_client_backend::wallet::Note;
 use zcash_client_backend::wallet::Recipient;
@@ -76,7 +78,7 @@ impl TestCache for MemBlockCache {
 
 impl<P> Reset for MemoryWalletDb<P>
 where
-    P: zcash_primitives::consensus::Parameters + Clone,
+    P: zcash_primitives::consensus::Parameters + Clone + Debug,
 {
     type Handle = ();
 
@@ -88,7 +90,7 @@ where
 
 impl<P> WalletTest for MemoryWalletDb<P>
 where
-    P: zcash_primitives::consensus::Parameters + Clone,
+    P: zcash_primitives::consensus::Parameters + Clone + Debug,
 {
     #[allow(clippy::type_complexity)]
     fn get_sent_outputs(&self, txid: &TxId) -> Result<Vec<OutputOfSentTx>, Error> {
@@ -386,6 +388,23 @@ where
     fn finally(&self) {
         // ensure the wallet state at the conclusion of each test can be round-tripped through serialization
         let proto = crate::proto::memwallet::MemoryWallet::from(self);
-        println!("proto wallet: {:?}", proto);
+        let recovered_wallet = MemoryWalletDb::from(proto);
+
+        pretty_assertions::assert_eq!(format!("{:?}", self), format!("{:?}", &recovered_wallet));
+
+        // // ensure the trees can be roundtripped
+        // let tree_proto = crate::tree_to_protobuf(&self.sapling_tree)
+        //     .unwrap()
+        //     .unwrap();
+        // let recovered_tree: shardtree::ShardTree<
+        //     shardtree::store::memory::MemoryShardStore<sapling::Node, BlockHeight>,
+        //     { SAPLING_SHARD_HEIGHT * 2 },
+        //     SAPLING_SHARD_HEIGHT,
+        // > = crate::tree_from_protobuf(tree_proto, 100, 16.into()).unwrap();
+
+        // assert_eq!(
+        //     self.sapling_tree.store().get_shard_roots(),
+        //     recovered_tree.store().get_shard_roots()
+        // );
     }
 }

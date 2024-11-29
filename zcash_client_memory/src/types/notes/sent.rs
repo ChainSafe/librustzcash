@@ -179,6 +179,7 @@ mod serialization {
     use zcash_primitives::{
         consensus::Network::MainNetwork as EncodingParams, legacy::TransparentAddress,
     };
+    use zcash_protocol::ShieldedProtocol;
 
     impl From<SentNote> for proto::SentNote {
         fn from(note: SentNote) -> Self {
@@ -219,6 +220,29 @@ mod serialization {
                     output_index: output_index.into(),
                     pool: proto::PoolType::Transparent as i32,
                 },
+            }
+        }
+    }
+
+    impl From<proto::NoteId> for SentNoteId {
+        fn from(note_id: proto::NoteId) -> Self {
+            match note_id.pool() {
+                proto::PoolType::ShieldedSapling => SentNoteId::Shielded(NoteId::new(
+                    note_id.tx_id.unwrap().into(),
+                    Sapling,
+                    note_id.output_index.try_into().unwrap(),
+                )),
+                #[cfg(feature = "orchard")]
+                proto::PoolType::ShieldedOrchard => SentNoteId::Shielded(NoteId::new(
+                    note_id.tx_id.unwrap().into(),
+                    Orchard,
+                    note_id.output_index.try_into().unwrap(),
+                )),
+                proto::PoolType::Transparent => SentNoteId::Transparent {
+                    txid: note_id.tx_id.unwrap().into(),
+                    output_index: note_id.output_index.try_into().unwrap(),
+                },
+                _ => unreachable!(),
             }
         }
     }

@@ -41,7 +41,6 @@ message ShardTree {
 
 message TreeShard {
     uint64 shard_index = 1;
-    optional bytes root_hash = 2;
     bytes shard_data = 3;
 }
 
