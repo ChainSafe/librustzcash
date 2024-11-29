@@ -2,6 +2,7 @@ use std::convert::{identity, Infallible};
 
 use zcash_client_backend::data_api::InputSource;
 use zcash_client_backend::data_api::OutputOfSentTx;
+use zcash_client_backend::proto;
 use zcash_client_backend::wallet::Note;
 use zcash_client_backend::wallet::Recipient;
 use zcash_client_backend::wallet::WalletTransparentOutput;
@@ -36,6 +37,12 @@ mod transparent;
 /// A test data store factory for in-memory databases
 /// Very simple implementation just creates a new MemoryWalletDb
 pub(crate) struct TestMemDbFactory;
+
+impl TestMemDbFactory {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+}
 
 impl DataStoreFactory for TestMemDbFactory {
     type Error = ();
@@ -140,11 +147,11 @@ where
             .collect::<Result<_, Error>>()
     }
 
-    #[doc = " Fetches the transparent output corresponding to the provided `outpoint`."]
-    #[doc = " Allows selecting unspendable outputs for testing purposes."]
-    #[doc = ""]
-    #[doc = " Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not"]
-    #[doc = " spendable as of the chain tip height."]
+    /// Fetches the transparent output corresponding to the provided `outpoint`.
+    /// Allows selecting unspendable outputs for testing purposes.
+    ///
+    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
+    /// spendable as of the chain tip height.
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_output(
         &self,
@@ -374,5 +381,11 @@ where
         checkpoints.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         Ok(checkpoints)
+    }
+
+    fn finally(&self) {
+        // ensure the wallet state at the conclusion of each test can be round-tripped through serialization
+        let proto = crate::proto::memwallet::MemoryWallet::from(self);
+        println!("proto wallet: {:?}", proto);
     }
 }

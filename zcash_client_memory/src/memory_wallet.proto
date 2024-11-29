@@ -16,10 +16,10 @@ message MemoryWallet {
     repeated TxLocatorRecord tx_locator = 8;
     repeated ScanQueueRecord scan_queue = 9;
 
-    bytes sapling_tree = 10;
+    ShardTree sapling_tree = 10;
     repeated TreeEndHeightsRecord sapling_tree_shard_end_heights = 11;
 
-    bytes orchard_tree = 12;
+    ShardTree orchard_tree = 12;
     repeated TreeEndHeightsRecord orchard_tree_shard_end_heights = 13;
 
     repeated TransparentReceivedOutputRecord transparent_received_outputs = 14;
@@ -31,6 +31,23 @@ message MemoryWallet {
 
 message TxId {
     bytes hash = 1;
+}
+
+message ShardTree {
+    bytes cap = 1;
+    repeated TreeShard shards = 2;
+    repeated TreeCheckpoint checkpoints = 3;
+}
+
+message TreeShard {
+    uint64 shard_index = 1;
+    optional bytes root_hash = 2;
+    bytes shard_data = 3;
+}
+
+message TreeCheckpoint {
+    uint32 checkpoint_id = 1;
+    uint64 position = 2;
 }
 
 message TransactionTableRecord {
