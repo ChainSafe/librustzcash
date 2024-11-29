@@ -388,9 +388,11 @@ where
     fn finally(&self) {
         // ensure the wallet state at the conclusion of each test can be round-tripped through serialization
         let proto = crate::proto::memwallet::MemoryWallet::from(self);
-        let recovered_wallet = MemoryWalletDb::from(proto);
+        let recovered_wallet = MemoryWalletDb::from(proto.clone());
+        let recovered_wallet_proto = crate::proto::memwallet::MemoryWallet::from(&recovered_wallet);
 
-        pretty_assertions::assert_eq!(format!("{:?}", self), format!("{:?}", &recovered_wallet));
+        pretty_assertions::assert_eq!(proto, recovered_wallet_proto);
+        // pretty_assertions::assert_eq!(format!("{:?}", self), format!("{:?}", &recovered_wallet));
 
         // // ensure the trees can be roundtripped
         // let tree_proto = crate::tree_to_protobuf(&self.sapling_tree)

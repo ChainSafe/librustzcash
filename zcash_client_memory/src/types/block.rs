@@ -92,11 +92,15 @@ mod serialization {
                         let note_id = memo.note_id.unwrap();
                         (
                             NoteId::new(
-                                note_id.tx_id.unwrap().into(),
-                                match note_id.pool {
-                                    0 => zcash_protocol::ShieldedProtocol::Sapling,
+                                note_id.tx_id.clone().unwrap().into(),
+                                match note_id.pool() {
+                                    proto::PoolType::ShieldedSapling => {
+                                        zcash_protocol::ShieldedProtocol::Sapling
+                                    }
                                     #[cfg(feature = "orchard")]
-                                    1 => zcash_protocol::ShieldedProtocol::Orchard,
+                                    proto::PoolType::ShieldedOrchard => {
+                                        zcash_protocol::ShieldedProtocol::Orchard
+                                    }
                                     _ => unreachable!(),
                                 },
                                 note_id.output_index as u16,

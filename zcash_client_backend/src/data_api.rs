@@ -1527,6 +1527,10 @@ pub trait WalletTest: InputSource + WalletRead {
         &self,
         protocol: ShieldedProtocol,
     ) -> Result<Vec<ReceivedNote<Self::NoteRef, Note>>, <Self as InputSource>::Error>;
+
+    /// Perform final checks at the conclusion of each test
+    /// Allows wallet backend developers to perform any necessary consistency checks or cleanup
+    fn finally(&self) {}
 }
 
 /// The output of a transaction sent by the wallet.

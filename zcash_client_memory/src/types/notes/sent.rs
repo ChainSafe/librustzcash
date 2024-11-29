@@ -175,6 +175,7 @@ pub(crate) struct SentNote {
 mod serialization {
     use super::*;
     use crate::proto::memwallet as proto;
+    use zcash_address::ZcashAddress;
     use zcash_keys::encoding::AddressCodec;
     use zcash_primitives::{
         consensus::Network::MainNetwork as EncodingParams, legacy::TransparentAddress,
@@ -242,7 +243,6 @@ mod serialization {
                     txid: note_id.tx_id.unwrap().into(),
                     output_index: note_id.output_index.try_into().unwrap(),
                 },
-                _ => unreachable!(),
             }
         }
     }
@@ -285,7 +285,7 @@ mod serialization {
                     ephemeral_address,
                     outpoint_metadata,
                 } => proto::Recipient {
-                    recipient_type: proto::RecipientType::ExternalRecipient as i32,
+                    recipient_type: proto::RecipientType::EphemeralTransparent as i32,
 
                     address: Some(ephemeral_address.encode(&EncodingParams)),
                     pool_type: Some(proto::PoolType::Transparent as i32),
@@ -299,7 +299,7 @@ mod serialization {
                     external_address,
                     note,
                 } => proto::Recipient {
-                    recipient_type: proto::RecipientType::ExternalRecipient as i32,
+                    recipient_type: proto::RecipientType::InternalAccount as i32,
 
                     address: external_address.map(|a| a.to_string()),
                     pool_type: None,
@@ -314,18 +314,21 @@ mod serialization {
 
     impl From<proto::Recipient> for Recipient<AccountId, Note, OutPoint> {
         fn from(recipient: proto::Recipient) -> Self {
-            match recipient.recipient_type {
-                0 => Recipient::External(
-                    recipient.address.unwrap().parse().unwrap(),
-                    match recipient.pool_type.unwrap() {
-                        0 => PoolType::Transparent,
-                        1 => PoolType::Shielded(Sapling),
-                        #[cfg(feature = "orchard")]
-                        2 => PoolType::Shielded(Orchard),
-                        _ => unreachable!(),
-                    },
-                ),
-                1 => Recipient::EphemeralTransparent {
+            match recipient.recipient_type() {
+                proto::RecipientType::ExternalRecipient => {
+                    let address_str = recipient.address.clone().unwrap();
+                    let address = ZcashAddress::try_from_encoded(&address_str);
+                    Recipient::External(
+                        address.unwrap(),
+                        match recipient.pool_type() {
+                            proto::PoolType::Transparent => PoolType::Transparent,
+                            proto::PoolType::ShieldedSapling => PoolType::Shielded(Sapling),
+                            #[cfg(feature = "orchard")]
+                            proto::PoolType::ShieldedOrchard => PoolType::Shielded(Orchard),
+                        },
+                    )
+                }
+                proto::RecipientType::EphemeralTransparent => Recipient::EphemeralTransparent {
                     receiving_account: recipient.account_id.unwrap().into(),
                     ephemeral_address: TransparentAddress::decode(
                         &EncodingParams,
@@ -334,12 +337,32 @@ mod serialization {
                     .unwrap(),
                     outpoint_metadata: recipient.outpoint_metadata.unwrap().into(),
                 },
-                _ => Recipient::InternalAccount {
+                proto::RecipientType::InternalAccount => Recipient::InternalAccount {
                     receiving_account: recipient.account_id.unwrap().into(),
                     external_address: recipient.address.map(|a| a.parse().unwrap()),
                     note: recipient.note.unwrap().into(),
                 },
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::proto::memwallet as proto;
+        use zcash_primitives::transaction::components::OutPoint;
+        use zcash_protocol::ShieldedProtocol;
+
+        #[test]
+        fn proto_roundtrip_recipient() {
+            let recipient = Recipient::<AccountId, Note, OutPoint>::External(
+                ZcashAddress::try_from_encoded("uregtest1a7mkafdn9c87xywjnyup65uker8tx3y72r9f6elcfm6uh263c9s6smcw6xm5m8k8eythcreuyqktp9z7mtpcd6jsm5xw7skgdcfjx84z").unwrap(),
+                PoolType::Shielded(ShieldedProtocol::Sapling),
+            );
+            let proto = proto::Recipient::from(recipient.clone());
+            let recipient2 = Recipient::<AccountId, Note, OutPoint>::from(proto.clone());
+            let proto2 = proto::Recipient::from(recipient2.clone());
+            assert_eq!(proto, proto2);
         }
     }
 }
