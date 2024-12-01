@@ -392,21 +392,20 @@ where
             MemoryWalletDb::new_from_proto(proto.clone(), self.params.clone(), 100);
 
         assert_eq!(self, &recovered_wallet);
-        // pretty_assertions::assert_eq!(format!("{:?}", self), format!("{:?}", &recovered_wallet));
 
-        // // ensure the trees can be roundtripped
-        // let tree_proto = crate::tree_to_protobuf(&self.sapling_tree)
-        //     .unwrap()
-        //     .unwrap();
-        // let recovered_tree: shardtree::ShardTree<
-        //     shardtree::store::memory::MemoryShardStore<sapling::Node, BlockHeight>,
-        //     { SAPLING_SHARD_HEIGHT * 2 },
-        //     SAPLING_SHARD_HEIGHT,
-        // > = crate::tree_from_protobuf(tree_proto, 100, 16.into()).unwrap();
+        // ensure the trees can be roundtripped
+        let tree_proto = crate::tree_to_protobuf(&self.sapling_tree)
+            .unwrap()
+            .unwrap();
+        let recovered_tree: shardtree::ShardTree<
+            shardtree::store::memory::MemoryShardStore<sapling::Node, BlockHeight>,
+            { SAPLING_SHARD_HEIGHT * 2 },
+            SAPLING_SHARD_HEIGHT,
+        > = crate::tree_from_protobuf(tree_proto, 100, 16.into()).unwrap();
 
-        // assert_eq!(
-        //     self.sapling_tree.store().get_shard_roots(),
-        //     recovered_tree.store().get_shard_roots()
-        // );
+        assert_eq!(
+            self.sapling_tree.store().get_shard_roots(),
+            recovered_tree.store().get_shard_roots()
+        );
     }
 }
