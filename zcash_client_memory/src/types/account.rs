@@ -584,7 +584,7 @@ mod serialization {
                 ephemeral_addresses: acc
                     .ephemeral_addresses
                     .into_iter()
-                    .map(|(index, address)| proto::account::EphemeralAddressRecord {
+                    .map(|(index, address)| proto::EphemeralAddressRecord {
                         index: index.into(),
                         ephemeral_address: Some(proto::EphemeralAddress {
                             address: address.address.encode(&EncodingParams),

@@ -1121,6 +1121,7 @@ mod serialization {
     impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
         fn from(wallet: &MemoryWalletDb<P>) -> Self {
             Self {
+                version: 1,
                 accounts: Some(proto::Accounts {
                     accounts: wallet
                         .accounts
@@ -1285,7 +1286,22 @@ mod serialization {
             proto_wallet: proto::MemoryWallet,
             params: P,
             max_checkpoints: usize,
-        ) -> Self {
+        ) -> Result<Self, Error> {
+            match proto_wallet.version {
+                1 => Self::new_from_proto_v1(proto_wallet, params, max_checkpoints),
+                _ => Err(Error::UnsupportedProtoVersion(1, proto_wallet.version)),
+            }
+        }
+
+        pub fn new_from_proto_v1(
+            proto_wallet: proto::MemoryWallet,
+            params: P,
+            max_checkpoints: usize,
+        ) -> Result<Self, Error> {
+            if proto_wallet.version != 1 {
+                return Err(Error::UnsupportedProtoVersion(1, proto_wallet.version));
+            }
+
             let mut wallet = MemoryWalletDb::new(params, max_checkpoints);
 
             wallet.accounts = proto_wallet
@@ -1473,7 +1489,7 @@ mod serialization {
                     .collect(),
             );
 
-            wallet
+            Ok(wallet)
         }
     }
 }

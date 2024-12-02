@@ -389,7 +389,7 @@ where
         // ensure the wallet state at the conclusion of each test can be round-tripped through serialization
         let proto = crate::proto::memwallet::MemoryWallet::from(self);
         let recovered_wallet =
-            MemoryWalletDb::new_from_proto(proto.clone(), self.params.clone(), 100);
+            MemoryWalletDb::new_from_proto(proto.clone(), self.params.clone(), 100).unwrap();
 
         assert_eq!(self, &recovered_wallet);
 

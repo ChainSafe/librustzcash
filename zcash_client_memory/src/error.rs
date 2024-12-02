@@ -71,6 +71,8 @@ pub enum Error {
     TransparentDerivation(bip32::Error),
     #[error("Address Conversion error: {0}")]
     ConversionError(ConversionError<&'static str>),
+    #[error("Unsupported proto version: {1} (expected {0})")]
+    UnsupportedProtoVersion(u32, u32),
 }
 #[cfg(feature = "transparent-inputs")]
 

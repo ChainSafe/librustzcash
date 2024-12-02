@@ -1,5 +1,6 @@
 syntax = "proto3";
-package primitives;
+
+package memwallet;
 
 // Unique identifier for a zcash transaction
 message TxId {
@@ -38,7 +39,13 @@ message Nullifier {
   bytes nullifier = 2;
 }
 
-message TxOut {
-  uint64 value = 1;
-  bytes script = 2;
+enum TransactionStatus {
+  TxidNotRecognized = 0;
+  NotInMainChain = 1;
+  Mined = 2;
+}
+
+message OutPoint {
+  bytes hash = 1;
+  uint32 n = 2;
 }
