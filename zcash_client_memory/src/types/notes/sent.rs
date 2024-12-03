@@ -187,7 +187,7 @@ mod serialization {
         fn try_from(note: proto::SentNote) -> Result<Self, Self::Error> {
             Ok(Self {
                 from_account_id: note.from_account_id.into(),
-                to: read_optional!(note, to)?.into(),
+                to: read_optional!(note, to)?.try_into()?,
                 value: Zatoshis::from_u64(note.value)?,
                 memo: Memo::from_bytes(&note.memo)?,
             })
@@ -215,25 +215,27 @@ mod serialization {
         }
     }
 
-    impl From<proto::NoteId> for SentNoteId {
-        fn from(note_id: proto::NoteId) -> Self {
-            match note_id.pool() {
+    impl TryFrom<proto::NoteId> for SentNoteId {
+        type Error = Error;
+
+        fn try_from(note_id: proto::NoteId) -> Result<Self, Self::Error> {
+            Ok(match note_id.pool() {
                 proto::PoolType::ShieldedSapling => SentNoteId::Shielded(NoteId::new(
-                    note_id.tx_id.unwrap().into(),
+                    read_optional!(note_id, tx_id)?.try_into()?,
                     Sapling,
-                    note_id.output_index.try_into().unwrap(),
+                    note_id.output_index.try_into()?,
                 )),
                 #[cfg(feature = "orchard")]
                 proto::PoolType::ShieldedOrchard => SentNoteId::Shielded(NoteId::new(
-                    note_id.tx_id.unwrap().into(),
+                    read_optional!(note_id, tx_id)?.try_into()?,
                     Orchard,
-                    note_id.output_index.try_into().unwrap(),
+                    note_id.output_index.try_into()?,
                 )),
                 proto::PoolType::Transparent => SentNoteId::Transparent {
-                    txid: note_id.tx_id.unwrap().into(),
-                    output_index: note_id.output_index.try_into().unwrap(),
+                    txid: read_optional!(note_id, tx_id)?.try_into()?,
+                    output_index: note_id.output_index.try_into()?,
                 },
-            }
+            })
         }
     }
 
@@ -246,9 +248,11 @@ mod serialization {
         }
     }
 
-    impl From<proto::OutPoint> for OutPoint {
-        fn from(outpoint: proto::OutPoint) -> Self {
-            Self::new(outpoint.hash.try_into().unwrap(), outpoint.n)
+    impl TryFrom<proto::OutPoint> for OutPoint {
+        type Error = Error;
+
+        fn try_from(outpoint: proto::OutPoint) -> Result<Self, Self::Error> {
+            Ok(Self::new(outpoint.hash.try_into()?, outpoint.n))
         }
     }
 
@@ -302,14 +306,15 @@ mod serialization {
         }
     }
 
-    impl From<proto::Recipient> for Recipient<AccountId, Note, OutPoint> {
-        fn from(recipient: proto::Recipient) -> Self {
-            match recipient.recipient_type() {
+    impl TryFrom<proto::Recipient> for Recipient<AccountId, Note, OutPoint> {
+        type Error = Error;
+        fn try_from(recipient: proto::Recipient) -> Result<Self, Self::Error> {
+            Ok(match recipient.recipient_type() {
                 proto::RecipientType::ExternalRecipient => {
-                    let address_str = recipient.address.clone().unwrap();
-                    let address = ZcashAddress::try_from_encoded(&address_str);
+                    let address_str = read_optional!(recipient.clone(), address)?;
+                    let address = ZcashAddress::try_from_encoded(&address_str)?;
                     Recipient::External(
-                        address.unwrap(),
+                        address,
                         match recipient.pool_type() {
                             proto::PoolType::Transparent => PoolType::Transparent,
                             proto::PoolType::ShieldedSapling => PoolType::Shielded(Sapling),
@@ -319,20 +324,19 @@ mod serialization {
                     )
                 }
                 proto::RecipientType::EphemeralTransparent => Recipient::EphemeralTransparent {
-                    receiving_account: recipient.account_id.unwrap().into(),
+                    receiving_account: read_optional!(recipient, account_id)?.into(),
                     ephemeral_address: TransparentAddress::decode(
                         &EncodingParams,
-                        &recipient.address.unwrap(),
-                    )
-                    .unwrap(),
-                    outpoint_metadata: recipient.outpoint_metadata.unwrap().into(),
+                        &read_optional!(recipient, address)?,
+                    )?,
+                    outpoint_metadata: read_optional!(recipient, outpoint_metadata)?.try_into()?,
                 },
                 proto::RecipientType::InternalAccount => Recipient::InternalAccount {
-                    receiving_account: recipient.account_id.unwrap().into(),
-                    external_address: recipient.address.map(|a| a.parse().unwrap()),
-                    note: recipient.note.unwrap().into(),
+                    receiving_account: read_optional!(recipient, account_id)?.into(),
+                    external_address: recipient.address.map(|a| a.parse()).transpose()?,
+                    note: read_optional!(recipient, note)?.into(),
                 },
-            }
+            })
         }
     }
 
@@ -350,7 +354,8 @@ mod serialization {
                 PoolType::Shielded(ShieldedProtocol::Sapling),
             );
             let proto = proto::Recipient::from(recipient.clone());
-            let recipient2 = Recipient::<AccountId, Note, OutPoint>::from(proto.clone());
+            let recipient2 =
+                Recipient::<AccountId, Note, OutPoint>::try_from(proto.clone()).unwrap();
             let proto2 = proto::Recipient::from(recipient2.clone());
             assert_eq!(proto, proto2);
         }

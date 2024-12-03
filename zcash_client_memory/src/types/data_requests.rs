@@ -69,8 +69,10 @@ mod serialization {
 
         fn try_from(request: proto::TransactionDataRequest) -> Result<Self, crate::Error> {
             Ok(match request.request_type {
-                0 => TransactionDataRequest::GetStatus(read_optional!(request, tx_id)?.into()),
-                1 => TransactionDataRequest::Enhancement(read_optional!(request, tx_id)?.into()),
+                0 => TransactionDataRequest::GetStatus(read_optional!(request, tx_id)?.try_into()?),
+                1 => {
+                    TransactionDataRequest::Enhancement(read_optional!(request, tx_id)?.try_into()?)
+                }
                 2 => TransactionDataRequest::SpendsFromAddress {
                     address: TransparentAddress::decode(
                         &EncodingParams,

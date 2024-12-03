@@ -107,6 +107,8 @@ pub enum Error {
     Zip32FromInt(#[from] zip32::TryFromIntError),
     #[error("Error decoding ufvk string: {0}")]
     UfvkDecodeError(String),
+    #[error("Error parsing zcash address: {0}")]
+    ParseZcashAddress(#[from] zcash_address::ParseError),
 }
 #[cfg(feature = "transparent-inputs")]
 

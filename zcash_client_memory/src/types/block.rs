@@ -96,7 +96,7 @@ mod serialization {
                         let note_id = read_optional!(memo, note_id)?;
                         Ok((
                             NoteId::new(
-                                read_optional!(note_id.clone(), tx_id)?.into(),
+                                read_optional!(note_id.clone(), tx_id)?.try_into()?,
                                 match note_id.pool() {
                                     proto::PoolType::ShieldedSapling => {
                                         zcash_protocol::ShieldedProtocol::Sapling

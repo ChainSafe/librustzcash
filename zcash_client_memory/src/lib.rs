@@ -8,7 +8,6 @@ mod wallet_write;
 
 #[cfg(test)]
 pub mod testing;
-#[cfg(test)]
 pub use block_source::*;
 pub use error::Error;
 pub use types::MemoryWalletDb;

@@ -7,7 +7,9 @@ pub(crate) use received::{
 pub(crate) use sent::{SentNote, SentNoteId, SentNoteTable};
 
 mod serialization {
+    use crate::error::Error;
     use crate::proto::memwallet::{self as proto};
+    use crate::read_optional;
     use jubjub::Fr;
     use zcash_client_backend::wallet::{Note, NoteId};
 
@@ -29,18 +31,19 @@ mod serialization {
         }
     }
 
-    impl From<proto::NoteId> for NoteId {
-        fn from(note_id: proto::NoteId) -> Self {
-            Self::new(
-                note_id.tx_id.clone().unwrap().into(),
+    impl TryFrom<proto::NoteId> for NoteId {
+        type Error = Error;
+        fn try_from(note_id: proto::NoteId) -> Result<Self, Self::Error> {
+            Ok(Self::new(
+                read_optional!(note_id.clone(), tx_id)?.try_into()?,
                 match note_id.pool() {
                     proto::PoolType::ShieldedSapling => zcash_protocol::ShieldedProtocol::Sapling,
                     #[cfg(feature = "orchard")]
                     proto::PoolType::ShieldedOrchard => zcash_protocol::ShieldedProtocol::Orchard,
                     _ => panic!("invalid pool"),
                 },
-                note_id.output_index.try_into().unwrap(),
-            )
+                note_id.output_index.try_into()?,
+            ))
         }
     }
 

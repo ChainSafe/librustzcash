@@ -389,8 +389,8 @@ mod serialization {
 
         fn try_from(value: proto::ReceivedNote) -> Result<ReceivedNote, Error> {
             Ok(Self {
-                note_id: read_optional!(value, note_id)?.into(),
-                txid: read_optional!(value, tx_id)?.into(),
+                note_id: read_optional!(value, note_id)?.try_into()?,
+                txid: read_optional!(value, tx_id)?.try_into()?,
                 output_index: value.output_index,
                 account_id: value.account_id.into(),
                 note: read_optional!(value, note)?.into(),

@@ -47,25 +47,22 @@ impl<P: Parameters> MemoryWalletDb<P> {
 
         let mut wallet = MemoryWalletDb::new(params, max_checkpoints);
 
-        wallet.accounts = proto_wallet
-            .accounts
-            .map(|proto_accounts| {
-                let accounts = proto_accounts
-                    .accounts
-                    .into_iter()
-                    .map(|proto_account| {
-                        let id = proto_account.account_id;
-                        let account = Account::try_from(proto_account)?;
-                        Ok((AccountId::from(id), account))
-                    })
-                    .collect::<Result<_>>()?;
-                Ok::<Accounts, Error>(Accounts {
-                    accounts,
-                    nonce: proto_accounts.account_nonce,
+        wallet.accounts = {
+            let proto_accounts = read_optional!(proto_wallet, accounts)?;
+            let accounts = proto_accounts
+                .accounts
+                .into_iter()
+                .map(|proto_account| {
+                    let id = proto_account.account_id;
+                    let account = Account::try_from(proto_account)?;
+                    Ok((AccountId::from(id), account))
                 })
+                .collect::<Result<_>>()?;
+            Ok::<Accounts, Error>(Accounts {
+                accounts,
+                nonce: proto_accounts.account_nonce,
             })
-            .unwrap()
-            .unwrap();
+        }?;
 
         wallet.blocks = proto_wallet
             .blocks
@@ -85,7 +82,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .map(|proto_tx| {
                     let txid = read_optional!(proto_tx, tx_id)?;
                     let tx = read_optional!(proto_tx, tx_entry)?;
-                    Ok((txid.into(), tx.try_into()?))
+                    Ok((txid.try_into()?, tx.try_into()?))
                 })
                 .collect::<Result<_>>()?,
         );
@@ -105,7 +102,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .map(|proto_spend| {
                     let note_id = read_optional!(proto_spend, note_id)?;
                     let tx_id = read_optional!(proto_spend, tx_id)?;
-                    Ok((note_id.into(), tx_id.into()))
+                    Ok((note_id.try_into()?, tx_id.try_into()?))
                 })
                 .collect::<Result<_>>()?,
         );
@@ -130,7 +127,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .map(|proto_sent_note| {
                     let sent_note_id = read_optional!(proto_sent_note, sent_note_id)?;
                     let sent_note = read_optional!(proto_sent_note, sent_note)?;
-                    Ok((sent_note_id.into(), SentNote::try_from(sent_note)?))
+                    Ok((sent_note_id.try_into()?, SentNote::try_from(sent_note)?))
                 })
                 .collect::<Result<_>>()?,
         );
@@ -142,7 +139,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .map(|proto_locator| {
                     let block_height = proto_locator.block_height.into();
                     let tx_index = proto_locator.tx_index;
-                    let tx_id = read_optional!(proto_locator, tx_id)?.into();
+                    let tx_id = read_optional!(proto_locator, tx_id)?.try_into()?;
                     Ok(((block_height, tx_index), tx_id))
                 })
                 .collect::<Result<_>>()?,
@@ -196,7 +193,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                     let outpoint = read_optional!(proto_output, outpoint)?;
                     let output = read_optional!(proto_output, output)?.try_into()?;
                     Ok((
-                        OutPoint::from(outpoint),
+                        OutPoint::try_from(outpoint)?,
                         ReceivedTransparentOutput::from(output),
                     ))
                 })
@@ -209,8 +206,8 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .into_iter()
                 .map(|proto_spend| {
                     let outpoint = read_optional!(proto_spend, outpoint)?;
-                    let txid = read_optional!(proto_spend, tx_id)?.into();
-                    Ok((OutPoint::from(outpoint), txid))
+                    let txid = read_optional!(proto_spend, tx_id)?.try_into()?;
+                    Ok((OutPoint::try_from(outpoint)?, txid))
                 })
                 .collect::<Result<_>>()?,
         );
@@ -220,9 +217,9 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .transparent_spend_map
                 .into_iter()
                 .map(|proto_spend| {
-                    let txid = read_optional!(proto_spend, tx_id)?.into();
+                    let txid = read_optional!(proto_spend, tx_id)?.try_into()?;
                     let outpoint = read_optional!(proto_spend, outpoint)?;
-                    Ok((txid, OutPoint::from(outpoint)))
+                    Ok((txid, OutPoint::try_from(outpoint)?))
                 })
                 .collect::<Result<_>>()?,
         );
@@ -255,9 +252,11 @@ impl From<TxId> for proto::TxId {
     }
 }
 
-impl From<proto::TxId> for TxId {
-    fn from(txid: proto::TxId) -> Self {
-        TxId::from_bytes(txid.hash.try_into().unwrap())
+impl TryFrom<proto::TxId> for TxId {
+    type Error = Error;
+
+    fn try_from(txid: proto::TxId) -> Result<Self> {
+        Ok(TxId::from_bytes(txid.hash.try_into()?))
     }
 }
 
