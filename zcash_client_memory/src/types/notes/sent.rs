@@ -208,7 +208,7 @@ mod serialization {
                 },
                 SentNoteId::Transparent { txid, output_index } => proto::NoteId {
                     tx_id: Some(txid.into()),
-                    output_index: output_index,
+                    output_index,
                     pool: proto::PoolType::Transparent as i32,
                 },
             }

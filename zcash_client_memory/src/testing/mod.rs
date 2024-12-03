@@ -276,13 +276,12 @@ where
                     .map(|(_, received)| received.account_id);
                 let sent_txo_account_id = spent_utxos
                     .first()
-                    .map(|(outpoint, _)| {
+                    .and_then(|(outpoint, _)| {
                         // any spent txo was first a received txo
                         self.transparent_received_outputs
                             .get(outpoint)
                             .map(|txo| txo.account_id)
-                    })
-                    .flatten();
+                    });
 
                 // take the first non-none account_id
                 let account_id = vec![

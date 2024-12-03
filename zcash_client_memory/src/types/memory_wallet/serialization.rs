@@ -1,7 +1,7 @@
 use bytes::{Buf, BufMut};
 use consensus::Parameters;
 use prost::Message;
-use transparent::ReceivedTransparentOutput;
+
 
 use super::*;
 use crate::error::Result;
@@ -162,7 +162,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
             .map(|proto_end_height| {
                 let address = Address::from_parts(
                     Level::from(u8::try_from(proto_end_height.level)?),
-                    proto_end_height.index.into(),
+                    proto_end_height.index,
                 );
                 let height = proto_end_height.block_height.into();
                 Ok((address, height))
@@ -178,7 +178,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
             .map(|proto_end_height| {
                 let address = Address::from_parts(
                     Level::from(u8::try_from(proto_end_height.level)?),
-                    proto_end_height.index.into(),
+                    proto_end_height.index,
                 );
                 let height = proto_end_height.block_height.into();
                 Ok((address, height))
@@ -194,7 +194,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                     let output = read_optional!(proto_output, output)?.try_into()?;
                     Ok((
                         OutPoint::try_from(outpoint)?,
-                        ReceivedTransparentOutput::from(output),
+                        output,
                     ))
                 })
                 .collect::<Result<_>>()?,
@@ -317,7 +317,7 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                 .into_iter()
                 .map(|(nullifier, (height, tx_index))| proto::NullifierRecord {
                     block_height: height.into(),
-                    tx_index: tx_index,
+                    tx_index,
                     nullifier: Some(nullifier.into()),
                 })
                 .collect(),
@@ -340,7 +340,7 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                 .into_iter()
                 .map(|((height, tx_index), txid)| proto::TxLocatorRecord {
                     block_height: height.into(),
-                    tx_index: tx_index,
+                    tx_index,
                     tx_id: Some(txid.into()),
                 })
                 .collect(),

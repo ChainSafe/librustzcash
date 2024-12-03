@@ -526,9 +526,7 @@ mod serialization {
             Self {
                 account_nonce: accounts.nonce,
                 accounts: accounts
-                    .accounts
-                    .into_iter()
-                    .map(|(_, acc)| acc.into())
+                    .accounts.into_values().map(|acc| acc.into())
                     .collect(),
             }
         }
@@ -576,7 +574,7 @@ mod serialization {
                 birthday: Some(acc.birthday().clone().try_into().unwrap()),
                 addresses: acc
                     .addresses()
-                    .into_iter()
+                    .iter()
                     .map(|(di, a)| proto::Address {
                         diversifier_index: di.as_bytes().to_vec(),
                         address: a.encode(&EncodingParams), // convention is to encode using mainnet encoding regardless of network
@@ -587,7 +585,7 @@ mod serialization {
                     .ephemeral_addresses
                     .into_iter()
                     .map(|(index, address)| proto::EphemeralAddressRecord {
-                        index: index.into(),
+                        index,
                         ephemeral_address: Some(proto::EphemeralAddress {
                             address: address.address.encode(&EncodingParams),
                             used_in_tx: address.used.map(|u| u.as_ref().to_vec()),
