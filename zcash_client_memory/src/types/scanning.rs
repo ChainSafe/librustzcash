@@ -1,11 +1,11 @@
 use std::ops::{Deref, DerefMut, Range};
 
+use zcash_client_backend::data_api::scanning::{
+    spanning_tree::SpanningTree, ScanPriority, ScanRange,
+};
 use zcash_primitives::consensus::BlockHeight;
 
-use zcash_client_backend::data_api::scanning::{spanning_tree::SpanningTree, ScanPriority};
-
 use crate::error::Error;
-use zcash_client_backend::data_api::scanning::ScanRange;
 
 /// A queue of scanning ranges. Contains the start and end heights of each range, along with the
 /// priority of scanning that range.

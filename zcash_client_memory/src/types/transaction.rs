@@ -3,17 +3,16 @@ use std::{
     ops::Deref,
 };
 
+use zcash_client_backend::{data_api::TransactionStatus, wallet::WalletTx};
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{Transaction, TxId},
 };
 use zcash_protocol::value::Zatoshis;
 
-use zcash_client_backend::{data_api::TransactionStatus, wallet::WalletTx};
-
+use crate::error::Error;
 use crate::AccountId;
 
-use crate::error::Error;
 /// Maps a block height and transaction index to a transaction ID.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TxLocatorMap(pub(crate) BTreeMap<(BlockHeight, u32), TxId>);

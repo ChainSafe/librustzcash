@@ -2,12 +2,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     ops::{Deref, DerefMut},
 };
+
 use subtle::ConditionallySelectable;
-use zcash_keys::keys::{AddressGenerationError, UnifiedIncomingViewingKey};
-use zip32::DiversifierIndex;
-
-use crate::error::Error;
-
 use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::{AccountBirthday, GAP_LIMIT};
 use zcash_client_backend::{
@@ -17,9 +13,11 @@ use zcash_client_backend::{
     wallet::NoteId,
 };
 use zcash_keys::address::Receiver;
+use zcash_keys::keys::{AddressGenerationError, UnifiedIncomingViewingKey};
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::NetworkType;
+use zip32::DiversifierIndex;
 #[cfg(feature = "transparent-inputs")]
 use {
     zcash_client_backend::wallet::TransparentAddressMetadata,
@@ -27,6 +25,8 @@ use {
         AccountPubKey, EphemeralIvk, IncomingViewingKey, NonHardenedChildIndex, TransparentKeyScope,
     },
 };
+
+use crate::error::Error;
 
 /// Internal representation of ID type for accounts. Will be unique for each account.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
