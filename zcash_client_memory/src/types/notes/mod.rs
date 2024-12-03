@@ -7,13 +7,9 @@ pub(crate) use received::{
 pub(crate) use sent::{SentNote, SentNoteId, SentNoteTable};
 
 mod serialization {
-    use crate::{
-        proto::memwallet::{self as proto},
-        Nullifier,
-    };
+    use crate::proto::memwallet::{self as proto};
     use jubjub::Fr;
     use zcash_client_backend::wallet::{Note, NoteId};
-    use zcash_primitives::transaction::TxId;
 
     impl From<NoteId> for proto::NoteId {
         fn from(note_id: NoteId) -> Self {

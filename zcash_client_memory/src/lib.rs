@@ -1,14 +1,14 @@
-pub mod block_source;
-pub mod error;
-pub mod input_source;
-pub mod types;
-pub mod wallet_commitment_trees;
-pub mod wallet_read;
-pub mod wallet_write;
+mod block_source;
+mod error;
+mod input_source;
+mod types;
+mod wallet_commitment_trees;
+mod wallet_read;
+mod wallet_write;
 
 #[cfg(test)]
 pub mod testing;
-
+#[cfg(test)]
 pub use block_source::*;
 pub use error::Error;
 pub use types::MemoryWalletDb;

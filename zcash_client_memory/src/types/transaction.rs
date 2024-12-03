@@ -96,13 +96,12 @@ impl TransactionTable {
     pub(crate) fn new() -> Self {
         Self(BTreeMap::new())
     }
+
     /// Returns transaction status for a given transaction ID. None if the transaction is not known.
     pub(crate) fn tx_status(&self, txid: &TxId) -> Option<TransactionStatus> {
         self.0.get(txid).map(|entry| entry.tx_status)
     }
-    pub(crate) fn expiry_height(&self, txid: &TxId) -> Option<BlockHeight> {
-        self.0.get(txid).and_then(|entry| entry.expiry_height)
-    }
+
     pub(crate) fn _get_transaction(&self, txid: TxId) -> Option<&TransactionEntry> {
         self.0.get(&txid)
     }
@@ -207,10 +206,6 @@ impl TransactionTable {
         } else {
             Err(Error::TransactionNotFound(*txid))
         }
-    }
-
-    pub(crate) fn get_tx_raw(&self, txid: &TxId) -> Option<&[u8]> {
-        self.0.get(txid).and_then(|entry| entry.raw.as_deref())
     }
 
     pub(crate) fn unmine_transactions_greater_than(&mut self, height: BlockHeight) {

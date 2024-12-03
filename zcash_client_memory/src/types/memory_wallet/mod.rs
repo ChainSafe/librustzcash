@@ -13,8 +13,8 @@ use std::{
 use incrementalmerkletree::{Address, Level, Marking, Position, Retention};
 use scanning::ScanQueue;
 use shardtree::{
-    store::{memory::MemoryShardStore, Checkpoint, ShardStore},
-    LocatedPrunableTree, PrunableTree, ShardTree,
+    store::{memory::MemoryShardStore, ShardStore},
+    ShardTree,
 };
 use transparent::{
     TransparentReceivedOutputSpends, TransparentReceivedOutputs, TransparentSpendCache,
@@ -22,8 +22,8 @@ use transparent::{
 use zcash_client_backend::{
     data_api::{
         scanning::{ScanPriority, ScanRange},
-        Account as _, AccountBirthday, AccountPurpose, AccountSource, InputSource, Ratio,
-        TransactionStatus, WalletRead, GAP_LIMIT, SAPLING_SHARD_HEIGHT,
+        Account as _, AccountBirthday, AccountSource, InputSource, Ratio, TransactionStatus,
+        WalletRead, GAP_LIMIT, SAPLING_SHARD_HEIGHT,
     },
     wallet::{NoteId, WalletSaplingOutput, WalletTransparentOutput},
 };

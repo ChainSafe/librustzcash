@@ -10,7 +10,7 @@ use zcash_client_backend::data_api::{
 use zcash_primitives::consensus::BlockHeight;
 use zcash_protocol::consensus;
 
-use super::MemoryWalletDb;
+use crate::MemoryWalletDb;
 
 impl<P: consensus::Parameters> WalletCommitmentTrees for MemoryWalletDb<P> {
     type Error = Infallible;

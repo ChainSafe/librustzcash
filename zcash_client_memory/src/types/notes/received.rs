@@ -337,7 +337,6 @@ pub(crate) fn to_spendable_notes(
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug)]
 pub enum SentNoteId {
     Shielded(NoteId),
-    Transparent { txid: TxId, output_index: u32 },
 }
 
 impl From<NoteId> for SentNoteId {
@@ -349,15 +348,6 @@ impl From<NoteId> for SentNoteId {
 impl From<&NoteId> for SentNoteId {
     fn from(note_id: &NoteId) -> Self {
         SentNoteId::Shielded(*note_id)
-    }
-}
-
-impl SentNoteId {
-    pub fn txid(&self) -> &TxId {
-        match self {
-            SentNoteId::Shielded(note_id) => note_id.txid(),
-            SentNoteId::Transparent { txid, .. } => txid,
-        }
     }
 }
 

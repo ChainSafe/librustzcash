@@ -2,7 +2,6 @@ use zcash_client_backend::{
     data_api::{AccountMeta, InputSource, NoteFilter, PoolMeta, TransactionStatus, WalletRead},
     wallet::NoteId,
 };
-
 use zcash_primitives::transaction::components::OutPoint;
 use zcash_protocol::{
     consensus,

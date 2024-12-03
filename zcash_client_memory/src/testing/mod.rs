@@ -4,7 +4,6 @@ use std::fmt::Debug;
 use zcash_client_backend::data_api::InputSource;
 use zcash_client_backend::data_api::OutputOfSentTx;
 use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
-use zcash_client_backend::proto;
 use zcash_client_backend::wallet::Note;
 use zcash_client_backend::wallet::Recipient;
 use zcash_client_backend::wallet::WalletTransparentOutput;

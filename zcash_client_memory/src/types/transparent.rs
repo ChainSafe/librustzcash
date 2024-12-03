@@ -1,5 +1,5 @@
 use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet},
     ops::{Deref, DerefMut},
 };
 
@@ -68,10 +68,6 @@ impl TransparentReceivedOutputSpends {
 
     pub fn get(&self, outpoint: &OutPoint) -> Option<&TxId> {
         self.0.get(outpoint)
-    }
-
-    pub fn entry(&mut self, outpoint: OutPoint) -> Entry<'_, OutPoint, TxId> {
-        self.0.entry(outpoint)
     }
 
     pub fn insert(&mut self, outpoint: OutPoint, txid: TxId) {

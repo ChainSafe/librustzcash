@@ -8,8 +8,6 @@ use zcash_protocol::{consensus::BlockHeight, memo};
 
 use crate::AccountId;
 
-type Type = AddressGenerationError;
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Account not found: {0:?}")]
@@ -23,7 +21,7 @@ pub enum Error {
     #[error("Unknown ZIP32 derivation")]
     UnknownZip32Derivation,
     #[error("Error generating address: {0}")]
-    AddressGeneration(Type),
+    AddressGeneration(AddressGenerationError),
     #[error("Seed must be between 32 and 252 bytes in length.")]
     InvalidSeedLength,
     #[error("Account out of range.")]

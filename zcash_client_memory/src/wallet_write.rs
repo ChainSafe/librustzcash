@@ -1,13 +1,31 @@
-use incrementalmerkletree::{Marking, Position, Retention};
-
-use secrecy::SecretVec;
-use shardtree::{error::ShardTreeError, store::ShardStore};
-
 use std::cmp::{max, min};
-
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
+};
+
+use incrementalmerkletree::{Marking, Position, Retention};
+use rayon::prelude::*;
+use secrecy::ExposeSecret;
+use secrecy::SecretVec;
+use shardtree::{error::ShardTreeError, store::ShardStore};
+#[cfg(feature = "orchard")]
+use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
+use zcash_client_backend::{
+    address::UnifiedAddress,
+    data_api::{
+        chain::ChainState,
+        scanning::{ScanPriority, ScanRange},
+        AccountPurpose, AccountSource, TransactionStatus, WalletCommitmentTrees as _,
+        SAPLING_SHARD_HEIGHT,
+    },
+    data_api::{
+        AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction,
+        SentTransactionOutput, WalletRead, WalletWrite,
+    },
+    keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
+    wallet::{NoteId, Recipient, WalletTransparentOutput},
+    TransferType,
 };
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -21,32 +39,12 @@ use zcash_protocol::{
     PoolType,
     ShieldedProtocol::{self, Sapling},
 };
+use zip32::fingerprint::SeedFingerprint;
 
-#[cfg(feature = "orchard")]
-use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
-use zcash_client_backend::{
-    address::UnifiedAddress,
-    data_api::{
-        chain::ChainState,
-        scanning::{ScanPriority, ScanRange},
-        AccountPurpose, AccountSource, TransactionStatus, WalletCommitmentTrees as _,
-        SAPLING_SHARD_HEIGHT,
-    },
-    keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
-    wallet::{NoteId, Recipient, WalletTransparentOutput},
-    TransferType,
+use crate::{
+    error::Error, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote, PRUNING_DEPTH,
+    VERIFY_LOOKAHEAD,
 };
-
-use zcash_client_backend::data_api::{
-    AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, SentTransactionOutput,
-    WalletRead, WalletWrite,
-};
-
-use crate::{error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD};
-use crate::{MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
-use rayon::prelude::*;
-
-use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
 
 #[cfg(feature = "orchard")]
 use zcash_protocol::ShieldedProtocol::Orchard;

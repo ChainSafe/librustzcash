@@ -1,28 +1,17 @@
-use incrementalmerkletree::Position;
-
-use std::collections::BTreeSet;
-use std::{
-    collections::BTreeMap,
-    ops::{Deref, DerefMut},
-};
-use zip32::Scope;
+use std::{collections::BTreeMap, ops::Deref};
 
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 use zcash_protocol::{memo::Memo, value::Zatoshis, PoolType, ShieldedProtocol::Sapling};
 
 use zcash_client_backend::{
-    data_api::{SentTransaction, SentTransactionOutput, SpendableNotes},
-    wallet::{Note, NoteId, Recipient, WalletSaplingOutput},
+    data_api::{SentTransaction, SentTransactionOutput},
+    wallet::{Note, NoteId, Recipient},
 };
 
 use crate::AccountId;
 
 #[cfg(feature = "orchard")]
-use {
-    zcash_client_backend::wallet::WalletOrchardOutput, zcash_protocol::ShieldedProtocol::Orchard,
-};
-
-use crate::{error::Error, Nullifier};
+use zcash_protocol::ShieldedProtocol::Orchard;
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
 pub enum SentNoteId {
@@ -180,7 +169,6 @@ mod serialization {
     use zcash_primitives::{
         consensus::Network::MainNetwork as EncodingParams, legacy::TransparentAddress,
     };
-    use zcash_protocol::ShieldedProtocol;
 
     impl From<SentNote> for proto::SentNote {
         fn from(note: SentNote) -> Self {

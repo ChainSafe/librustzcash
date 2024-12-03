@@ -87,11 +87,6 @@ fn checkpoint_gaps() {
 }
 
 #[test]
-fn scan_cached_blocks_detects_spends_out_of_order() {
-    testing::pool::scan_cached_blocks_detects_spends_out_of_order::<OrchardPoolTester>()
-}
-
-#[test]
 #[cfg(feature = "orchard")]
 fn pool_crossing_required() {
     testing::pool::pool_crossing_required::<OrchardPoolTester, SaplingPoolTester>()
@@ -144,4 +139,14 @@ fn scan_cached_blocks_allows_blocks_out_of_order() {
 #[test]
 fn scan_cached_blocks_finds_received_notes() {
     testing::pool::scan_cached_blocks_finds_received_notes::<OrchardPoolTester>()
+}
+
+#[test]
+fn scan_cached_blocks_finds_change_notes() {
+    testing::pool::scan_cached_blocks_finds_change_notes::<OrchardPoolTester>()
+}
+
+#[test]
+fn scan_cached_blocks_detects_spends_out_of_order() {
+    testing::pool::scan_cached_blocks_detects_spends_out_of_order::<OrchardPoolTester>()
 }
