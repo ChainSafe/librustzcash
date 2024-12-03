@@ -73,6 +73,10 @@ pub enum Error {
     ConversionError(ConversionError<&'static str>),
     #[error("Unsupported proto version: {1} (expected {0})")]
     UnsupportedProtoVersion(u32, u32),
+    #[error("Missing proto field: {0}")]
+    ProtoMissingField(&'static str),
+    #[error("Failed to convert between integer types")]
+    IntegerConversion(#[from] std::num::TryFromIntError),
 }
 #[cfg(feature = "transparent-inputs")]
 
