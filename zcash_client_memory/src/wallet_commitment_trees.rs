@@ -137,7 +137,7 @@ pub(crate) mod serialization {
                 let shard = tree.store().get_shard(*shard_root)?.unwrap();
 
                 let mut shard_data = Vec::new();
-                write_shard(&mut shard_data, &shard.root())?;
+                write_shard(&mut shard_data, shard.root())?;
 
                 Ok(TreeShard {
                     shard_index: shard_root.index(),

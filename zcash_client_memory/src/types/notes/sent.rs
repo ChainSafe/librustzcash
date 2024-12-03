@@ -208,7 +208,7 @@ mod serialization {
                 },
                 SentNoteId::Transparent { txid, output_index } => proto::NoteId {
                     tx_id: Some(txid.into()),
-                    output_index: output_index.into(),
+                    output_index: output_index,
                     pool: proto::PoolType::Transparent as i32,
                 },
             }
@@ -233,7 +233,7 @@ mod serialization {
                 )),
                 proto::PoolType::Transparent => SentNoteId::Transparent {
                     txid: read_optional!(note_id, tx_id)?.try_into()?,
-                    output_index: note_id.output_index.try_into()?,
+                    output_index: note_id.output_index,
                 },
             })
         }

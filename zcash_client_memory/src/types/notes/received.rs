@@ -108,7 +108,7 @@ impl ReceivedNote {
                 is_change: true,
                 memo: output
                     .memo()
-                    .map(|m| Memo::try_from(m))
+                    .map(Memo::try_from)
                     .transpose()?
                     .expect("expected a memo for a non-transparent output"),
                 commitment_tree_position: None,
@@ -129,7 +129,7 @@ impl ReceivedNote {
                 is_change: true,
                 memo: output
                     .memo()
-                    .map(|m| Memo::try_from(m))
+                    .map(Memo::try_from)
                     .transpose()?
                     .expect("expected a memo for a non-transparent output"),
                 commitment_tree_position: None,
@@ -224,7 +224,7 @@ impl ReceivedNoteTable {
     pub fn insert_received_note(&mut self, note: ReceivedNote) {
         // ensure note_id is unique.
         // follow upsert rules to update the note if it already exists
-        if self
+        let is_absent = self
             .0
             .iter_mut()
             .find(|n| n.note_id == note.note_id)
@@ -234,8 +234,9 @@ impl ReceivedNoteTable {
                 n.commitment_tree_position =
                     note.commitment_tree_position.or(n.commitment_tree_position);
             })
-            .is_none()
-        {
+            .is_none();
+
+        if is_absent {
             self.0.push(note);
         }
     }

@@ -269,8 +269,8 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                     .accounts
                     .accounts
                     .clone()
-                    .into_iter()
-                    .map(|(_, account)| proto::Account::from(account))
+                    .into_values()
+                    .map(proto::Account::from)
                     .collect(),
                 account_nonce: wallet.accounts.nonce,
             }),
@@ -278,8 +278,8 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
             blocks: wallet
                 .blocks
                 .clone()
-                .into_iter()
-                .map(|(_, block)| proto::WalletBlock::from(block))
+                .into_values()
+                .map(proto::WalletBlock::from)
                 .collect(),
 
             tx_table: wallet
@@ -295,7 +295,7 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
 
             received_note_table: wallet
                 .received_notes
-                .into_iter()
+                .iter()
                 .map(|note| proto::ReceivedNote::from(note.clone()))
                 .collect(),
 
@@ -317,7 +317,7 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                 .into_iter()
                 .map(|(nullifier, (height, tx_index))| proto::NullifierRecord {
                     block_height: height.into(),
-                    tx_index: tx_index as u32,
+                    tx_index: tx_index,
                     nullifier: Some(nullifier.into()),
                 })
                 .collect(),
@@ -340,14 +340,14 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                 .into_iter()
                 .map(|((height, tx_index), txid)| proto::TxLocatorRecord {
                     block_height: height.into(),
-                    tx_index: tx_index as u32,
+                    tx_index: tx_index,
                     tx_id: Some(txid.into()),
                 })
                 .collect(),
 
             scan_queue: wallet
                 .scan_queue
-                .into_iter()
+                .iter()
                 .map(|r| proto::ScanQueueRecord::from(*r))
                 .collect(),
 
@@ -358,7 +358,7 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                 .into_iter()
                 .map(|(address, height)| proto::TreeEndHeightsRecord {
                     level: address.level().into(),
-                    index: address.index().into(),
+                    index: address.index(),
                     block_height: height.into(),
                 })
                 .collect(),
@@ -370,7 +370,7 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                 .into_iter()
                 .map(|(address, height)| proto::TreeEndHeightsRecord {
                     level: address.level().into(),
-                    index: address.index().into(),
+                    index: address.index(),
                     block_height: height.into(),
                 })
                 .collect(),
