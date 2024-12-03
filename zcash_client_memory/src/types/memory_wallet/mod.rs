@@ -63,7 +63,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     pub(crate) sent_notes: SentNoteTable,
     /// Maps transaction ids to their block height and index
     pub(crate) tx_locator: TxLocatorMap,
-
+    /// Sapling commitment tree
     pub(crate) sapling_tree: ShardTree<
         MemoryShardStore<sapling::Node, BlockHeight>,
         { SAPLING_SHARD_HEIGHT * 2 },
@@ -71,7 +71,7 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     >,
     /// Stores the block height corresponding to the last note commitment in a shard
     pub(crate) sapling_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
-
+    /// Orchard commitment tree
     #[cfg(feature = "orchard")]
     pub(crate) orchard_tree: ShardTree<
         MemoryShardStore<orchard::tree::MerkleHashOrchard, BlockHeight>,
@@ -82,11 +82,16 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     /// Stores the block height corresponding to the last note commitment in a shard
     pub(crate) orchard_tree_shard_end_heights: BTreeMap<Address, BlockHeight>,
 
+    /// Transparent outputs received by the wallet
     pub(crate) transparent_received_outputs: TransparentReceivedOutputs,
+    /// Transparent outputs received by the wallet that have been spent
     pub(crate) transparent_received_output_spends: TransparentReceivedOutputSpends,
+    /// Map between transparent outpoints and their spend transactions
     pub(crate) transparent_spend_map: TransparentSpendCache,
 
+    /// Pending requests to the external data provider to enhance transaction data
     pub(crate) transaction_data_request_queue: TransactionDataRequestQueue,
+    /// Queue of block ranges that should be scanned along with their priority
     pub(crate) scan_queue: ScanQueue,
 }
 
@@ -227,7 +232,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     }
 
     #[cfg(feature = "transparent-inputs")]
-    pub fn first_unsafe_index(&self, account_id: AccountId) -> Result<u32, Error> {
+    pub(crate) fn first_unsafe_index(&self, account_id: AccountId) -> Result<u32, Error> {
         let first_unmined_index = if let Some(account) = self.accounts.get(account_id) {
             let mut idx = 0;
             for (tidx, eph_addr) in account.ephemeral_addresses.iter().rev() {
@@ -252,7 +257,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         ))
     }
 
-    pub fn get_funding_accounts(&self, tx: &Transaction) -> Result<BTreeSet<AccountId>, Error> {
+    pub(crate) fn get_funding_accounts(
+        &self,
+        tx: &Transaction,
+    ) -> Result<BTreeSet<AccountId>, Error> {
         let mut funding_accounts = BTreeSet::new();
         #[cfg(feature = "transparent-inputs")]
         funding_accounts.extend(
@@ -418,7 +426,10 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         }
     }
 
-    pub fn summary_height(&self, min_confirmations: u32) -> Result<Option<BlockHeight>, Error> {
+    pub(crate) fn summary_height(
+        &self,
+        min_confirmations: u32,
+    ) -> Result<Option<BlockHeight>, Error> {
         let chain_tip_height = match self.chain_height()? {
             Some(height) => height,
             None => return Ok(None),
@@ -797,7 +808,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
         &self.sent_notes
     }
 
-    pub fn sapling_scan_progress(
+    pub(crate) fn sapling_scan_progress(
         &self,
         birthday_height: &BlockHeight,
         fully_scanned_height: &BlockHeight,
@@ -875,7 +886,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
     }
 
     #[cfg(feature = "orchard")]
-    pub fn orchard_scan_progress(
+    pub(crate) fn orchard_scan_progress(
         &self,
         birthday_height: &BlockHeight,
         fully_scanned_height: &BlockHeight,
