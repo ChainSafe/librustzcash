@@ -1,25 +1,16 @@
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-
 use std::ops::{Deref, DerefMut, Range};
 
+use zcash_client_backend::data_api::scanning::{
+    spanning_tree::SpanningTree, ScanPriority, ScanRange,
+};
 use zcash_primitives::consensus::BlockHeight;
 
-use zcash_client_backend::data_api::scanning::{spanning_tree::SpanningTree, ScanPriority};
-
 use crate::error::Error;
-use crate::types::serialization::ScanPriorityDef;
-use serde_with::FromInto;
-use zcash_client_backend::data_api::scanning::ScanRange;
 
 /// A queue of scanning ranges. Contains the start and end heights of each range, along with the
 /// priority of scanning that range.
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-pub(crate) struct ScanQueue(
-    #[serde_as(as = "Vec<(FromInto<u32>, FromInto<u32>, ScanPriorityDef)>")]
-    Vec<(BlockHeight, BlockHeight, ScanPriority)>,
-);
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ScanQueue(pub(crate) Vec<(BlockHeight, BlockHeight, ScanPriority)>);
 
 impl ScanQueue {
     pub(crate) fn new() -> Self {
@@ -164,5 +155,48 @@ impl Deref for ScanQueue {
 impl DerefMut for ScanQueue {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0[..]
+    }
+}
+
+mod serialization {
+    use super::*;
+    use crate::proto::memwallet as proto;
+
+    impl From<(BlockHeight, BlockHeight, ScanPriority)> for proto::ScanQueueRecord {
+        fn from(
+            (start_height, end_height, priority): (BlockHeight, BlockHeight, ScanPriority),
+        ) -> Self {
+            Self {
+                start_height: start_height.into(),
+                end_height: end_height.into(),
+                priority: match priority {
+                    ScanPriority::Ignored => proto::ScanPriority::Ignored as i32,
+                    ScanPriority::Scanned => proto::ScanPriority::Scanned as i32,
+                    ScanPriority::Historic => proto::ScanPriority::Historic as i32,
+                    ScanPriority::OpenAdjacent => proto::ScanPriority::OpenAdjacent as i32,
+                    ScanPriority::FoundNote => proto::ScanPriority::FoundNote as i32,
+                    ScanPriority::ChainTip => proto::ScanPriority::ChainTip as i32,
+                    ScanPriority::Verify => proto::ScanPriority::Verify as i32,
+                },
+            }
+        }
+    }
+
+    impl From<proto::ScanQueueRecord> for (BlockHeight, BlockHeight, ScanPriority) {
+        fn from(record: proto::ScanQueueRecord) -> Self {
+            (
+                record.start_height.into(),
+                record.end_height.into(),
+                match record.priority() {
+                    proto::ScanPriority::Ignored => ScanPriority::Ignored,
+                    proto::ScanPriority::Scanned => ScanPriority::Scanned,
+                    proto::ScanPriority::Historic => ScanPriority::Historic,
+                    proto::ScanPriority::OpenAdjacent => ScanPriority::OpenAdjacent,
+                    proto::ScanPriority::FoundNote => ScanPriority::FoundNote,
+                    proto::ScanPriority::ChainTip => ScanPriority::ChainTip,
+                    proto::ScanPriority::Verify => ScanPriority::Verify,
+                },
+            )
+        }
     }
 }

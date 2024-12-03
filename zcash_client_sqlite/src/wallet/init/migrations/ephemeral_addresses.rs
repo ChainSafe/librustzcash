@@ -8,7 +8,7 @@ use zcash_protocol::consensus;
 use crate::wallet::init::WalletMigrationError;
 
 #[cfg(feature = "transparent-inputs")]
-use crate::{wallet::transparent::ephemeral, AccountRef};
+use crate::wallet::{self, init, transparent::ephemeral};
 
 use super::utxos_to_txos;
 
@@ -65,13 +65,9 @@ impl<P: consensus::Parameters> RusqliteMigration for Migration<P> {
         // Make sure that at least `GAP_LIMIT` ephemeral transparent addresses are
         // stored in each account.
         #[cfg(feature = "transparent-inputs")]
-        {
-            let mut stmt = transaction.prepare("SELECT id FROM accounts")?;
-            let mut rows = stmt.query([])?;
-            while let Some(row) = rows.next()? {
-                let account_id = AccountRef(row.get(0)?);
-                ephemeral::init_account(transaction, &self.params, account_id)?;
-            }
+        for account_id in wallet::get_account_ids(transaction)? {
+            ephemeral::init_account(transaction, &self.params, account_id)
+                .map_err(init::sqlite_client_error_to_wallet_migration_error)?;
         }
         Ok(())
     }
@@ -107,7 +103,7 @@ mod tests {
             wallet::{
                 self, account_kind_code, init::init_wallet_db_internal, transparent::ephemeral,
             },
-            AccountRef, WalletDb,
+            AccountId, WalletDb,
         },
         zcash_client_backend::data_api::GAP_LIMIT,
     };
@@ -119,7 +115,7 @@ mod tests {
         wdb: &mut WalletDb<Connection, Network>,
         seed: &SecretVec<u8>,
         birthday: &AccountBirthday,
-    ) -> Result<(AccountRef, UnifiedSpendingKey), SqliteClientError> {
+    ) -> Result<(AccountId, UnifiedSpendingKey), SqliteClientError> {
         wdb.transactionally(|wdb| {
             let seed_fingerprint =
                 SeedFingerprint::from_seed(seed.expose_secret()).ok_or_else(|| {
@@ -128,10 +124,7 @@ mod tests {
                     )
                 })?;
             let account_index = wallet::max_zip32_account_index(wdb.conn.0, &seed_fingerprint)?
-                .map(|a| {
-                    a.next()
-                        .ok_or(SqliteClientError::Zip32AccountIndexOutOfRange)
-                })
+                .map(|a| a.next().ok_or(SqliteClientError::AccountIdOutOfRange))
                 .transpose()?
                 .unwrap_or(zip32::AccountId::ZERO);
 
@@ -158,7 +151,7 @@ mod tests {
             #[cfg(not(feature = "orchard"))]
             let birthday_orchard_tree_size: Option<u64> = None;
 
-            let account_id: AccountRef = wdb.conn.0.query_row(
+            let account_id: AccountId = wdb.conn.0.query_row(
                 r#"
                 INSERT INTO accounts (
                     account_kind, hd_seed_fingerprint, hd_account_index,
@@ -190,7 +183,7 @@ mod tests {
                     ":birthday_orchard_tree_size": birthday_orchard_tree_size,
                     ":recover_until_height": birthday.recover_until().map(u32::from)
                 ],
-                |row| Ok(AccountRef(row.get(0)?)),
+                |row| Ok(AccountId(row.get(0)?)),
             )?;
 
             // Initialize the `ephemeral_addresses` table.
@@ -227,13 +220,12 @@ mod tests {
         // Simulate creating an account prior to this migration.
         let account0_index = Zip32AccountId::ZERO;
         let account0_seed_fp = [0u8; 32];
-        let account0_kind = account_kind_code(&AccountSource::Derived {
+        let account0_kind = account_kind_code(AccountSource::Derived {
             seed_fingerprint: SeedFingerprint::from_seed(&account0_seed_fp).unwrap(),
             account_index: account0_index,
-            key_source: None,
         });
         assert_eq!(u32::from(account0_index), 0);
-        let account0_id = AccountRef(0);
+        let account0_id = crate::AccountId(0);
 
         let usk0 = UnifiedSpendingKey::from_seed(&network, &seed0, account0_index).unwrap();
         let ufvk0 = usk0.to_unified_full_viewing_key();

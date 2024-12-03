@@ -617,6 +617,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
 
         // Check that the transaction history matches what we expect.
         let tx_history = st.wallet().get_tx_history().unwrap();
+
         let tx_0 = tx_history
             .iter()
             .find(|tx| tx.txid() == *txids.first())
@@ -625,6 +626,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
             .iter()
             .find(|tx| tx.txid() == *txids.last())
             .unwrap();
+
         assert_eq!(tx_0.account_id(), &account_id);
         assert!(!tx_0.expired_unmined());
         assert_eq!(tx_0.has_change(), expected_step0_change.is_positive());
@@ -650,6 +652,7 @@ pub fn send_multi_step_proposed_transfer<T: ShieldedPoolTester, DSF>(
     let (ephemeral0, txids0) = run_test(&mut st, 0);
     let (ephemeral1, txids1) = run_test(&mut st, 1);
     assert_ne!(ephemeral0, ephemeral1);
+
     let height = add_funds(&mut st, value);
 
     assert_matches!(
@@ -1556,16 +1559,10 @@ pub fn external_address_change_spends_detected_in_restore_from_seed<T: ShieldedP
     // Add two accounts to the wallet.
     let seed = Secret::new([0u8; 32].to_vec());
     let birthday = AccountBirthday::from_sapling_activation(st.network(), BlockHash([0; 32]));
-    let (account1, usk) = st
-        .wallet_mut()
-        .create_account("account1", &seed, &birthday, None)
-        .unwrap();
+    let (account_id, usk) = st.wallet_mut().create_account(&seed, &birthday).unwrap();
     let dfvk = T::sk_to_fvk(T::usk_to_sk(&usk));
 
-    let (account2, usk2) = st
-        .wallet_mut()
-        .create_account("account2", &seed, &birthday, None)
-        .unwrap();
+    let (account2, usk2) = st.wallet_mut().create_account(&seed, &birthday).unwrap();
     let dfvk2 = T::sk_to_fvk(T::usk_to_sk(&usk2));
 
     // Add funds to the wallet in a single note
@@ -1574,8 +1571,8 @@ pub fn external_address_change_spends_detected_in_restore_from_seed<T: ShieldedP
     st.scan_cached_blocks(h, 1);
 
     // Spendable balance matches total balance
-    assert_eq!(st.get_total_balance(account1), value);
-    assert_eq!(st.get_spendable_balance(account1, 1), value);
+    assert_eq!(st.get_total_balance(account_id), value);
+    assert_eq!(st.get_spendable_balance(account_id, 1), value);
     assert_eq!(st.get_total_balance(account2), NonNegativeAmount::ZERO);
 
     let amount_sent = NonNegativeAmount::from_u64(20000).unwrap();
@@ -1613,32 +1610,26 @@ pub fn external_address_change_spends_detected_in_restore_from_seed<T: ShieldedP
     let pending_change = (amount_left - amount_legacy_change).unwrap();
 
     // The "legacy change" is not counted by get_pending_change().
-    assert_eq!(st.get_pending_change(account1, 1), pending_change);
+    assert_eq!(st.get_pending_change(account_id, 1), pending_change);
     // We spent the only note so we only have pending change.
-    assert_eq!(st.get_total_balance(account1), pending_change);
+    assert_eq!(st.get_total_balance(account_id), pending_change);
 
     let (h, _) = st.generate_next_block_including(txid);
     st.scan_cached_blocks(h, 1);
 
     assert_eq!(st.get_total_balance(account2), amount_sent,);
-    assert_eq!(st.get_total_balance(account1), amount_left);
+    assert_eq!(st.get_total_balance(account_id), amount_left);
 
     st.reset();
 
     // Account creation and DFVK derivation should be deterministic.
-    let (account1, restored_usk) = st
-        .wallet_mut()
-        .create_account("account1_restored", &seed, &birthday, None)
-        .unwrap();
+    let (_, restored_usk) = st.wallet_mut().create_account(&seed, &birthday).unwrap();
     assert!(T::fvks_equal(
         &T::sk_to_fvk(T::usk_to_sk(&restored_usk)),
         &dfvk,
     ));
 
-    let (account2, restored_usk2) = st
-        .wallet_mut()
-        .create_account("account2_restored", &seed, &birthday, None)
-        .unwrap();
+    let (_, restored_usk2) = st.wallet_mut().create_account(&seed, &birthday).unwrap();
     assert!(T::fvks_equal(
         &T::sk_to_fvk(T::usk_to_sk(&restored_usk2)),
         &dfvk2,
@@ -1646,8 +1637,8 @@ pub fn external_address_change_spends_detected_in_restore_from_seed<T: ShieldedP
 
     st.scan_cached_blocks(st.sapling_activation_height(), 2);
 
-    assert_eq!(st.get_total_balance(account2), amount_sent);
-    assert_eq!(st.get_total_balance(account1), amount_left);
+    assert_eq!(st.get_total_balance(account2), amount_sent,);
+    assert_eq!(st.get_total_balance(account_id), amount_left);
 }
 
 #[allow(dead_code)]

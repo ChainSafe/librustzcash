@@ -22,8 +22,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 # - Logging and metrics
 memuse.workspace = true
-serde.workspace = true
-serde_with.workspace = true
 
 # Dependencies used internally:
 # (Breaking upgrades to these are usually backwards-compatible, but check MSRVs.)

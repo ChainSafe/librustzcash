@@ -343,20 +343,16 @@ pub enum AccountPurpose {
 }
 
 /// The kinds of accounts supported by `zcash_client_backend`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AccountSource {
     /// An account derived from a known seed.
     Derived {
         seed_fingerprint: SeedFingerprint,
         account_index: zip32::AccountId,
-        key_source: Option<String>,
     },
 
     /// An account imported from a viewing key.
-    Imported {
-        purpose: AccountPurpose,
-        key_source: Option<String>,
-    },
+    Imported { purpose: AccountPurpose },
 }
 
 /// A set of capabilities that a client account must provide.
@@ -366,18 +362,15 @@ pub trait Account {
     /// Returns the unique identifier for the account.
     fn id(&self) -> Self::AccountId;
 
-    /// Returns the human-readable name for the account, if any has been configured.
-    fn name(&self) -> Option<&str>;
-
     /// Returns whether this account is derived or imported, and the derivation parameters
     /// if applicable.
-    fn source(&self) -> &AccountSource;
+    fn source(&self) -> AccountSource;
 
     /// Returns whether the account is a spending account or a view-only account.
     fn purpose(&self) -> AccountPurpose {
         match self.source() {
             AccountSource::Derived { .. } => AccountPurpose::Spending,
-            AccountSource::Imported { purpose, .. } => *purpose,
+            AccountSource::Imported { purpose } => purpose,
         }
     }
 
@@ -403,10 +396,9 @@ impl<A: Copy> Account for (A, UnifiedFullViewingKey) {
         self.0
     }
 
-    fn source(&self) -> &AccountSource {
-        &AccountSource::Imported {
+    fn source(&self) -> AccountSource {
+        AccountSource::Imported {
             purpose: AccountPurpose::ViewOnly,
-            key_source: None,
         }
     }
 
@@ -416,10 +408,6 @@ impl<A: Copy> Account for (A, UnifiedFullViewingKey) {
 
     fn uivk(&self) -> UnifiedIncomingViewingKey {
         self.1.to_unified_incoming_viewing_key()
-    }
-
-    fn name(&self) -> Option<&str> {
-        None
     }
 }
 
@@ -431,14 +419,9 @@ impl<A: Copy> Account for (A, UnifiedIncomingViewingKey) {
         self.0
     }
 
-    fn name(&self) -> Option<&str> {
-        None
-    }
-
-    fn source(&self) -> &AccountSource {
-        &AccountSource::Imported {
+    fn source(&self) -> AccountSource {
+        AccountSource::Imported {
             purpose: AccountPurpose::ViewOnly,
-            key_source: None,
         }
     }
 
@@ -703,7 +686,7 @@ pub enum TransactionDataRequest {
 }
 
 /// Metadata about the status of a transaction obtained by inspecting the chain state.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TransactionStatus {
     /// The requested transaction ID was not recognized by the node.
     TxidNotRecognized,
@@ -1093,20 +1076,6 @@ pub trait InputSource {
     fn get_unspent_transparent_output(
         &self,
         _outpoint: &OutPoint,
-    ) -> Result<Option<WalletTransparentOutput>, Self::Error> {
-        Ok(None)
-    }
-
-    /// Fetches the transparent output corresponding to the provided `outpoint`.
-    /// Allows selecting unspendable outputs for testing purposes.
-    ///
-    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
-    /// spendable as of the chain tip height.
-    #[cfg(all(feature = "test-dependencies", feature = "transparent-inputs"))]
-    fn get_all_unspent_transparent_output(
-        &self,
-        _outpoint: &OutPoint,
-        _allow_unspendable: bool,
     ) -> Result<Option<WalletTransparentOutput>, Self::Error> {
         Ok(None)
     }
@@ -1544,6 +1513,10 @@ pub trait WalletTest: InputSource + WalletRead {
         &self,
         protocol: ShieldedProtocol,
     ) -> Result<Vec<ReceivedNote<Self::NoteRef, Note>>, <Self as InputSource>::Error>;
+
+    /// Optionally perform final checks at the conclusion of each test
+    /// Allows wallet backend developers to perform any necessary consistency checks or cleanup
+    fn finally(&self) {}
 }
 
 /// The output of a transaction sent by the wallet.
@@ -1987,7 +1960,7 @@ impl<AccountId> SentTransactionOutput<AccountId> {
 
 /// A data structure used to set the birthday height for an account, and ensure that the initial
 /// note commitment tree state is recorded at that height.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AccountBirthday {
     prior_chain_state: ChainState,
     recover_until: Option<BlockHeight>,
@@ -2026,6 +1999,7 @@ impl AccountBirthday {
     ///
     /// This API is intended primarily to be used in testing contexts; under normal circumstances,
     /// [`AccountBirthday::from_treestate`] should be used instead.
+    #[cfg(any(test, feature = "test-dependencies"))]
     pub fn from_parts(prior_chain_state: ChainState, recover_until: Option<BlockHeight>) -> Self {
         Self {
             prior_chain_state,
@@ -2081,7 +2055,6 @@ impl AccountBirthday {
         self.recover_until
     }
 
-    /// Returns the chain state prior to the birthday height of the account.
     pub fn prior_chain_state(&self) -> &ChainState {
         &self.prior_chain_state
     }
@@ -2229,15 +2202,6 @@ pub trait WalletWrite: WalletRead {
     ///
     /// The [`WalletWrite`] trait documentation has more details about account creation and import.
     ///
-    /// # Arguments
-    /// - `account_name`: A human-readable name for the account.
-    /// - `seed`: The 256-byte (at least) HD seed from which to derive the account UFVK.
-    /// - `birthday`: Metadata about where to start scanning blocks to find transactions intended
-    ///   for the account.
-    /// - `key_source`: A string identifier or other metadata describing the source of the seed.
-    ///   This is treated as opaque metadata by the wallet backend; it is provided for use by
-    ///   applications which need to track additional identifying information for an account.
-    ///
     /// # Implementation notes
     ///
     /// Implementations of this method **MUST NOT** "fill in gaps" by selecting an account index
@@ -2251,10 +2215,8 @@ pub trait WalletWrite: WalletRead {
     /// [ZIP 316]: https://zips.z.cash/zip-0316
     fn create_account(
         &mut self,
-        account_name: &str,
         seed: &SecretVec<u8>,
         birthday: &AccountBirthday,
-        key_source: Option<&str>,
     ) -> Result<(Self::AccountId, UnifiedSpendingKey), Self::Error>;
 
     /// Tells the wallet to track a specific account index for a given seed.
@@ -2271,17 +2233,6 @@ pub trait WalletWrite: WalletRead {
     ///
     /// The [`WalletWrite`] trait documentation has more details about account creation and import.
     ///
-    /// # Arguments
-    /// - `account_name`: A human-readable name for the account.
-    /// - `seed`: The 256-byte (at least) HD seed from which to derive the account UFVK.
-    /// - `account_index`: The ZIP 32 account-level component of the HD derivation path at
-    ///   which to derive the account's UFVK.
-    /// - `birthday`: Metadata about where to start scanning blocks to find transactions intended
-    ///   for the account.
-    /// - `key_source`: A string identifier or other metadata describing the source of the seed.
-    ///   This is treated as opaque metadata by the wallet backend; it is provided for use by
-    ///   applications which need to track additional identifying information for an account.
-    ///
     /// # Panics
     ///
     /// Panics if the length of the seed is not between 32 and 252 bytes inclusive.
@@ -2289,11 +2240,9 @@ pub trait WalletWrite: WalletRead {
     /// [ZIP 316]: https://zips.z.cash/zip-0316
     fn import_account_hd(
         &mut self,
-        account_name: &str,
         seed: &SecretVec<u8>,
         account_index: zip32::AccountId,
         birthday: &AccountBirthday,
-        key_source: Option<&str>,
     ) -> Result<(Self::Account, UnifiedSpendingKey), Self::Error>;
 
     /// Tells the wallet to track an account using a unified full viewing key.
@@ -2309,27 +2258,14 @@ pub trait WalletWrite: WalletRead {
     ///
     /// The [`WalletWrite`] trait documentation has more details about account creation and import.
     ///
-    /// # Arguments
-    /// - `account_name`: A human-readable name for the account.
-    /// - `unified_key`: The UFVK used to detect transactions involving the account.
-    /// - `birthday`: Metadata about where to start scanning blocks to find transactions intended
-    ///   for the account.
-    /// - `purpose`: Metadata describing whether or not data required for spending should be
-    ///   tracked by the wallet.
-    /// - `key_source`: A string identifier or other metadata describing the source of the seed.
-    ///   This is treated as opaque metadata by the wallet backend; it is provided for use by
-    ///   applications which need to track additional identifying information for an account.
-    ///
     /// # Panics
     ///
     /// Panics if the length of the seed is not between 32 and 252 bytes inclusive.
     fn import_account_ufvk(
         &mut self,
-        account_name: &str,
         unified_key: &UnifiedFullViewingKey,
         birthday: &AccountBirthday,
         purpose: AccountPurpose,
-        key_source: Option<&str>,
     ) -> Result<Self::Account, Self::Error>;
 
     /// Generates and persists the next available diversified address, given the current

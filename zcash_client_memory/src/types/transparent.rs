@@ -1,10 +1,8 @@
 use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet},
     ops::{Deref, DerefMut},
 };
 
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, FromInto};
 use zcash_client_backend::wallet::WalletTransparentOutput;
 use zcash_primitives::{
     legacy::TransparentAddress,
@@ -16,14 +14,11 @@ use zcash_primitives::{
 use zcash_protocol::consensus::BlockHeight;
 
 use super::AccountId;
-use crate::{ByteArray, Error, OutPointDef, TransparentAddressDef, TxOutDef};
+use crate::Error;
 
 /// Stores the transparent outputs received by the wallet.
-#[serde_as]
-#[derive(Default, Serialize, Deserialize)]
-pub struct TransparentReceivedOutputs(
-    #[serde_as(as = "BTreeMap<OutPointDef, _>")] BTreeMap<OutPoint, ReceivedTransparentOutput>,
-);
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct TransparentReceivedOutputs(pub(crate) BTreeMap<OutPoint, ReceivedTransparentOutput>);
 
 impl TransparentReceivedOutputs {
     pub fn new() -> Self {
@@ -63,11 +58,8 @@ impl DerefMut for TransparentReceivedOutputs {
 }
 
 /// A junction table between received transparent outputs and the transactions that spend them.
-#[serde_as]
-#[derive(Default, Serialize, Deserialize)]
-pub struct TransparentReceivedOutputSpends(
-    #[serde_as(as = "BTreeMap<OutPointDef, ByteArray<32>>")] BTreeMap<OutPoint, TxId>,
-);
+#[derive(Debug, Default, PartialEq)]
+pub struct TransparentReceivedOutputSpends(pub(crate) BTreeMap<OutPoint, TxId>);
 
 impl TransparentReceivedOutputSpends {
     pub fn new() -> Self {
@@ -76,10 +68,6 @@ impl TransparentReceivedOutputSpends {
 
     pub fn get(&self, outpoint: &OutPoint) -> Option<&TxId> {
         self.0.get(outpoint)
-    }
-
-    pub fn entry(&mut self, outpoint: OutPoint) -> Entry<'_, OutPoint, TxId> {
-        self.0.entry(outpoint)
     }
 
     pub fn insert(&mut self, outpoint: OutPoint, txid: TxId) {
@@ -96,26 +84,21 @@ impl Deref for TransparentReceivedOutputSpends {
 }
 
 // transparent_received_outputs
-#[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceivedTransparentOutput {
     // Reference to the transaction in which this TXO was created
-    #[serde_as(as = "ByteArray<32>")]
     pub(crate) transaction_id: TxId,
     // The account that controls spend authority for this TXO
     pub(crate) account_id: AccountId,
     // The address to which this TXO was sent
-    #[serde_as(as = "TransparentAddressDef")]
     pub(crate) address: TransparentAddress,
     // script, value_zat
-    #[serde_as(as = "TxOutDef")]
     pub(crate) txout: TxOut,
     /// The maximum block height at which this TXO was either
     /// observed to be a member of the UTXO set at the start of the block, or observed
     /// to be an output of a transaction mined in the block. This is intended to be used to
     /// determine when the TXO is no longer a part of the UTXO set, in the case that the
     /// transaction that spends it is not detected by the wallet.
-    #[serde_as(as = "Option<FromInto<u32>>")]
     pub(crate) max_observed_unspent_height: Option<BlockHeight>,
 }
 
@@ -150,11 +133,8 @@ impl ReceivedTransparentOutput {
 ///
 /// Output may be attempted to be spent in multiple transactions, even though only one will ever be mined
 /// which is why can cannot just rely on TransparentReceivedOutputSpends or implement this as as map
-#[serde_as]
-#[derive(Default, Serialize, Deserialize)]
-pub struct TransparentSpendCache(
-    #[serde_as(as = "BTreeSet<(ByteArray<32>, OutPointDef)>")] BTreeSet<(TxId, OutPoint)>,
-);
+#[derive(Debug, Default, PartialEq)]
+pub struct TransparentSpendCache(pub(crate) BTreeSet<(TxId, OutPoint)>);
 
 impl TransparentSpendCache {
     pub fn new() -> Self {
@@ -165,10 +145,6 @@ impl TransparentSpendCache {
     pub fn contains(&self, txid: &TxId, outpoint: &OutPoint) -> bool {
         self.0.contains(&(*txid, outpoint.clone()))
     }
-
-    pub fn insert(&mut self, txid: TxId, outpoint: OutPoint) {
-        self.0.insert((txid, outpoint));
-    }
 }
 
 impl Deref for TransparentSpendCache {
@@ -176,5 +152,59 @@ impl Deref for TransparentSpendCache {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+mod serialization {
+    use super::*;
+    use crate::{proto::memwallet as proto, read_optional};
+    use zcash_keys::encoding::AddressCodec;
+    use zcash_primitives::{consensus::Network::MainNetwork as EncodingParams, legacy::Script};
+    use zcash_protocol::value::Zatoshis;
+
+    impl From<ReceivedTransparentOutput> for proto::ReceivedTransparentOutput {
+        fn from(output: ReceivedTransparentOutput) -> Self {
+            Self {
+                transaction_id: output.transaction_id.as_ref().to_vec(),
+                account_id: *output.account_id,
+                address: output.address.encode(&EncodingParams),
+                txout: Some(output.txout.into()),
+                max_observed_unspent_height: output.max_observed_unspent_height.map(|h| h.into()),
+            }
+        }
+    }
+
+    impl TryFrom<proto::ReceivedTransparentOutput> for ReceivedTransparentOutput {
+        type Error = crate::Error;
+
+        fn try_from(output: proto::ReceivedTransparentOutput) -> Result<Self, Self::Error> {
+            Ok(Self {
+                transaction_id: TxId::from_bytes(output.transaction_id.clone().try_into()?),
+                account_id: output.account_id.into(),
+                address: TransparentAddress::decode(&EncodingParams, &output.address)?,
+                txout: read_optional!(output, txout)?.try_into()?,
+                max_observed_unspent_height: output.max_observed_unspent_height.map(|h| h.into()),
+            })
+        }
+    }
+
+    impl From<TxOut> for proto::TxOut {
+        fn from(txout: TxOut) -> Self {
+            Self {
+                script: txout.script_pubkey.0,
+                value: txout.value.into(),
+            }
+        }
+    }
+
+    impl TryFrom<proto::TxOut> for TxOut {
+        type Error = crate::Error;
+
+        fn try_from(txout: proto::TxOut) -> Result<Self, Self::Error> {
+            Ok(Self {
+                script_pubkey: Script(txout.script),
+                value: Zatoshis::try_from(txout.value)?,
+            })
+        }
     }
 }

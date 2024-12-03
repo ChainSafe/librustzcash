@@ -67,9 +67,7 @@ orchard = { version = "0.10", default-features = false }
 pasta_curves = "0.5"
 
 # - Transparent
-bip32 = { version = "0.5", default-features = false, features = [
-    "secp256k1-ffi",
-] }
+bip32 = { version = "0.5", default-features = false, features = ["secp256k1-ffi"] }
 ripemd = "0.1"
 secp256k1 = "0.27"
 
@@ -78,9 +76,7 @@ rand = "0.8"
 rand_core = "0.6"
 
 # Currency conversions
-rust_decimal = { version = "1.35", default-features = false, features = [
-    "serde",
-] }
+rust_decimal = { version = "1.35", default-features = false, features = ["serde"] }
 
 # Digests
 blake2b_simd = "1"
@@ -98,7 +94,6 @@ hex = "0.4"
 percent-encoding = "2.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_with = "3.9.0"
 
 # HTTP
 hyper = "1"
@@ -132,7 +127,7 @@ subtle = "2.2.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 schemerz = "0.2"
 schemerz-rusqlite = "0.320"
-time = "0.3.22"
+time = { version = "0.3.22", default-features = false }
 uuid = "1.1"
 
 # Static constants and assertions
@@ -161,7 +156,7 @@ trait-variant = "0.1"
 # ZIP 32
 aes = "0.8"
 fpe = "0.6"
-zip32 = "0.1.1"
+zip32 = "0.1.2"
 
 [profile.release]
 lto = true
@@ -186,9 +181,4 @@ opt-level = 3
 debug = true
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = [
-    'cfg(zcash_unstable, values("zfuture"))',
-] }
-
-[patch.crates-io]
-zip32 = { git = "https://github.com/zcash/zip32.git", branch = "diversifier_index_ord" }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(zcash_unstable, values("zfuture"))'] }

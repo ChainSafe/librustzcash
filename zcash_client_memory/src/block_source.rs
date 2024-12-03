@@ -17,10 +17,7 @@ impl MemBlockCache {
     }
 
     pub fn find_block(&self, block_height: BlockHeight) -> Option<CompactBlock> {
-        self.0
-            .read()
-            .unwrap()
-            .get(&block_height).cloned()
+        self.0.read().unwrap().get(&block_height).cloned()
     }
 }
 

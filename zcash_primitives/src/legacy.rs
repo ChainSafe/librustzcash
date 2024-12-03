@@ -272,7 +272,7 @@ impl OpCode {
 }
 
 /// A serialized script, used inside transparent inputs and outputs of a transaction.
-#[derive(Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Script(pub Vec<u8>);
 
 impl fmt::Debug for Script {
@@ -381,9 +381,7 @@ impl Shl<&[u8]> for Script {
 }
 
 /// A transparent address corresponding to either a public key hash or a script hash.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TransparentAddress {
     PublicKeyHash([u8; 20]),
     ScriptHash([u8; 20]),

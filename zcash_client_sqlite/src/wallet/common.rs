@@ -17,7 +17,7 @@ use zcash_protocol::{
 
 use super::wallet_birthday;
 use crate::{
-    error::SqliteClientError, wallet::pool_code, AccountUuid, ReceivedNoteId, SAPLING_TABLES_PREFIX,
+    error::SqliteClientError, wallet::pool_code, AccountId, ReceivedNoteId, SAPLING_TABLES_PREFIX,
 };
 
 #[cfg(feature = "orchard")]
@@ -118,7 +118,7 @@ where
 pub(crate) fn select_spendable_notes<P: consensus::Parameters, F, Note>(
     conn: &Connection,
     params: &P,
-    account: AccountUuid,
+    account: AccountId,
     target_value: NonNegativeAmount,
     anchor_height: BlockHeight,
     exclude: &[ReceivedNoteId],
@@ -169,8 +169,7 @@ where
                     ON accounts.id = {table_prefix}_received_notes.account_id
                  INNER JOIN transactions
                     ON transactions.id_tx = {table_prefix}_received_notes.tx
-                 WHERE accounts.uuid = :account_uuid
-                 AND {table_prefix}_received_notes.account_id = accounts.id
+                 WHERE {table_prefix}_received_notes.account_id = :account
                  AND value > 5000 -- FIXME #1316, allow selection of dust inputs
                  AND accounts.ufvk IS NOT NULL
                  AND recipient_key_scope IS NOT NULL
@@ -223,7 +222,7 @@ where
 
     let notes = stmt_select_notes.query_and_then(
         named_params![
-            ":account_uuid": account.0,
+            ":account": account.0,
             ":anchor_height": &u32::from(anchor_height),
             ":target_value": &u64::from(target_value),
             ":exclude": &excluded_ptr,
@@ -241,7 +240,7 @@ pub(crate) fn spendable_notes_meta(
     conn: &rusqlite::Connection,
     protocol: ShieldedProtocol,
     chain_tip_height: BlockHeight,
-    account: AccountUuid,
+    account: AccountId,
     filter: &NoteFilter,
     exclude: &[ReceivedNoteId],
 ) -> Result<Option<PoolMeta>, SqliteClientError> {
@@ -272,7 +271,7 @@ pub(crate) fn spendable_notes_meta(
                  FROM {table_prefix}_received_notes rn
                  INNER JOIN accounts a ON a.id = rn.account_id
                  INNER JOIN transactions ON transactions.id_tx = rn.tx
-                 WHERE a.uuid = :account_uuid
+                 WHERE rn.account_id = :account_id
                  AND a.ufvk IS NOT NULL
                  AND rn.value >= :min_value
                  AND transactions.mined_height IS NOT NULL
@@ -287,7 +286,7 @@ pub(crate) fn spendable_notes_meta(
                  )"
             ),
             named_params![
-                ":account_uuid": account.0,
+                ":account_id": account.0,
                 ":min_value": u64::from(min_value),
                 ":exclude": &excluded_ptr,
                 ":chain_tip_height": u32::from(chain_tip_height)
@@ -305,7 +304,7 @@ pub(crate) fn spendable_notes_meta(
     // determine the minimum value of notes to be produced by note splitting.
     fn min_note_value(
         conn: &rusqlite::Connection,
-        account: AccountUuid,
+        account: AccountId,
         filter: &NoteFilter,
         chain_tip_height: BlockHeight,
     ) -> Result<Option<NonNegativeAmount>, SqliteClientError> {
@@ -317,8 +316,7 @@ pub(crate) fn spendable_notes_meta(
                         SELECT s.value, NTILE(10) OVER (ORDER BY s.value) AS bucket_index
                         FROM sent_notes s
                         JOIN transactions t ON s.tx = t.id_tx
-                        JOIN accounts a on a.id = s.from_account_id
-                        WHERE a.uuid = :account_uuid
+                        WHERE s.from_account_id = :account_id
                         -- only count mined transactions
                         AND t.mined_height IS NOT NULL
                         -- exclude change and account-internal sends
@@ -332,7 +330,7 @@ pub(crate) fn spendable_notes_meta(
 
                 let bucket_maxima = bucket_query
                     .query_and_then::<_, SqliteClientError, _, _>(
-                        named_params![":account_uuid": account.0],
+                        named_params![":account_id": account.0],
                         |row| {
                             NonNegativeAmount::from_nonnegative_i64(row.get::<_, i64>(0)?).map_err(
                                 |_| {
@@ -356,7 +354,7 @@ pub(crate) fn spendable_notes_meta(
                      FROM v_received_outputs rn
                      INNER JOIN accounts a ON a.id = rn.account_id
                      INNER JOIN transactions ON transactions.id_tx = rn.transaction_id
-                     WHERE a.uuid = :account_uuid
+                     WHERE rn.account_id = :account_id
                      AND a.ufvk IS NOT NULL
                      AND transactions.mined_height IS NOT NULL
                      AND rn.pool != :transparent_pool
@@ -371,7 +369,7 @@ pub(crate) fn spendable_notes_meta(
                        )
                      )",
                     named_params![
-                        ":account_uuid": account.0,
+                        ":account_id": account.0,
                         ":chain_tip_height": u32::from(chain_tip_height),
                         ":transparent_pool": pool_code(PoolType::Transparent)
                     ],

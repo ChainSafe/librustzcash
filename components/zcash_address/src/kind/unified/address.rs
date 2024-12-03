@@ -6,11 +6,9 @@ use std::convert::{TryFrom, TryInto};
 
 /// The set of known Receivers for Unified Addresses.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[serde_with::serde_as]
-#[derive(serde::Serialize, serde::Deserialize)]
 pub enum Receiver {
-    Orchard(#[serde_as(as = "[_; 43]")] [u8; 43]),
-    Sapling(#[serde_as(as = "[_; 43]")] [u8; 43]),
+    Orchard([u8; 43]),
+    Sapling([u8; 43]),
     P2pkh([u8; 20]),
     P2sh([u8; 20]),
     Unknown { typecode: u32, data: Vec<u8> },
@@ -102,7 +100,7 @@ impl SealedItem for Receiver {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Address(pub(crate) Vec<Receiver>);
 
 impl Address {

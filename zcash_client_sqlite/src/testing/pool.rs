@@ -137,6 +137,8 @@ pub(crate) fn shield_transparent<T: ShieldedPoolTester>() {
     )
 }
 
+// FIXME: This requires fixes to the test framework.
+#[allow(dead_code)]
 pub(crate) fn birthday_in_anchor_shard<T: ShieldedPoolTester>() {
     zcash_client_backend::data_api::testing::pool::birthday_in_anchor_shard::<T>(
         TestDbFactory::default(),
@@ -201,6 +203,8 @@ pub(crate) fn valid_chain_states<T: ShieldedPoolTester>() {
     )
 }
 
+// FIXME: This requires fixes to the test framework.
+#[allow(dead_code)]
 pub(crate) fn invalid_chain_cache_disconnected<T: ShieldedPoolTester>() {
     zcash_client_backend::data_api::testing::pool::invalid_chain_cache_disconnected::<T>(
         TestDbFactory::default(),
@@ -236,6 +240,7 @@ pub(crate) fn scan_cached_blocks_finds_received_notes<T: ShieldedPoolTester>() {
     )
 }
 
+// TODO: This test can probably be entirely removed, as the following test duplicates it entirely.
 pub(crate) fn scan_cached_blocks_finds_change_notes<T: ShieldedPoolTester>() {
     zcash_client_backend::data_api::testing::pool::scan_cached_blocks_finds_change_notes::<T, _>(
         TestDbFactory::default(),

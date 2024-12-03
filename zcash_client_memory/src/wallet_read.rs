@@ -1,27 +1,27 @@
-use nonempty::NonEmpty;
-
-use secrecy::{ExposeSecret, SecretVec};
-use shardtree::store::ShardStore as _;
-
-use std::ops::Range;
 use std::{
     collections::{hash_map::Entry, HashMap},
     num::NonZeroU32,
     ops::Add,
+    ops::Range,
 };
-use zcash_keys::keys::UnifiedIncomingViewingKey;
-use zip32::fingerprint::SeedFingerprint;
-use zip32::Scope;
 
+use nonempty::NonEmpty;
+use secrecy::{ExposeSecret, SecretVec};
+use shardtree::store::ShardStore as _;
+use zcash_client_backend::data_api::{
+    scanning::ScanRange, BlockMetadata, NullifierQuery, WalletRead, WalletSummary,
+};
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{
-        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance,
-        Progress, Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus,
+        scanning::ScanPriority, Account as _, AccountBalance, AccountSource, Balance, Progress,
+        Ratio, SeedRelevance, TransactionDataRequest, TransactionStatus,
     },
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
-    wallet::{NoteId},
+    wallet::NoteId,
+    PoolType,
 };
+use zcash_keys::keys::UnifiedIncomingViewingKey;
 use zcash_primitives::{
     block::BlockHash,
     consensus::BlockHeight,
@@ -30,13 +30,10 @@ use zcash_primitives::{
 use zcash_protocol::{
     consensus::{self, BranchId},
     memo::Memo,
-    value::{Zatoshis},
-    PoolType,
+    value::Zatoshis,
 };
-
-use zcash_client_backend::data_api::{
-    scanning::ScanRange, BlockMetadata, NullifierQuery, WalletRead, WalletSummary,
-};
+use zip32::fingerprint::SeedFingerprint;
+use zip32::Scope;
 
 #[cfg(feature = "transparent-inputs")]
 use {
@@ -44,8 +41,7 @@ use {
     zcash_primitives::legacy::TransparentAddress,
 };
 
-use super::{Account, AccountId, MemoryWalletDb};
-use crate::{error::Error, MemoryWalletBlock, Nullifier};
+use crate::{error::Error, Account, AccountId, MemoryWalletBlock, MemoryWalletDb, Nullifier};
 
 impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
     type Error = Error;

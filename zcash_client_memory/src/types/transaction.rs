@@ -3,51 +3,44 @@ use std::{
     ops::Deref,
 };
 
-use serde::{Deserialize, Serialize};
+use zcash_client_backend::{data_api::TransactionStatus, wallet::WalletTx};
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{Transaction, TxId},
 };
 use zcash_protocol::value::Zatoshis;
 
-use zcash_client_backend::{data_api::TransactionStatus, wallet::WalletTx};
-
+use crate::error::Error;
 use crate::AccountId;
 
-use crate::error::Error;
-use crate::types::serialization::*;
-use serde_with::serde_as;
-use serde_with::{FromInto, TryFromInto};
 /// Maps a block height and transaction index to a transaction ID.
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-pub(crate) struct TxLocatorMap(
-    #[serde_as(as = "BTreeMap<(FromInto<u32>, _), ByteArray<32>>")]
-    BTreeMap<(BlockHeight, u32), TxId>,
-);
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TxLocatorMap(pub(crate) BTreeMap<(BlockHeight, u32), TxId>);
+
+impl Deref for TxLocatorMap {
+    type Target = BTreeMap<(BlockHeight, u32), TxId>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 /// A table of received notes. Corresponds to sapling_received_notes and orchard_received_notes tables.
-#[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TransactionEntry {
     // created: String,
     /// mined_height is rolled into into a txn status
-    #[serde(with = "TransactionStatusDef")]
     tx_status: TransactionStatus,
-    #[serde_as(as = "Option<FromInto<u32>>")]
     block: Option<BlockHeight>,
     tx_index: Option<u32>,
-    #[serde_as(as = "Option<FromInto<u32>>")]
     expiry_height: Option<BlockHeight>,
     raw: Option<Vec<u8>>,
-    #[serde_as(as = "Option<TryFromInto<u64>>")]
     fee: Option<Zatoshis>,
     /// - `target_height`: stores the target height for which the transaction was constructed, if
     ///   known. This will ordinarily be null for transactions discovered via chain scanning; it
     ///   will only be set for transactions created using this wallet specifically, and not any
     ///   other wallet that uses the same seed (including previous installations of the same
     ///   wallet application.)
-    #[serde_as(as = "Option<FromInto<u32>>")]
     _target_height: Option<BlockHeight>,
 }
 impl TransactionEntry {
@@ -76,6 +69,7 @@ impl TransactionEntry {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn fee(&self) -> Option<Zatoshis> {
         self.fee
     }
@@ -94,23 +88,20 @@ impl TransactionEntry {
         }
     }
 }
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-pub(crate) struct TransactionTable(
-    #[serde_as(as = "BTreeMap<ByteArray<32>, _>")] BTreeMap<TxId, TransactionEntry>,
-);
+
+#[derive(Debug, PartialEq)]
+pub(crate) struct TransactionTable(pub(crate) BTreeMap<TxId, TransactionEntry>);
 
 impl TransactionTable {
     pub(crate) fn new() -> Self {
         Self(BTreeMap::new())
     }
+
     /// Returns transaction status for a given transaction ID. None if the transaction is not known.
     pub(crate) fn tx_status(&self, txid: &TxId) -> Option<TransactionStatus> {
         self.0.get(txid).map(|entry| entry.tx_status)
     }
-    pub(crate) fn expiry_height(&self, txid: &TxId) -> Option<BlockHeight> {
-        self.0.get(txid).and_then(|entry| entry.expiry_height)
-    }
+
     pub(crate) fn _get_transaction(&self, txid: TxId) -> Option<&TransactionEntry> {
         self.0.get(&txid)
     }
@@ -217,12 +208,6 @@ impl TransactionTable {
         }
     }
 
-    pub(crate) fn get_tx_raw(&self, txid: &TxId) -> Option<&[u8]> {
-        self.0
-            .get(txid)
-            .and_then(|entry| entry.raw.as_deref())
-    }
-
     pub(crate) fn unmine_transactions_greater_than(&mut self, height: BlockHeight) {
         self.0.iter_mut().for_each(|(_, entry)| {
             if let TransactionStatus::Mined(tx_height) = entry.tx_status {
@@ -271,5 +256,60 @@ impl TxLocatorMap {
     }
     pub(crate) fn entry(&mut self, k: (BlockHeight, u32)) -> Entry<(BlockHeight, u32), TxId> {
         self.0.entry(k)
+    }
+}
+
+mod serialization {
+    use super::*;
+    use crate::{proto::memwallet as proto, read_optional};
+
+    impl From<TransactionEntry> for proto::TransactionEntry {
+        fn from(entry: TransactionEntry) -> Self {
+            Self {
+                tx_status: match entry.tx_status {
+                    TransactionStatus::TxidNotRecognized => {
+                        proto::TransactionStatus::TxidNotRecognized.into()
+                    }
+                    TransactionStatus::NotInMainChain => {
+                        proto::TransactionStatus::NotInMainChain.into()
+                    }
+                    TransactionStatus::Mined(_) => proto::TransactionStatus::Mined.into(),
+                },
+                block: entry.block.map(Into::into),
+                tx_index: entry.tx_index,
+                expiry_height: entry.expiry_height.map(Into::into),
+                raw_tx: entry.raw,
+                fee: entry.fee.map(Into::into),
+                target_height: entry._target_height.map(Into::into),
+                mined_height: match entry.tx_status {
+                    TransactionStatus::Mined(height) => Some(height.into()),
+                    _ => None,
+                },
+            }
+        }
+    }
+
+    impl TryFrom<proto::TransactionEntry> for TransactionEntry {
+        type Error = Error;
+
+        fn try_from(entry: proto::TransactionEntry) -> Result<Self, Self::Error> {
+            Ok(Self {
+                tx_status: match entry.tx_status() {
+                    proto::TransactionStatus::TxidNotRecognized => {
+                        TransactionStatus::TxidNotRecognized
+                    }
+                    proto::TransactionStatus::NotInMainChain => TransactionStatus::NotInMainChain,
+                    proto::TransactionStatus::Mined => {
+                        TransactionStatus::Mined(read_optional!(entry, mined_height)?.into())
+                    }
+                },
+                block: entry.block.map(Into::into),
+                tx_index: entry.tx_index.map(Into::into),
+                expiry_height: entry.expiry_height.map(Into::into),
+                raw: entry.raw_tx,
+                fee: entry.fee.map(|fee| fee.try_into()).transpose()?,
+                _target_height: entry.target_height.map(Into::into),
+            })
+        }
     }
 }

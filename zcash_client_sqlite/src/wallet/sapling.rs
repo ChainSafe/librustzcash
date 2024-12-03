@@ -20,16 +20,14 @@ use zcash_protocol::{
 };
 use zip32::Scope;
 
-use crate::{error::SqliteClientError, AccountUuid, ReceivedNoteId, TxRef};
+use crate::{error::SqliteClientError, AccountId, ReceivedNoteId, TxRef};
 
-use super::{get_account_ref, memo_repr, parse_scope, scope_code};
+use super::{memo_repr, parse_scope, scope_code};
 
 /// This trait provides a generalization over shielded output representations.
 pub(crate) trait ReceivedSaplingOutput {
-    type AccountId;
-
     fn index(&self) -> usize;
-    fn account_id(&self) -> Self::AccountId;
+    fn account_id(&self) -> AccountId;
     fn note(&self) -> &sapling::Note;
     fn memo(&self) -> Option<&MemoBytes>;
     fn is_change(&self) -> bool;
@@ -38,13 +36,11 @@ pub(crate) trait ReceivedSaplingOutput {
     fn recipient_key_scope(&self) -> Option<Scope>;
 }
 
-impl<AccountId: Copy> ReceivedSaplingOutput for WalletSaplingOutput<AccountId> {
-    type AccountId = AccountId;
-
+impl ReceivedSaplingOutput for WalletSaplingOutput<AccountId> {
     fn index(&self) -> usize {
         self.index()
     }
-    fn account_id(&self) -> Self::AccountId {
+    fn account_id(&self) -> AccountId {
         *WalletSaplingOutput::account_id(self)
     }
     fn note(&self) -> &sapling::Note {
@@ -67,13 +63,11 @@ impl<AccountId: Copy> ReceivedSaplingOutput for WalletSaplingOutput<AccountId> {
     }
 }
 
-impl<AccountId: Copy> ReceivedSaplingOutput for DecryptedOutput<sapling::Note, AccountId> {
-    type AccountId = AccountId;
-
+impl ReceivedSaplingOutput for DecryptedOutput<sapling::Note, AccountId> {
     fn index(&self) -> usize {
         self.index()
     }
-    fn account_id(&self) -> Self::AccountId {
+    fn account_id(&self) -> AccountId {
         *self.account()
     }
     fn note(&self) -> &sapling::Note {
@@ -218,7 +212,7 @@ pub(crate) fn get_spendable_sapling_note<P: consensus::Parameters>(
 pub(crate) fn select_spendable_sapling_notes<P: consensus::Parameters>(
     conn: &Connection,
     params: &P,
-    account: AccountUuid,
+    account: AccountId,
     target_value: NonNegativeAmount,
     anchor_height: BlockHeight,
     exclude: &[ReceivedNoteId],
@@ -244,13 +238,12 @@ pub(crate) fn select_spendable_sapling_notes<P: consensus::Parameters>(
 pub(crate) fn get_sapling_nullifiers(
     conn: &Connection,
     query: NullifierQuery,
-) -> Result<Vec<(AccountUuid, Nullifier)>, SqliteClientError> {
+) -> Result<Vec<(AccountId, Nullifier)>, SqliteClientError> {
     // Get the nullifiers for the notes we are tracking
     let mut stmt_fetch_nullifiers = match query {
         NullifierQuery::Unspent => conn.prepare(
-            "SELECT a.uuid, rn.nf
+            "SELECT rn.account_id, rn.nf
              FROM sapling_received_notes rn
-             JOIN accounts a ON a.id = rn.account_id
              JOIN transactions tx ON tx.id_tx = rn.tx
              WHERE rn.nf IS NOT NULL
              AND tx.block IS NOT NULL
@@ -263,15 +256,14 @@ pub(crate) fn get_sapling_nullifiers(
              )",
         ),
         NullifierQuery::All => conn.prepare(
-            "SELECT a.uuid, rn.nf
+            "SELECT rn.account_id, rn.nf
              FROM sapling_received_notes rn
-             JOIN accounts a ON a.id = rn.account_id
              WHERE nf IS NOT NULL",
         ),
     }?;
 
     let nullifiers = stmt_fetch_nullifiers.query_and_then([], |row| {
-        let account = AccountUuid(row.get(0)?);
+        let account = AccountId(row.get(0)?);
         let nf_bytes: Vec<u8> = row.get(1)?;
         Ok::<_, rusqlite::Error>((account, sapling::Nullifier::from_slice(&nf_bytes).unwrap()))
     })?;
@@ -283,11 +275,10 @@ pub(crate) fn get_sapling_nullifiers(
 pub(crate) fn detect_spending_accounts<'a>(
     conn: &Connection,
     nfs: impl Iterator<Item = &'a Nullifier>,
-) -> Result<HashSet<AccountUuid>, rusqlite::Error> {
+) -> Result<HashSet<AccountId>, rusqlite::Error> {
     let mut account_q = conn.prepare_cached(
-        "SELECT accounts.uuid
+        "SELECT rn.account_id
         FROM sapling_received_notes rn
-        JOIN accounts ON accounts.id = rn.account_id
         WHERE rn.nf IN rarray(:nf_ptr)",
     )?;
 
@@ -295,7 +286,7 @@ pub(crate) fn detect_spending_accounts<'a>(
     let nf_ptr = Rc::new(nf_values);
     let res = account_q
         .query_and_then(named_params![":nf_ptr": &nf_ptr], |row| {
-            row.get(0).map(AccountUuid)
+            row.get::<_, u32>(0).map(AccountId)
         })?
         .collect::<Result<HashSet<_>, _>>()?;
 
@@ -333,13 +324,12 @@ pub(crate) fn mark_sapling_note_spent(
 /// This implementation relies on the facts that:
 /// - A transaction will not contain more than 2^63 shielded outputs.
 /// - A note value will never exceed 2^63 zatoshis.
-pub(crate) fn put_received_note<T: ReceivedSaplingOutput<AccountId = AccountUuid>>(
+pub(crate) fn put_received_note<T: ReceivedSaplingOutput>(
     conn: &Transaction,
     output: &T,
     tx_ref: TxRef,
     spent_in: Option<TxRef>,
 ) -> Result<(), SqliteClientError> {
-    let account_id = get_account_ref(conn, output.account_id())?;
     let mut stmt_upsert_received_note = conn.prepare_cached(
         "INSERT INTO sapling_received_notes
         (tx, output_index, account_id, diversifier, value, rcm, memo, nf,
@@ -378,7 +368,7 @@ pub(crate) fn put_received_note<T: ReceivedSaplingOutput<AccountId = AccountUuid
     let sql_args = named_params![
         ":tx": tx_ref.0,
         ":output_index": i64::try_from(output.index()).expect("output indices are representable as i64"),
-        ":account_id": account_id.0,
+        ":account_id": output.account_id().0,
         ":diversifier": &diversifier.0.as_ref(),
         ":value": output.note().value().inner(),
         ":rcm": &rcm.as_ref(),

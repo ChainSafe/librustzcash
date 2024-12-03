@@ -1,9 +1,4 @@
-use crate::serialization::*;
 use incrementalmerkletree::Position;
-
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use serde_with::{FromInto, TryFromInto};
 
 use std::collections::BTreeSet;
 use std::{
@@ -12,11 +7,11 @@ use std::{
 };
 use zip32::Scope;
 
-use zcash_primitives::transaction::{components::OutPoint, TxId};
-use zcash_protocol::{memo::Memo, value::Zatoshis, PoolType, ShieldedProtocol::Sapling};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::{memo::Memo, PoolType, ShieldedProtocol::Sapling};
 
 use zcash_client_backend::{
-    data_api::{SentTransaction, SentTransactionOutput, SpendableNotes},
+    data_api::{SentTransactionOutput, SpendableNotes},
     wallet::{Note, NoteId, Recipient, WalletSaplingOutput},
 };
 
@@ -30,13 +25,10 @@ use {
 use crate::{error::Error, Nullifier};
 
 /// Keeps track of notes that are spent in which transaction
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct ReceievdNoteSpends(
-    #[serde_as(as = "BTreeMap<NoteIdDef, ByteArray<32>>")] BTreeMap<NoteId, TxId>,
-);
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ReceievedNoteSpends(pub(crate) BTreeMap<NoteId, TxId>);
 
-impl ReceievdNoteSpends {
+impl ReceievedNoteSpends {
     pub fn new() -> Self {
         Self(BTreeMap::new())
     }
@@ -48,7 +40,7 @@ impl ReceievdNoteSpends {
     }
 }
 
-impl Deref for ReceievdNoteSpends {
+impl Deref for ReceievedNoteSpends {
     type Target = BTreeMap<NoteId, TxId>;
 
     fn deref(&self) -> &Self::Target {
@@ -58,30 +50,23 @@ impl Deref for ReceievdNoteSpends {
 
 /// A note that has been received by the wallet
 /// TODO: Instead of Vec, perhaps we should identify by some unique ID
-#[derive(Serialize, Deserialize)]
-pub(crate) struct ReceivedNoteTable(Vec<ReceivedNote>);
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ReceivedNoteTable(pub(crate) Vec<ReceivedNote>);
 
-#[serde_as]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ReceivedNote {
     // Uniquely identifies this note
-    #[serde_as(as = "NoteIdDef")]
     pub(crate) note_id: NoteId,
-    #[serde_as(as = "ByteArray<32>")]
     pub(crate) txid: TxId,
     // output_index: sapling, action_index: orchard
     pub(crate) output_index: u32,
     pub(crate) account_id: AccountId,
     //sapling: (diversifier, value, rcm) orchard: (diversifier, value, rho, rseed)
-    #[serde_as(as = "NoteDef")]
     pub(crate) note: Note,
     pub(crate) nf: Option<Nullifier>,
     pub(crate) is_change: bool,
-    #[serde_as(as = "MemoBytesDef")]
     pub(crate) memo: Memo,
-    #[serde_as(as = "Option<FromInto<u64>>")]
     pub(crate) commitment_tree_position: Option<Position>,
-    #[serde_as(as = "Option<ScopeDef>")]
     pub(crate) recipient_key_scope: Option<Scope>,
 }
 impl ReceivedNote {
@@ -121,7 +106,11 @@ impl ReceivedNote {
                 note: Note::Sapling(note.clone()),
                 nf: None,
                 is_change: true,
-                memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                memo: output
+                    .memo()
+                    .map(Memo::try_from)
+                    .transpose()?
+                    .expect("expected a memo for a non-transparent output"),
                 commitment_tree_position: None,
                 recipient_key_scope: Some(Scope::Internal),
             }),
@@ -138,7 +127,11 @@ impl ReceivedNote {
                 note: Note::Orchard(*note),
                 nf: None,
                 is_change: true,
-                memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                memo: output
+                    .memo()
+                    .map(Memo::try_from)
+                    .transpose()?
+                    .expect("expected a memo for a non-transparent output"),
                 commitment_tree_position: None,
                 recipient_key_scope: Some(Scope::Internal),
             }),
@@ -231,7 +224,7 @@ impl ReceivedNoteTable {
     pub fn insert_received_note(&mut self, note: ReceivedNote) {
         // ensure note_id is unique.
         // follow upsert rules to update the note if it already exists
-        if self
+        let is_absent = self
             .0
             .iter_mut()
             .find(|n| n.note_id == note.note_id)
@@ -241,8 +234,9 @@ impl ReceivedNoteTable {
                 n.commitment_tree_position =
                     note.commitment_tree_position.or(n.commitment_tree_position);
             })
-            .is_none()
-        {
+            .is_none();
+
+        if is_absent {
             self.0.push(note);
         }
     }
@@ -304,6 +298,7 @@ pub(crate) fn to_spendable_notes(
     let sapling = sapling_received_notes
         .iter()
         .map(|note| {
+            #[allow(irrefutable_let_patterns)]
             if let Note::Sapling(inner) = &note.note {
                 Ok(zcash_client_backend::wallet::ReceivedNote::from_parts(
                     note.note_id,
@@ -349,15 +344,9 @@ pub(crate) fn to_spendable_notes(
     ))
 }
 
-#[serde_as]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize, Debug)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug)]
 pub enum SentNoteId {
-    Shielded(#[serde_as(as = "NoteIdDef")] NoteId),
-    Transparent {
-        #[serde_as(as = "ByteArray<32>")]
-        txid: TxId,
-        output_index: u32,
-    },
+    Shielded(NoteId),
 }
 
 impl From<NoteId> for SentNoteId {
@@ -372,136 +361,51 @@ impl From<&NoteId> for SentNoteId {
     }
 }
 
-impl SentNoteId {
-    pub fn txid(&self) -> &TxId {
-        match self {
-            SentNoteId::Shielded(note_id) => note_id.txid(),
-            SentNoteId::Transparent { txid, .. } => txid,
-        }
-    }
-}
+mod serialization {
+    use super::*;
+    use crate::{proto::memwallet as proto, read_optional};
 
-#[derive(Serialize, Deserialize)]
-pub(crate) struct SentNoteTable(BTreeMap<SentNoteId, SentNote>);
-
-impl SentNoteTable {
-    pub fn new() -> Self {
-        Self(BTreeMap::new())
-    }
-
-    pub fn insert_sent_output(
-        &mut self,
-        tx: &SentTransaction<AccountId>,
-        output: &SentTransactionOutput<AccountId>,
-    ) {
-        let pool_type = match output.recipient() {
-            Recipient::External(_, pool_type) => *pool_type,
-            Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
-            Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
-        };
-        match pool_type {
-            PoolType::Transparent => {
-                // we kind of are in a tricky spot here since NoteId cannot represent a transparent note..
-                // just make it a sapling one for now until we figure out a better way to represent this
-                let note_id = SentNoteId::Transparent {
-                    txid: tx.tx().txid(),
-                    output_index: output.output_index().try_into().unwrap(),
-                };
-                self.0.insert(
-                    note_id,
-                    SentNote {
-                        from_account_id: *tx.account_id(),
-                        to: output.recipient().clone(),
-                        value: output.value(),
-                        memo: Memo::Empty, // transparent notes don't have memos
-                    },
-                );
-            }
-            PoolType::Shielded(protocol) => {
-                let note_id = NoteId::new(
-                    tx.tx().txid(),
-                    protocol,
-                    output.output_index().try_into().unwrap(),
-                );
-                self.0.insert(
-                    note_id.into(),
-                    SentNote {
-                        from_account_id: *tx.account_id(),
-                        to: output.recipient().clone(),
-                        value: output.value(),
-                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
-                    },
-                );
+    impl From<ReceivedNote> for proto::ReceivedNote {
+        fn from(value: ReceivedNote) -> Self {
+            Self {
+                note_id: Some(value.note_id.into()),
+                tx_id: Some(value.txid.into()),
+                output_index: value.output_index,
+                account_id: *value.account_id,
+                note: Some(value.note.into()),
+                nullifier: value.nf.map(|nf| nf.into()),
+                is_change: value.is_change,
+                memo: value.memo.encode().as_array().to_vec(),
+                commitment_tree_position: value.commitment_tree_position.map(|pos| pos.into()),
+                recipient_key_scope: match value.recipient_key_scope {
+                    Some(Scope::Internal) => Some(proto::Scope::Internal as i32),
+                    Some(Scope::External) => Some(proto::Scope::External as i32),
+                    None => None,
+                },
             }
         }
     }
 
-    pub fn put_sent_output(
-        &mut self,
-        txid: TxId,
-        from_account_id: AccountId,
-        output: &SentTransactionOutput<AccountId>,
-    ) {
-        let pool_type = match output.recipient() {
-            Recipient::External(_, pool_type) => *pool_type,
-            Recipient::EphemeralTransparent { .. } => PoolType::Transparent,
-            Recipient::InternalAccount { note, .. } => PoolType::Shielded(note.protocol()),
-        };
-        match pool_type {
-            PoolType::Transparent => {
-                // we kind of are in a tricky spot here since NoteId cannot represent a transparent note..
-                // just make it a sapling one for now until we figure out a better way to represent this
-                let note_id = SentNoteId::Transparent {
-                    txid,
-                    output_index: output.output_index().try_into().unwrap(),
-                };
-                self.0.insert(
-                    note_id,
-                    SentNote {
-                        from_account_id,
-                        to: output.recipient().clone(),
-                        value: output.value(),
-                        memo: Memo::Empty, // transparent notes don't have memos
-                    },
-                );
-            }
-            PoolType::Shielded(protocol) => {
-                let note_id =
-                    NoteId::new(txid, protocol, output.output_index().try_into().unwrap());
-                self.0.insert(
-                    note_id.into(),
-                    SentNote {
-                        from_account_id,
-                        to: output.recipient().clone(),
-                        value: output.value(),
-                        memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
-                    },
-                );
-            }
+    impl TryFrom<proto::ReceivedNote> for ReceivedNote {
+        type Error = Error;
+
+        fn try_from(value: proto::ReceivedNote) -> Result<ReceivedNote, Error> {
+            Ok(Self {
+                note_id: read_optional!(value, note_id)?.try_into()?,
+                txid: read_optional!(value, tx_id)?.try_into()?,
+                output_index: value.output_index,
+                account_id: value.account_id.into(),
+                note: read_optional!(value, note)?.into(),
+                nf: value.nullifier.map(|nf| nf.try_into()).transpose()?,
+                is_change: value.is_change,
+                memo: Memo::from_bytes(&value.memo)?,
+                commitment_tree_position: value.commitment_tree_position.map(|pos| pos.into()),
+                recipient_key_scope: match value.recipient_key_scope {
+                    Some(0) => Some(Scope::Internal),
+                    Some(1) => Some(Scope::External),
+                    _ => None,
+                },
+            })
         }
     }
-
-    pub fn get_sent_note(&self, note_id: &NoteId) -> Option<&SentNote> {
-        self.0.get(&note_id.into())
-    }
-}
-
-impl Deref for SentNoteTable {
-    type Target = BTreeMap<SentNoteId, SentNote>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[serde_as]
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct SentNote {
-    pub(crate) from_account_id: AccountId,
-    #[serde_as(as = "RecipientDef<AccountId, Note, OutPoint>")]
-    pub(crate) to: Recipient<AccountId, Note, OutPoint>,
-    #[serde_as(as = "TryFromInto<u64>")]
-    pub(crate) value: Zatoshis,
-    #[serde_as(as = "MemoBytesDef")]
-    pub(crate) memo: Memo,
 }

@@ -1,7 +1,9 @@
 use std::convert::{identity, Infallible};
+use std::fmt::Debug;
 
 use zcash_client_backend::data_api::InputSource;
 use zcash_client_backend::data_api::OutputOfSentTx;
+use zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT;
 use zcash_client_backend::wallet::Note;
 use zcash_client_backend::wallet::Recipient;
 use zcash_client_backend::wallet::WalletTransparentOutput;
@@ -37,6 +39,12 @@ mod transparent;
 /// Very simple implementation just creates a new MemoryWalletDb
 pub(crate) struct TestMemDbFactory;
 
+impl TestMemDbFactory {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+}
+
 impl DataStoreFactory for TestMemDbFactory {
     type Error = ();
     type AccountId = AccountId;
@@ -69,7 +77,7 @@ impl TestCache for MemBlockCache {
 
 impl<P> Reset for MemoryWalletDb<P>
 where
-    P: zcash_primitives::consensus::Parameters + Clone,
+    P: zcash_primitives::consensus::Parameters + Clone + Debug + PartialEq,
 {
     type Handle = ();
 
@@ -81,7 +89,7 @@ where
 
 impl<P> WalletTest for MemoryWalletDb<P>
 where
-    P: zcash_primitives::consensus::Parameters + Clone,
+    P: zcash_primitives::consensus::Parameters + Clone + Debug + PartialEq,
 {
     #[allow(clippy::type_complexity)]
     fn get_sent_outputs(&self, txid: &TxId) -> Result<Vec<OutputOfSentTx>, Error> {
@@ -140,11 +148,11 @@ where
             .collect::<Result<_, Error>>()
     }
 
-    #[doc = " Fetches the transparent output corresponding to the provided `outpoint`."]
-    #[doc = " Allows selecting unspendable outputs for testing purposes."]
-    #[doc = ""]
-    #[doc = " Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not"]
-    #[doc = " spendable as of the chain tip height."]
+    /// Fetches the transparent output corresponding to the provided `outpoint`.
+    /// Allows selecting unspendable outputs for testing purposes.
+    ///
+    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
+    /// spendable as of the chain tip height.
     #[cfg(feature = "transparent-inputs")]
     fn get_transparent_output(
         &self,
@@ -266,15 +274,12 @@ where
                 let receiving_transparent_account_id = received_txo
                     .first()
                     .map(|(_, received)| received.account_id);
-                let sent_txo_account_id = spent_utxos
-                    .first()
-                    .map(|(outpoint, _)| {
-                        // any spent txo was first a received txo
-                        self.transparent_received_outputs
-                            .get(outpoint)
-                            .map(|txo| txo.account_id)
-                    })
-                    .flatten();
+                let sent_txo_account_id = spent_utxos.first().and_then(|(outpoint, _)| {
+                    // any spent txo was first a received txo
+                    self.transparent_received_outputs
+                        .get(outpoint)
+                        .map(|txo| txo.account_id)
+                });
 
                 // take the first non-none account_id
                 let account_id = vec![
@@ -327,8 +332,8 @@ where
                         has_change,                            // has_change
                         sent_notes.len(),                      // sent_note_count (excluding change)
                         received_notes.iter().filter(|note| !note.is_change).count(), // received_note_count (excluding change)
-                        0,            // TODO: memo_count
-                        false,        // TODO: expired_unmined
+                        0,            // Unimplemented: memo_count
+                        false,        // Unimplemented: expired_unmined
                         is_shielding, // is_shielding
                     ),
                 )
@@ -339,7 +344,6 @@ where
                 .cmp(&a.mined_height())
                 .then(b.txid().cmp(&a.txid()))
         });
-        println!("tx history: {:?}", history);
         Ok(history)
     }
 
@@ -374,5 +378,29 @@ where
         checkpoints.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         Ok(checkpoints)
+    }
+
+    fn finally(&self) {
+        // ensure the wallet state at the conclusion of each test can be round-tripped through serialization
+        let proto = crate::proto::memwallet::MemoryWallet::from(self);
+        let recovered_wallet =
+            MemoryWalletDb::new_from_proto(proto.clone(), self.params.clone(), 100).unwrap();
+
+        assert_eq!(self, &recovered_wallet);
+
+        // ensure the trees can be roundtripped
+        use crate::wallet_commitment_trees::serialization::{tree_from_protobuf, tree_to_protobuf};
+
+        let tree_proto = tree_to_protobuf(&self.sapling_tree).unwrap().unwrap();
+        let recovered_tree: shardtree::ShardTree<
+            shardtree::store::memory::MemoryShardStore<sapling::Node, BlockHeight>,
+            { SAPLING_SHARD_HEIGHT * 2 },
+            SAPLING_SHARD_HEIGHT,
+        > = tree_from_protobuf(tree_proto, 100, 16.into()).unwrap();
+
+        assert_eq!(
+            self.sapling_tree.store().get_shard_roots(),
+            recovered_tree.store().get_shard_roots()
+        );
     }
 }

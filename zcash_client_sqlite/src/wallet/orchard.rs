@@ -21,16 +21,14 @@ use zcash_protocol::{
 };
 use zip32::Scope;
 
-use crate::{error::SqliteClientError, AccountUuid, ReceivedNoteId, TxRef};
+use crate::{error::SqliteClientError, AccountId, ReceivedNoteId, TxRef};
 
-use super::{get_account_ref, memo_repr, parse_scope, scope_code};
+use super::{memo_repr, parse_scope, scope_code};
 
 /// This trait provides a generalization over shielded output representations.
 pub(crate) trait ReceivedOrchardOutput {
-    type AccountId;
-
     fn index(&self) -> usize;
-    fn account_id(&self) -> Self::AccountId;
+    fn account_id(&self) -> AccountId;
     fn note(&self) -> &Note;
     fn memo(&self) -> Option<&MemoBytes>;
     fn is_change(&self) -> bool;
@@ -39,13 +37,11 @@ pub(crate) trait ReceivedOrchardOutput {
     fn recipient_key_scope(&self) -> Option<Scope>;
 }
 
-impl<AccountId: Copy> ReceivedOrchardOutput for WalletOrchardOutput<AccountId> {
-    type AccountId = AccountId;
-
+impl ReceivedOrchardOutput for WalletOrchardOutput<AccountId> {
     fn index(&self) -> usize {
         self.index()
     }
-    fn account_id(&self) -> Self::AccountId {
+    fn account_id(&self) -> AccountId {
         *WalletOrchardOutput::account_id(self)
     }
     fn note(&self) -> &Note {
@@ -68,13 +64,11 @@ impl<AccountId: Copy> ReceivedOrchardOutput for WalletOrchardOutput<AccountId> {
     }
 }
 
-impl<AccountId: Copy> ReceivedOrchardOutput for DecryptedOutput<Note, AccountId> {
-    type AccountId = AccountId;
-
+impl ReceivedOrchardOutput for DecryptedOutput<Note, AccountId> {
     fn index(&self) -> usize {
         self.index()
     }
-    fn account_id(&self) -> Self::AccountId {
+    fn account_id(&self) -> AccountId {
         *self.account()
     }
     fn note(&self) -> &orchard::note::Note {
@@ -208,7 +202,7 @@ pub(crate) fn get_spendable_orchard_note<P: consensus::Parameters>(
 pub(crate) fn select_spendable_orchard_notes<P: consensus::Parameters>(
     conn: &Connection,
     params: &P,
-    account: AccountUuid,
+    account: AccountId,
     target_value: Zatoshis,
     anchor_height: BlockHeight,
     exclude: &[ReceivedNoteId],
@@ -230,13 +224,12 @@ pub(crate) fn select_spendable_orchard_notes<P: consensus::Parameters>(
 /// This implementation relies on the facts that:
 /// - A transaction will not contain more than 2^63 shielded outputs.
 /// - A note value will never exceed 2^63 zatoshis.
-pub(crate) fn put_received_note<T: ReceivedOrchardOutput<AccountId = AccountUuid>>(
+pub(crate) fn put_received_note<T: ReceivedOrchardOutput>(
     conn: &Transaction,
     output: &T,
     tx_ref: TxRef,
     spent_in: Option<TxRef>,
 ) -> Result<(), SqliteClientError> {
-    let account_id = get_account_ref(conn, output.account_id())?;
     let mut stmt_upsert_received_note = conn.prepare_cached(
         "INSERT INTO orchard_received_notes
         (
@@ -272,7 +265,7 @@ pub(crate) fn put_received_note<T: ReceivedOrchardOutput<AccountId = AccountUuid
     let sql_args = named_params![
         ":tx": tx_ref.0,
         ":action_index": i64::try_from(output.index()).expect("output indices are representable as i64"),
-        ":account_id": account_id.0,
+        ":account_id": output.account_id().0,
         ":diversifier": diversifier.as_array(),
         ":value": output.note().value().inner(),
         ":rho": output.note().rho().to_bytes(),
@@ -311,13 +304,12 @@ pub(crate) fn put_received_note<T: ReceivedOrchardOutput<AccountId = AccountUuid
 pub(crate) fn get_orchard_nullifiers(
     conn: &Connection,
     query: NullifierQuery,
-) -> Result<Vec<(AccountUuid, Nullifier)>, SqliteClientError> {
+) -> Result<Vec<(AccountId, Nullifier)>, SqliteClientError> {
     // Get the nullifiers for the notes we are tracking
     let mut stmt_fetch_nullifiers = match query {
         NullifierQuery::Unspent => conn.prepare(
-            "SELECT a.uuid, rn.nf
+            "SELECT rn.account_id, rn.nf
              FROM orchard_received_notes rn
-             JOIN accounts a ON a.id = rn.account_id
              JOIN transactions tx ON tx.id_tx = rn.tx
              WHERE rn.nf IS NOT NULL
              AND tx.block IS NOT NULL
@@ -330,15 +322,14 @@ pub(crate) fn get_orchard_nullifiers(
              )",
         )?,
         NullifierQuery::All => conn.prepare(
-            "SELECT a.uuid, rn.nf
+            "SELECT rn.account_id, rn.nf
              FROM orchard_received_notes rn
-             JOIN accounts a ON a.id = rn.account_id
              WHERE nf IS NOT NULL",
         )?,
     };
 
     let nullifiers = stmt_fetch_nullifiers.query_and_then([], |row| {
-        let account = AccountUuid(row.get(0)?);
+        let account = AccountId(row.get(0)?);
         let nf_bytes: [u8; 32] = row.get(1)?;
         Ok::<_, rusqlite::Error>((account, Nullifier::from_bytes(&nf_bytes).unwrap()))
     })?;
@@ -350,19 +341,18 @@ pub(crate) fn get_orchard_nullifiers(
 pub(crate) fn detect_spending_accounts<'a>(
     conn: &Connection,
     nfs: impl Iterator<Item = &'a Nullifier>,
-) -> Result<HashSet<AccountUuid>, rusqlite::Error> {
+) -> Result<HashSet<AccountId>, rusqlite::Error> {
     let mut account_q = conn.prepare_cached(
-        "SELECT a.uuid
-         FROM orchard_received_notes rn
-         JOIN accounts a ON a.id = rn.account_id
-         WHERE rn.nf IN rarray(:nf_ptr)",
+        "SELECT rn.account_id
+        FROM orchard_received_notes rn
+        WHERE rn.nf IN rarray(:nf_ptr)",
     )?;
 
     let nf_values: Vec<Value> = nfs.map(|nf| Value::Blob(nf.to_bytes().to_vec())).collect();
     let nf_ptr = Rc::new(nf_values);
     let res = account_q
         .query_and_then(named_params![":nf_ptr": &nf_ptr], |row| {
-            row.get(0).map(AccountUuid)
+            row.get::<_, u32>(0).map(AccountId)
         })?
         .collect::<Result<HashSet<_>, _>>()?;
 

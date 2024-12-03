@@ -1,13 +1,29 @@
-use incrementalmerkletree::{Marking, Position, Retention};
-
-use secrecy::SecretVec;
-use shardtree::{error::ShardTreeError, store::ShardStore};
-
 use std::cmp::{max, min};
-
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap},
     ops::Range,
+};
+
+use incrementalmerkletree::{Marking, Position, Retention};
+use rayon::prelude::*;
+use secrecy::ExposeSecret;
+use secrecy::SecretVec;
+use shardtree::store::ShardStore;
+use zcash_client_backend::{
+    address::UnifiedAddress,
+    data_api::{
+        chain::ChainState,
+        scanning::{ScanPriority, ScanRange},
+        AccountPurpose, AccountSource, TransactionStatus, WalletCommitmentTrees as _,
+        SAPLING_SHARD_HEIGHT,
+    },
+    data_api::{
+        AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction,
+        SentTransactionOutput, WalletRead, WalletWrite,
+    },
+    keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
+    wallet::{NoteId, Recipient, WalletTransparentOutput},
+    TransferType,
 };
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -21,34 +37,17 @@ use zcash_protocol::{
     PoolType,
     ShieldedProtocol::{self, Sapling},
 };
-
+use zip32::fingerprint::SeedFingerprint;
 #[cfg(feature = "orchard")]
-use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
-use zcash_client_backend::{
-    address::UnifiedAddress,
-    data_api::{
-        chain::ChainState,
-        scanning::{ScanPriority, ScanRange},
-        AccountPurpose, AccountSource, TransactionStatus, WalletCommitmentTrees as _,
-        SAPLING_SHARD_HEIGHT,
-    },
-    keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
-    wallet::{NoteId, Recipient, WalletTransparentOutput},
-    TransferType,
-};
-
-use zcash_client_backend::data_api::{
-    AccountBirthday, DecryptedTransaction, ScannedBlock, SentTransaction, SentTransactionOutput,
-    WalletRead, WalletWrite,
+use {
+    shardtree::error::ShardTreeError, std::collections::BTreeMap,
+    zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT,
 };
 
 use crate::{
-    error::Error, PRUNING_DEPTH, VERIFY_LOOKAHEAD,
+    error::Error, MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote, PRUNING_DEPTH,
+    VERIFY_LOOKAHEAD,
 };
-use crate::{MemoryWalletBlock, MemoryWalletDb, Nullifier, ReceivedNote};
-use rayon::prelude::*;
-
-use {secrecy::ExposeSecret, zip32::fingerprint::SeedFingerprint};
 
 #[cfg(feature = "orchard")]
 use zcash_protocol::ShieldedProtocol::Orchard;
@@ -92,7 +91,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 },
                 ufvk,
                 birthday.clone(),
-                AccountPurpose::Spending,
             )?;
 
             Ok((id, usk))
@@ -276,11 +274,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
         blocks: Vec<ScannedBlock<Self::AccountId>>,
     ) -> Result<(), Self::Error> {
         tracing::debug!("put_blocks");
-        // TODO:
-        // - Make sure blocks are coming in order.
-        // - Make sure the first block in the sequence is tip + 1?
-        // - Add a check to make sure the blocks are not already in the data store.
-        // let _start_height = blocks.first().map(|b| b.height());
         let mut last_scanned_height = None;
         struct BlockPositions {
             height: BlockHeight,
@@ -432,8 +425,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             #[cfg(feature = "orchard")]
             orchard_commitments.extend(block_commitments.orchard.into_iter().map(Some));
         }
-
-        // TODO: Prune the nullifier map of entries we no longer need.
 
         if let Some((start_positions, last_scanned_height)) =
             start_positions.zip(last_scanned_height)
@@ -591,8 +582,6 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
                 &note_positions,
             )?;
         }
-
-        // We can do some pruning of the tx_locator_map here
 
         Ok(())
     }
@@ -1073,7 +1062,6 @@ Instead derive the ufvk in the calling code and import it using `import_account_
             AccountSource::Imported { purpose },
             unified_key.to_owned(),
             birthday.clone(),
-            purpose,
         )?;
         Ok(account)
     }
@@ -1098,11 +1086,11 @@ Instead derive the ufvk in the calling code and import it using `import_account_
                 }
             }
             // Mark orchard notes as spent
-            if let Some(bundle) = sent_tx.tx().orchard_bundle() {
+            if let Some(_bundle) = sent_tx.tx().orchard_bundle() {
                 #[cfg(feature = "orchard")]
                 {
                     detectable_via_scanning = true;
-                    for action in bundle.actions() {
+                    for action in _bundle.actions() {
                         match self.mark_orchard_note_spent(*action.nullifier(), sent_tx.tx().txid())
                         {
                             Ok(()) => {}
@@ -1211,13 +1199,14 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     }
 }
 
+#[cfg(feature = "transparent-inputs")]
 fn range_from(i: u32, n: u32) -> Range<u32> {
     let first = min(1 << 31, i);
     let last = min(1 << 31, i.saturating_add(n));
     first..last
 }
 
-use zcash_client_backend::wallet::{Note};
+use zcash_client_backend::wallet::Note;
 use zcash_keys::address::Receiver;
 use zcash_keys::encoding::AddressCodec;
 use zcash_keys::keys::AddressGenerationError;

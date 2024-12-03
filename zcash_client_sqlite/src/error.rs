@@ -11,7 +11,8 @@ use zcash_keys::keys::AddressGenerationError;
 use zcash_primitives::zip32;
 use zcash_primitives::{consensus::BlockHeight, transaction::components::amount::BalanceError};
 
-use crate::{wallet::commitment_tree, AccountUuid};
+use crate::wallet::commitment_tree;
+use crate::AccountId;
 
 #[cfg(feature = "transparent-inputs")]
 use {
@@ -78,7 +79,7 @@ pub enum SqliteClientError {
 
     /// The account being added collides with an existing account in the wallet with the given ID.
     /// The collision can be on the seed and ZIP-32 account index, or a shared FVK component.
-    AccountCollision(AccountUuid),
+    AccountCollision(AccountId),
 
     /// The account was imported, and ZIP-32 derivation information is not known for it.
     UnknownZip32Derivation,
@@ -89,8 +90,12 @@ pub enum SqliteClientError {
     /// An error occurred while processing an account due to a failure in deriving the account's keys.
     BadAccountData(String),
 
-    /// A caller attempted to construct a new account with an invalid ZIP 32 account identifier.
-    Zip32AccountIndexOutOfRange,
+    /// A caller attempted to initialize the accounts table with a discontinuous
+    /// set of account identifiers.
+    AccountIdDiscontinuity,
+
+    /// A caller attempted to construct a new account with an invalid account identifier.
+    AccountIdOutOfRange,
 
     /// The address associated with a record being inserted was not recognized as
     /// belonging to the wallet.
@@ -121,10 +126,10 @@ pub enum SqliteClientError {
     NoteFilterInvalid(NoteFilter),
 
     /// The proposal cannot be constructed until transactions with previously reserved
-    /// ephemeral address outputs have been mined. The parameters are the account UUID and
+    /// ephemeral address outputs have been mined. The parameters are the account id and
     /// the index that could not safely be reserved.
     #[cfg(feature = "transparent-inputs")]
-    ReachedGapLimit(AccountUuid, u32),
+    ReachedGapLimit(AccountId, u32),
 
     /// An ephemeral address would be reused. The parameters are the address in string
     /// form, and the txid of the earliest transaction in which it is known to have been
@@ -174,10 +179,11 @@ impl fmt::Display for SqliteClientError {
             SqliteClientError::AddressGeneration(e) => write!(f, "{}", e),
             SqliteClientError::AccountUnknown => write!(f, "The account with the given ID does not belong to this wallet."),
             SqliteClientError::UnknownZip32Derivation => write!(f, "ZIP-32 derivation information is not known for this account."),
-            SqliteClientError::KeyDerivationError(zip32_index) => write!(f, "Key derivation failed for ZIP 32 account index {}", u32::from(*zip32_index)),
+            SqliteClientError::KeyDerivationError(acct_id) => write!(f, "Key derivation failed for account {}", u32::from(*acct_id)),
             SqliteClientError::BadAccountData(e) => write!(f, "Failed to add account: {}", e),
-            SqliteClientError::Zip32AccountIndexOutOfRange => write!(f, "ZIP 32 account identifiers must be less than 0x7FFFFFFF."),
-            SqliteClientError::AccountCollision(account_uuid) => write!(f, "An account corresponding to the data provided already exists in the wallet with UUID {account_uuid:?}."),
+            SqliteClientError::AccountIdDiscontinuity => write!(f, "Wallet account identifiers must be sequential."),
+            SqliteClientError::AccountIdOutOfRange => write!(f, "Wallet account identifiers must be less than 0x7FFFFFFF."),
+            SqliteClientError::AccountCollision(id) => write!(f, "An account corresponding to the data provided already exists in the wallet with internal identifier {}.", id.0),
             #[cfg(feature = "transparent-inputs")]
             SqliteClientError::AddressNotRecognized(_) => write!(f, "The address associated with a received txo is not identifiable as belonging to the wallet."),
             SqliteClientError::CommitmentTree(err) => write!(f, "An error occurred accessing or updating note commitment tree data: {}.", err),

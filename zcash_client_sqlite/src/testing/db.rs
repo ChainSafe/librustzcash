@@ -35,7 +35,7 @@ use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork, memo
 use crate::{
     error::SqliteClientError,
     wallet::init::{init_wallet_db, init_wallet_db_internal},
-    AccountUuid, WalletDb,
+    AccountId, WalletDb,
 };
 
 #[cfg(feature = "transparent-inputs")]
@@ -163,7 +163,7 @@ impl TestDbFactory {
 
 impl DataStoreFactory for TestDbFactory {
     type Error = ();
-    type AccountId = AccountUuid;
+    type AccountId = AccountId;
     type Account = crate::wallet::Account;
     type DsError = SqliteClientError;
     type DataStore = TestDb;

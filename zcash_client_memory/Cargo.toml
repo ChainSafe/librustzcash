@@ -7,6 +7,7 @@ license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 categories.workspace = true
+build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -35,7 +36,6 @@ nonempty.workspace = true
 prost.workspace = true
 group.workspace = true
 jubjub.workspace = true
-serde = { workspace = true, features = ["rc"] }
 
 # - Secret management
 secrecy.workspace = true
@@ -54,18 +54,19 @@ shardtree = { workspace = true, features = ["legacy-api"] }
 thiserror = "1.0.61"
 
 rayon.workspace = true
-serde_with = "3.9.0"
 async-trait = { version = "0.1" }
 
 # - Test dependencies
 proptest = { workspace = true, optional = true }
 wasm_sync = "0.1.2"
 time.workspace = true
+bytes = "1.9.0"
 
 [dev-dependencies]
 ciborium = "0.2.2"
 serde_json.workspace = true
 postcard = { version = "1.0.10", features = ["alloc"] }
+pretty_assertions = "1.4.1"
 
 
 [features]
@@ -89,3 +90,6 @@ transparent-inputs = ["dep:bip32", "zcash_keys/transparent-inputs", "zcash_clien
 ## Exposes unstable APIs. Their behaviour may change at any time.
 unstable = ["zcash_client_backend/unstable"]
 
+[build-dependencies]
+prost-build = "0.13.3"
+which = "6"

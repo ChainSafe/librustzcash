@@ -1,14 +1,12 @@
-use zcash_client_backend::data_api::{
-    AccountMeta, InputSource, NoteFilter, PoolMeta, TransactionStatus, WalletRead,
+use zcash_client_backend::{
+    data_api::{AccountMeta, InputSource, NoteFilter, PoolMeta, TransactionStatus, WalletRead},
+    wallet::NoteId,
 };
-
 use zcash_primitives::transaction::components::OutPoint;
+#[cfg(feature = "orchard")]
+use zcash_protocol::ShieldedProtocol::Orchard;
 use zcash_protocol::{
-    consensus,
-    consensus::BlockHeight,
-    value::Zatoshis,
-    ShieldedProtocol,
-    ShieldedProtocol::{Orchard, Sapling},
+    consensus, consensus::BlockHeight, value::Zatoshis, ShieldedProtocol, ShieldedProtocol::Sapling,
 };
 #[cfg(feature = "transparent-inputs")]
 use {
@@ -16,7 +14,7 @@ use {
     zcash_primitives::legacy::TransparentAddress,
 };
 
-use crate::{error::Error, to_spendable_notes, AccountId, MemoryWalletDb, NoteId};
+use crate::{error::Error, to_spendable_notes, AccountId, MemoryWalletDb};
 
 impl<P: consensus::Parameters> InputSource for MemoryWalletDb<P> {
     type Error = crate::error::Error;

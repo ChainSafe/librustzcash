@@ -16,9 +16,7 @@ use zcash_primitives::{
 };
 use zcash_protocol::consensus;
 
-use crate::wallet::{self, get_account_ref};
-use crate::AccountUuid;
-use crate::{error::SqliteClientError, AccountRef, TxRef};
+use crate::{error::SqliteClientError, AccountId, TxRef};
 
 // Returns `TransparentAddressMetadata` in the ephemeral scope for the
 // given address index.
@@ -29,7 +27,7 @@ pub(crate) fn metadata(address_index: NonHardenedChildIndex) -> TransparentAddre
 /// Returns the first unstored ephemeral address index in the given account.
 pub(crate) fn first_unstored_index(
     conn: &rusqlite::Connection,
-    account_id: AccountRef,
+    account_id: AccountId,
 ) -> Result<u32, SqliteClientError> {
     match conn
         .query_row(
@@ -53,7 +51,7 @@ pub(crate) fn first_unstored_index(
 /// Returns the first unreserved ephemeral address index in the given account.
 pub(crate) fn first_unreserved_index(
     conn: &rusqlite::Connection,
-    account_id: AccountRef,
+    account_id: AccountId,
 ) -> Result<u32, SqliteClientError> {
     first_unstored_index(conn, account_id)?
         .checked_sub(GAP_LIMIT)
@@ -66,7 +64,7 @@ pub(crate) fn first_unreserved_index(
 /// would violate the gap invariant if used.
 pub(crate) fn first_unsafe_index(
     conn: &rusqlite::Connection,
-    account_id: AccountRef,
+    account_id: AccountId,
 ) -> Result<u32, SqliteClientError> {
     // The inner join with `transactions` excludes addresses for which
     // `seen_in_tx` is NULL. The query also excludes addresses observed
@@ -114,7 +112,7 @@ pub(crate) fn range_from(i: u32, n: u32) -> Range<u32> {
 pub(crate) fn get_ephemeral_ivk<P: consensus::Parameters>(
     conn: &rusqlite::Connection,
     params: &P,
-    account_id: AccountRef,
+    account_id: AccountId,
 ) -> Result<Option<EphemeralIvk>, SqliteClientError> {
     let ufvk = conn
         .query_row(
@@ -151,21 +149,18 @@ pub(crate) fn get_ephemeral_ivk<P: consensus::Parameters>(
 pub(crate) fn get_known_ephemeral_addresses<P: consensus::Parameters>(
     conn: &rusqlite::Connection,
     params: &P,
-    account_id: AccountRef,
+    account_id: AccountId,
     index_range: Option<Range<u32>>,
 ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, SqliteClientError> {
     let index_range = index_range.unwrap_or(0..(1 << 31));
 
     let mut stmt = conn.prepare(
-        "SELECT address, address_index 
-         FROM ephemeral_addresses ea
-         WHERE ea.account_id = :account_id
-         AND address_index >= :start 
-         AND address_index < :end
+        "SELECT address, address_index FROM ephemeral_addresses
+         WHERE account_id = :account AND address_index >= :start AND address_index < :end
          ORDER BY address_index",
     )?;
     let mut rows = stmt.query(named_params![
-        ":account_id": account_id.0,
+        ":account": account_id.0,
         ":start": index_range.start,
         ":end": min(1 << 31, index_range.end),
     ])?;
@@ -187,15 +182,12 @@ pub(crate) fn get_known_ephemeral_addresses<P: consensus::Parameters>(
 pub(crate) fn find_account_for_ephemeral_address_str(
     conn: &rusqlite::Connection,
     address_str: &str,
-) -> Result<Option<AccountUuid>, SqliteClientError> {
+) -> Result<Option<AccountId>, SqliteClientError> {
     Ok(conn
         .query_row(
-            "SELECT accounts.uuid 
-             FROM ephemeral_addresses ea
-             JOIN accounts ON accounts.id = ea.account_id
-             WHERE address = :address",
+            "SELECT account_id FROM ephemeral_addresses WHERE address = :address",
             named_params![":address": &address_str],
-            |row| Ok(AccountUuid(row.get(0)?)),
+            |row| Ok(AccountId(row.get(0)?)),
         )
         .optional()?)
 }
@@ -203,10 +195,9 @@ pub(crate) fn find_account_for_ephemeral_address_str(
 /// If this is a known ephemeral address in the given account, return its index.
 pub(crate) fn find_index_for_ephemeral_address_str(
     conn: &rusqlite::Connection,
-    account_uuid: AccountUuid,
+    account_id: AccountId,
     address_str: &str,
 ) -> Result<Option<NonHardenedChildIndex>, SqliteClientError> {
-    let account_id = get_account_ref(conn, account_uuid)?;
     Ok(conn
         .query_row(
             "SELECT address_index FROM ephemeral_addresses
@@ -237,7 +228,7 @@ pub(crate) fn find_index_for_ephemeral_address_str(
 pub(crate) fn reserve_next_n_ephemeral_addresses<P: consensus::Parameters>(
     conn: &rusqlite::Transaction,
     params: &P,
-    account_id: AccountRef,
+    account_id: AccountId,
     n: usize,
 ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, SqliteClientError> {
     if n == 0 {
@@ -255,9 +246,8 @@ pub(crate) fn reserve_next_n_ephemeral_addresses<P: consensus::Parameters>(
         return Err(AddressGenerationError::DiversifierSpaceExhausted.into());
     }
     if allocation.end > first_unsafe {
-        let account_uuid = wallet::get_account_uuid(conn, account_id)?;
         return Err(SqliteClientError::ReachedGapLimit(
-            account_uuid,
+            account_id,
             max(first_unreserved, first_unsafe),
         ));
     }
@@ -270,7 +260,7 @@ pub(crate) fn reserve_next_n_ephemeral_addresses<P: consensus::Parameters>(
 pub(crate) fn init_account<P: consensus::Parameters>(
     conn: &rusqlite::Transaction,
     params: &P,
-    account_id: AccountRef,
+    account_id: AccountId,
 ) -> Result<(), SqliteClientError> {
     reserve_until(conn, params, account_id, 0)
 }
@@ -287,7 +277,7 @@ pub(crate) fn init_account<P: consensus::Parameters>(
 fn reserve_until<P: consensus::Parameters>(
     conn: &rusqlite::Transaction,
     params: &P,
-    account_id: AccountRef,
+    account_id: AccountId,
     next_to_reserve: u32,
 ) -> Result<(), SqliteClientError> {
     assert!(next_to_reserve <= 1 << 31);
@@ -401,7 +391,7 @@ pub(crate) fn mark_ephemeral_address_as_used<P: consensus::Parameters>(
              WHERE address = :address
              RETURNING account_id, address_index",
             named_params![":tx_ref": tx_ref.0, ":address": address_str],
-            |row| Ok((AccountRef(row.get::<_, u32>(0)?), row.get::<_, u32>(1)?)),
+            |row| Ok((AccountId(row.get::<_, u32>(0)?), row.get::<_, u32>(1)?)),
         )
         .optional()?;
 
@@ -454,7 +444,7 @@ pub(crate) fn mark_ephemeral_address_as_seen<P: consensus::Parameters>(
              WHERE address = :address
              RETURNING account_id, address_index",
             named_params![":seen_in_tx": &earlier_ref, ":address": address_str],
-            |row| Ok((AccountRef(row.get::<_, u32>(0)?), row.get::<_, u32>(1)?)),
+            |row| Ok((AccountId(row.get::<_, u32>(0)?), row.get::<_, u32>(1)?)),
         )
         .optional()?;
 
