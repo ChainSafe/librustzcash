@@ -928,4 +928,3 @@ pub mod compact_tx_streamer_client {
         }
     }
 }
-
