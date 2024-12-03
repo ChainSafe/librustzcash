@@ -4,21 +4,10 @@ use prost::Message;
 use transparent::ReceivedTransparentOutput;
 
 use super::*;
+use crate::error::Result;
 use crate::proto::memwallet as proto;
+use crate::read_optional;
 use crate::wallet_commitment_trees::serialization::{tree_from_protobuf, tree_to_protobuf};
-
-type Result<T> = std::result::Result<T, Error>;
-
-/// Helper macro for reading optional fields from a protobuf messages
-/// it will return a Result type with a custom error based on the
-/// field name
-macro_rules! read_optional {
-    ($proto:expr, $field:ident) => {
-        $proto
-            .$field
-            .ok_or(Error::ProtoMissingField(stringify!($field)))
-    };
-}
 
 impl<P: Parameters> MemoryWalletDb<P> {
     /// Encode a memory wallet db as a protobuf byte buffer
@@ -95,7 +84,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .map(|proto_tx| {
                     let txid = read_optional!(proto_tx, tx_id)?;
                     let tx = read_optional!(proto_tx, tx_entry)?;
-                    Ok((txid.into(), tx.into()))
+                    Ok((txid.into(), tx.try_into()?))
                 })
                 .collect::<Result<_>>()?,
         );
@@ -104,8 +93,8 @@ impl<P: Parameters> MemoryWalletDb<P> {
             proto_wallet
                 .received_note_table
                 .into_iter()
-                .map(ReceivedNote::from)
-                .collect(),
+                .map(ReceivedNote::try_from)
+                .collect::<Result<_>>()?,
         );
 
         wallet.received_note_spends = ReceievedNoteSpends(
@@ -127,7 +116,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .map(|proto_nullifier| {
                     let block_height = proto_nullifier.block_height.into();
                     let tx_index = proto_nullifier.tx_index;
-                    let nullifier = read_optional!(proto_nullifier, nullifier)?.into();
+                    let nullifier = read_optional!(proto_nullifier, nullifier)?.try_into()?;
                     Ok((nullifier, (block_height, tx_index)))
                 })
                 .collect::<Result<_>>()?,
@@ -204,7 +193,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .into_iter()
                 .map(|proto_output| {
                     let outpoint = read_optional!(proto_output, outpoint)?;
-                    let output = read_optional!(proto_output, output)?;
+                    let output = read_optional!(proto_output, output)?.try_into()?;
                     Ok((
                         OutPoint::from(outpoint),
                         ReceivedTransparentOutput::from(output),
@@ -241,8 +230,8 @@ impl<P: Parameters> MemoryWalletDb<P> {
             proto_wallet
                 .transaction_data_requests
                 .into_iter()
-                .map(Into::into)
-                .collect(),
+                .map(TryInto::try_into)
+                .collect::<Result<_>>()?,
         );
 
         Ok(wallet)

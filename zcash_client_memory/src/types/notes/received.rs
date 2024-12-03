@@ -106,7 +106,11 @@ impl ReceivedNote {
                 note: Note::Sapling(note.clone()),
                 nf: None,
                 is_change: true,
-                memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                memo: output
+                    .memo()
+                    .map(|m| Memo::try_from(m))
+                    .transpose()?
+                    .expect("expected a memo for a non-transparent output"),
                 commitment_tree_position: None,
                 recipient_key_scope: Some(Scope::Internal),
             }),
@@ -123,7 +127,11 @@ impl ReceivedNote {
                 note: Note::Orchard(*note),
                 nf: None,
                 is_change: true,
-                memo: output.memo().map(|m| Memo::try_from(m).unwrap()).unwrap(),
+                memo: output
+                    .memo()
+                    .map(|m| Memo::try_from(m))
+                    .transpose()?
+                    .expect("expected a memo for a non-transparent output"),
                 commitment_tree_position: None,
                 recipient_key_scope: Some(Scope::Internal),
             }),
@@ -353,7 +361,7 @@ impl From<&NoteId> for SentNoteId {
 
 mod serialization {
     use super::*;
-    use crate::proto::memwallet as proto;
+    use crate::{proto::memwallet as proto, read_optional};
 
     impl From<ReceivedNote> for proto::ReceivedNote {
         fn from(value: ReceivedNote) -> Self {
@@ -376,24 +384,26 @@ mod serialization {
         }
     }
 
-    impl From<proto::ReceivedNote> for ReceivedNote {
-        fn from(value: proto::ReceivedNote) -> Self {
-            Self {
-                note_id: value.note_id.unwrap().into(),
-                txid: value.tx_id.unwrap().into(),
+    impl TryFrom<proto::ReceivedNote> for ReceivedNote {
+        type Error = Error;
+
+        fn try_from(value: proto::ReceivedNote) -> Result<ReceivedNote, Error> {
+            Ok(Self {
+                note_id: read_optional!(value, note_id)?.into(),
+                txid: read_optional!(value, tx_id)?.into(),
                 output_index: value.output_index,
                 account_id: value.account_id.into(),
-                note: value.note.unwrap().into(),
-                nf: value.nullifier.map(|nf| nf.into()),
+                note: read_optional!(value, note)?.into(),
+                nf: value.nullifier.map(|nf| nf.try_into()).transpose()?,
                 is_change: value.is_change,
-                memo: Memo::from_bytes(&value.memo).unwrap(),
+                memo: Memo::from_bytes(&value.memo)?,
                 commitment_tree_position: value.commitment_tree_position.map(|pos| pos.into()),
                 recipient_key_scope: match value.recipient_key_scope {
                     Some(0) => Some(Scope::Internal),
                     Some(1) => Some(Scope::External),
                     _ => None,
                 },
-            }
+            })
         }
     }
 }

@@ -260,7 +260,7 @@ impl TxLocatorMap {
 
 mod serialization {
     use super::*;
-    use crate::proto::memwallet as proto;
+    use crate::{proto::memwallet as proto, read_optional};
 
     impl From<TransactionEntry> for proto::TransactionEntry {
         fn from(entry: TransactionEntry) -> Self {
@@ -288,25 +288,27 @@ mod serialization {
         }
     }
 
-    impl From<proto::TransactionEntry> for TransactionEntry {
-        fn from(entry: proto::TransactionEntry) -> Self {
-            Self {
+    impl TryFrom<proto::TransactionEntry> for TransactionEntry {
+        type Error = Error;
+
+        fn try_from(entry: proto::TransactionEntry) -> Result<Self, Self::Error> {
+            Ok(Self {
                 tx_status: match entry.tx_status() {
                     proto::TransactionStatus::TxidNotRecognized => {
                         TransactionStatus::TxidNotRecognized
                     }
                     proto::TransactionStatus::NotInMainChain => TransactionStatus::NotInMainChain,
                     proto::TransactionStatus::Mined => {
-                        TransactionStatus::Mined(entry.mined_height.unwrap().into())
+                        TransactionStatus::Mined(read_optional!(entry, mined_height)?.into())
                     }
                 },
                 block: entry.block.map(Into::into),
                 tx_index: entry.tx_index.map(Into::into),
                 expiry_height: entry.expiry_height.map(Into::into),
                 raw: entry.raw_tx,
-                fee: entry.fee.map(|fee| fee.try_into().unwrap()),
+                fee: entry.fee.map(|fee| fee.try_into()).transpose()?,
                 _target_height: entry.target_height.map(Into::into),
-            }
+            })
         }
     }
 }

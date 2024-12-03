@@ -60,7 +60,7 @@ impl From<orchard::note::Nullifier> for Nullifier {
 
 mod serialization {
     use super::*;
-    use crate::proto::memwallet as proto;
+    use crate::{proto::memwallet as proto, Error};
 
     impl From<Nullifier> for proto::Nullifier {
         fn from(nullifier: Nullifier) -> Self {
@@ -78,18 +78,19 @@ mod serialization {
         }
     }
 
-    impl From<proto::Nullifier> for Nullifier {
-        fn from(nullifier: proto::Nullifier) -> Self {
-            match nullifier.protocol {
-                0 => Nullifier::Sapling(
-                    sapling::Nullifier::from_slice(&nullifier.nullifier).unwrap(),
-                ),
+    impl TryFrom<proto::Nullifier> for Nullifier {
+        type Error = Error;
+
+        fn try_from(nullifier: proto::Nullifier) -> Result<Self, Self::Error> {
+            Ok(match nullifier.protocol {
+                0 => Nullifier::Sapling(sapling::Nullifier::from_slice(&nullifier.nullifier)?),
                 1 => Nullifier::Orchard(
-                    orchard::note::Nullifier::from_bytes(&nullifier.nullifier.try_into().unwrap())
-                        .unwrap(),
+                    orchard::note::Nullifier::from_bytes(&nullifier.nullifier.try_into()?)
+                        .into_option()
+                        .ok_or(Error::CorruptedData("Invalid Orchard nullifier".into()))?,
                 ),
                 _ => panic!("invalid protocol"),
-            }
+            })
         }
     }
 }

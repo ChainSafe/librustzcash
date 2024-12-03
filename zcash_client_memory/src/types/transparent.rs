@@ -157,7 +157,7 @@ impl Deref for TransparentSpendCache {
 
 mod serialization {
     use super::*;
-    use crate::proto::memwallet as proto;
+    use crate::{proto::memwallet as proto, read_optional};
     use zcash_keys::encoding::AddressCodec;
     use zcash_primitives::{consensus::Network::MainNetwork as EncodingParams, legacy::Script};
     use zcash_protocol::value::Zatoshis;
@@ -174,15 +174,17 @@ mod serialization {
         }
     }
 
-    impl From<proto::ReceivedTransparentOutput> for ReceivedTransparentOutput {
-        fn from(output: proto::ReceivedTransparentOutput) -> Self {
-            Self {
-                transaction_id: TxId::from_bytes(output.transaction_id.clone().try_into().unwrap()),
+    impl TryFrom<proto::ReceivedTransparentOutput> for ReceivedTransparentOutput {
+        type Error = crate::Error;
+
+        fn try_from(output: proto::ReceivedTransparentOutput) -> Result<Self, Self::Error> {
+            Ok(Self {
+                transaction_id: TxId::from_bytes(output.transaction_id.clone().try_into()?),
                 account_id: output.account_id.into(),
-                address: TransparentAddress::decode(&EncodingParams, &output.address).unwrap(),
-                txout: output.txout.unwrap().into(),
+                address: TransparentAddress::decode(&EncodingParams, &output.address)?,
+                txout: read_optional!(output, txout)?.try_into()?,
                 max_observed_unspent_height: output.max_observed_unspent_height.map(|h| h.into()),
-            }
+            })
         }
     }
 
@@ -195,12 +197,14 @@ mod serialization {
         }
     }
 
-    impl From<proto::TxOut> for TxOut {
-        fn from(txout: proto::TxOut) -> Self {
-            Self {
+    impl TryFrom<proto::TxOut> for TxOut {
+        type Error = crate::Error;
+
+        fn try_from(txout: proto::TxOut) -> Result<Self, Self::Error> {
+            Ok(Self {
                 script_pubkey: Script(txout.script),
-                value: Zatoshis::try_from(txout.value).unwrap(),
-            }
+                value: Zatoshis::try_from(txout.value)?,
+            })
         }
     }
 }

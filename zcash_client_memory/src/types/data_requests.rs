@@ -2,6 +2,7 @@ use std::{collections::VecDeque, ops::Deref};
 
 use zcash_client_backend::data_api::TransactionDataRequest;
 use zcash_primitives::transaction::TxId;
+
 #[derive(Debug, Default, PartialEq)]
 pub struct TransactionDataRequestQueue(pub(crate) VecDeque<TransactionDataRequest>);
 
@@ -25,7 +26,7 @@ impl Deref for TransactionDataRequestQueue {
 
 mod serialization {
     use super::*;
-    use crate::proto::memwallet as proto;
+    use crate::{error::Error, proto::memwallet as proto, read_optional};
     use zcash_keys::encoding::AddressCodec;
     use zcash_primitives::{
         consensus::Network::MainNetwork as EncodingParams, legacy::TransparentAddress,
@@ -63,22 +64,23 @@ mod serialization {
         }
     }
 
-    impl From<proto::TransactionDataRequest> for TransactionDataRequest {
-        fn from(request: proto::TransactionDataRequest) -> Self {
-            match request.request_type {
-                0 => TransactionDataRequest::GetStatus(request.tx_id.unwrap().into()),
-                1 => TransactionDataRequest::Enhancement(request.tx_id.unwrap().into()),
+    impl TryFrom<proto::TransactionDataRequest> for TransactionDataRequest {
+        type Error = crate::Error;
+
+        fn try_from(request: proto::TransactionDataRequest) -> Result<Self, crate::Error> {
+            Ok(match request.request_type {
+                0 => TransactionDataRequest::GetStatus(read_optional!(request, tx_id)?.into()),
+                1 => TransactionDataRequest::Enhancement(read_optional!(request, tx_id)?.into()),
                 2 => TransactionDataRequest::SpendsFromAddress {
                     address: TransparentAddress::decode(
                         &EncodingParams,
-                        &String::from_utf8(request.address.unwrap()).unwrap(),
-                    )
-                    .unwrap(),
-                    block_range_start: request.block_range_start.unwrap().into(),
-                    block_range_end: request.block_range_end.map(Into::into),
+                        &String::from_utf8(read_optional!(request, address)?)?,
+                    )?,
+                    block_range_start: read_optional!(request, block_range_start)?.into(),
+                    block_range_end: Some(read_optional!(request, block_range_end)?.into()),
                 },
                 _ => panic!("invalid request type"),
-            }
+            })
         }
     }
 }
