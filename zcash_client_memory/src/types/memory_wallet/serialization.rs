@@ -55,27 +55,28 @@ impl<P: Parameters> MemoryWalletDb<P> {
                     .into_iter()
                     .map(|proto_account| {
                         let id = proto_account.account_id;
-                        let account = Account::from(proto_account);
-                        (AccountId::from(id), account)
+                        let account = Account::try_from(proto_account)?;
+                        Ok((AccountId::from(id), account))
                     })
-                    .collect();
-                Accounts {
+                    .collect::<Result<_>>()?;
+                Ok::<Accounts, Error>(Accounts {
                     accounts,
                     nonce: proto_accounts.account_nonce,
-                }
+                })
             })
+            .unwrap()
             .unwrap();
 
         wallet.blocks = proto_wallet
             .blocks
             .into_iter()
             .map(|proto_block| {
-                (
+                Ok((
                     proto_block.height.into(),
-                    MemoryWalletBlock::from(proto_block),
-                )
+                    MemoryWalletBlock::try_from(proto_block)?,
+                ))
             })
-            .collect();
+            .collect::<Result<_>>()?;
 
         wallet.tx_table = TransactionTable(
             proto_wallet
@@ -129,7 +130,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .map(|proto_sent_note| {
                     let sent_note_id = read_optional!(proto_sent_note, sent_note_id)?;
                     let sent_note = read_optional!(proto_sent_note, sent_note)?;
-                    Ok((sent_note_id.into(), SentNote::from(sent_note)))
+                    Ok((sent_note_id.into(), SentNote::try_from(sent_note)?))
                 })
                 .collect::<Result<_>>()?,
         );

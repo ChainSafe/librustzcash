@@ -6,6 +6,7 @@ use std::{
 use zcash_client_backend::wallet::NoteId;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 use zcash_protocol::memo::MemoBytes;
+
 /// Internal wallet representation of a Block.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct MemoryWalletBlock {
@@ -39,7 +40,9 @@ impl Ord for MemoryWalletBlock {
 
 mod serialization {
     use super::*;
+    use crate::error::{Error, Result};
     use crate::proto::memwallet as proto;
+    use crate::read_optional;
 
     impl From<MemoryWalletBlock> for proto::WalletBlock {
         fn from(block: MemoryWalletBlock) -> Self {
@@ -74,25 +77,26 @@ mod serialization {
         }
     }
 
-    impl From<proto::WalletBlock> for MemoryWalletBlock {
-        fn from(block: proto::WalletBlock) -> Self {
-            Self {
+    impl TryFrom<proto::WalletBlock> for MemoryWalletBlock {
+        type Error = crate::Error;
+        fn try_from(block: proto::WalletBlock) -> Result<Self> {
+            Ok(Self {
                 height: block.height.into(),
-                hash: BlockHash(block.hash.try_into().unwrap()),
+                hash: BlockHash(block.hash.try_into()?),
                 block_time: block.block_time,
                 _transactions: block
                     .transactions
                     .into_iter()
-                    .map(|txid| TxId::from_bytes(txid.try_into().unwrap()))
-                    .collect(),
+                    .map(|txid| Ok(TxId::from_bytes(txid.try_into()?)))
+                    .collect::<Result<_>>()?,
                 _memos: block
                     .memos
                     .into_iter()
                     .map(|memo| {
-                        let note_id = memo.note_id.unwrap();
-                        (
+                        let note_id = read_optional!(memo, note_id)?;
+                        Ok((
                             NoteId::new(
-                                note_id.tx_id.clone().unwrap().into(),
+                                read_optional!(note_id.clone(), tx_id)?.into(),
                                 match note_id.pool() {
                                     proto::PoolType::ShieldedSapling => {
                                         zcash_protocol::ShieldedProtocol::Sapling
@@ -105,17 +109,17 @@ mod serialization {
                                 },
                                 note_id.output_index as u16,
                             ),
-                            MemoBytes::from_bytes(&memo.memo).unwrap(),
-                        )
+                            MemoBytes::from_bytes(&memo.memo)?,
+                        ))
                     })
-                    .collect(),
+                    .collect::<Result<_>>()?,
                 sapling_commitment_tree_size: block.sapling_commitment_tree_size,
                 sapling_output_count: block.sapling_output_count,
                 #[cfg(feature = "orchard")]
                 orchard_commitment_tree_size: block.orchard_commitment_tree_size,
                 #[cfg(feature = "orchard")]
                 orchard_action_count: block.orchard_action_count,
-            }
+            })
         }
     }
 
@@ -143,7 +147,7 @@ mod serialization {
             };
 
             let proto: proto::WalletBlock = block.clone().into();
-            let recovered: MemoryWalletBlock = proto.clone().into();
+            let recovered: MemoryWalletBlock = proto.clone().try_into().unwrap();
 
             assert_eq!(block, recovered);
         }

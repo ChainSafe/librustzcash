@@ -5,26 +5,27 @@ use std::{
 
 use subtle::ConditionallySelectable;
 use zcash_address::ZcashAddress;
-use zcash_client_backend::data_api::{AccountBirthday, GAP_LIMIT};
 use zcash_client_backend::{
     address::UnifiedAddress,
-    data_api::{Account as _, AccountPurpose, AccountSource},
+    data_api::{Account as _, AccountBirthday, AccountPurpose, AccountSource, GAP_LIMIT},
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey},
-    wallet::NoteId,
+    wallet::{NoteId, TransparentAddressMetadata},
 };
-use zcash_keys::address::Receiver;
-use zcash_keys::keys::{AddressGenerationError, UnifiedIncomingViewingKey};
-use zcash_primitives::legacy::TransparentAddress;
-use zcash_primitives::transaction::TxId;
+use zcash_keys::{
+    address::Receiver,
+    keys::{AddressGenerationError, UnifiedIncomingViewingKey},
+};
+#[cfg(feature = "transparent-inputs")]
+use zcash_primitives::legacy::keys::IncomingViewingKey;
+use zcash_primitives::{
+    legacy::{
+        keys::{AccountPubKey, EphemeralIvk, NonHardenedChildIndex, TransparentKeyScope},
+        TransparentAddress,
+    },
+    transaction::TxId,
+};
 use zcash_protocol::consensus::NetworkType;
 use zip32::DiversifierIndex;
-#[cfg(feature = "transparent-inputs")]
-use {
-    zcash_client_backend::wallet::TransparentAddressMetadata,
-    zcash_primitives::legacy::keys::{
-        AccountPubKey, EphemeralIvk, IncomingViewingKey, NonHardenedChildIndex, TransparentKeyScope,
-    },
-};
 
 use crate::error::Error;
 
@@ -518,6 +519,7 @@ mod serialization {
 
     use super::*;
     use crate::proto::memwallet as proto;
+    use crate::read_optional;
 
     impl From<Accounts> for proto::Accounts {
         fn from(accounts: Accounts) -> Self {
@@ -539,7 +541,7 @@ mod serialization {
                 accounts: accounts
                     .accounts
                     .into_iter()
-                    .map(|acc| (AccountId(acc.account_id), acc.into()))
+                    .map(|acc| (AccountId(acc.account_id), acc.try_into().unwrap()))
                     .collect(),
             }
         }
@@ -571,7 +573,7 @@ mod serialization {
                     },
                 },
                 viewing_key: acc.viewing_key.encode(&EncodingParams),
-                birthday: Some(acc.birthday().clone().into()),
+                birthday: Some(acc.birthday().clone().try_into().unwrap()),
                 addresses: acc
                     .addresses()
                     .into_iter()
@@ -599,19 +601,21 @@ mod serialization {
         }
     }
 
-    impl From<proto::Account> for Account {
-        fn from(acc: proto::Account) -> Self {
-            Self {
+    impl TryFrom<proto::Account> for Account {
+        type Error = crate::Error;
+
+        fn try_from(acc: proto::Account) -> Result<Self, Self::Error> {
+            Ok(Self {
                 account_id: acc.account_id.into(),
                 kind: match acc.kind {
                     0 => AccountSource::Derived {
                         seed_fingerprint: SeedFingerprint::from_bytes(
-                            acc.seed_fingerprint().try_into().unwrap(),
+                            acc.seed_fingerprint().try_into()?,
                         ),
-                        account_index: acc.account_index.unwrap().try_into().unwrap(),
+                        account_index: read_optional!(acc, account_index)?.try_into()?,
                     },
                     1 => AccountSource::Imported {
-                        purpose: match acc.purpose.unwrap() {
+                        purpose: match read_optional!(acc, purpose)? {
                             0 => AccountPurpose::Spending,
                             1 => AccountPurpose::ViewOnly,
                             _ => unreachable!(),
@@ -620,63 +624,70 @@ mod serialization {
                     _ => unreachable!(),
                 },
                 viewing_key: UnifiedFullViewingKey::decode(&EncodingParams, &acc.viewing_key)
-                    .unwrap(),
-                birthday: acc.birthday.unwrap().into(),
+                    .map_err(Error::UfvkDecodeError)?,
+                birthday: read_optional!(acc, birthday)?.try_into()?,
                 addresses: acc
                     .addresses
                     .into_iter()
                     .map(|a| {
-                        (
-                            DiversifierIndex::from(
-                                TryInto::<[u8; 11]>::try_into(a.diversifier_index).unwrap(),
-                            ),
-                            UnifiedAddress::decode(&EncodingParams, &a.address).unwrap(),
-                        )
+                        Ok((
+                            DiversifierIndex::from(TryInto::<[u8; 11]>::try_into(
+                                a.diversifier_index,
+                            )?),
+                            UnifiedAddress::decode(&EncodingParams, &a.address)
+                                .map_err(Error::UfvkDecodeError)?,
+                        ))
                     })
-                    .collect(),
+                    .collect::<Result<_, Error>>()?,
                 #[cfg(feature = "transparent-inputs")]
                 ephemeral_addresses: acc
                     .ephemeral_addresses
                     .into_iter()
                     .map(|address_record| {
-                        let address = address_record.ephemeral_address.unwrap();
-                        (
+                        let address = read_optional!(address_record, ephemeral_address)?;
+                        Ok((
                             address_record.index,
                             EphemeralAddress {
                                 address: TransparentAddress::decode(
                                     &EncodingParams,
                                     &address.address,
-                                )
-                                .unwrap(),
+                                )?,
                                 used: address
                                     .used_in_tx
-                                    .map(|u| TxId::from_bytes(u.try_into().unwrap())),
+                                    .map::<Result<_, Error>, _>(|s| {
+                                        Ok(TxId::from_bytes(s.try_into()?))
+                                    })
+                                    .transpose()?,
                                 seen: address
                                     .seen_in_tx
-                                    .map(|s| TxId::from_bytes(s.try_into().unwrap())),
+                                    .map::<Result<_, Error>, _>(|s| {
+                                        Ok(TxId::from_bytes(s.try_into()?))
+                                    })
+                                    .transpose()?,
                             },
-                        )
+                        ))
                     })
-                    .collect(),
+                    .collect::<Result<_, Error>>()?,
                 #[cfg(not(feature = "transparent-inputs"))]
                 ephemeral_addresses: Default::default(),
                 _notes: Default::default(),
-            }
+            })
         }
     }
 
-    impl From<AccountBirthday> for proto::AccountBirthday {
-        fn from(birthday: AccountBirthday) -> Self {
+    impl TryFrom<AccountBirthday> for proto::AccountBirthday {
+        type Error = crate::Error;
+        fn try_from(birthday: AccountBirthday) -> Result<Self, Self::Error> {
             let cstate = birthday.prior_chain_state();
 
             let mut sapling_tree_bytes = vec![];
-            write_frontier_v1(&mut sapling_tree_bytes, cstate.final_sapling_tree()).unwrap();
+            write_frontier_v1(&mut sapling_tree_bytes, cstate.final_sapling_tree())?;
 
             let mut orchard_tree_bytes = vec![];
             #[cfg(feature = "orchard")]
-            write_frontier_v1(&mut orchard_tree_bytes, cstate.final_orchard_tree()).unwrap();
+            write_frontier_v1(&mut orchard_tree_bytes, cstate.final_orchard_tree())?;
 
-            Self {
+            Ok(Self {
                 prior_chain_state: Some(proto::ChainState {
                     block_height: cstate.block_height().into(),
                     block_hash: cstate.block_hash().0.to_vec(),
@@ -684,25 +695,26 @@ mod serialization {
                     final_orchard_tree: orchard_tree_bytes,
                 }),
                 recover_until: birthday.recover_until().map(|r| r.into()),
-            }
+            })
         }
     }
 
-    impl From<proto::AccountBirthday> for AccountBirthday {
-        fn from(birthday: proto::AccountBirthday) -> Self {
-            let cs = birthday.prior_chain_state.unwrap();
+    impl TryFrom<proto::AccountBirthday> for AccountBirthday {
+        type Error = crate::Error;
+        fn try_from(birthday: proto::AccountBirthday) -> Result<Self, Self::Error> {
+            let cs = read_optional!(birthday, prior_chain_state)?;
 
             let cstate = ChainState::new(
                 cs.block_height.into(),
                 BlockHash::from_slice(&cs.block_hash),
-                read_frontier_v1(&cs.final_sapling_tree[..]).unwrap(),
+                read_frontier_v1(&cs.final_sapling_tree[..])?,
                 #[cfg(feature = "orchard")]
-                read_frontier_v1(&cs.final_orchard_tree[..]).unwrap(),
+                read_frontier_v1(&cs.final_orchard_tree[..])?,
             );
 
             let recover_until = birthday.recover_until.map(|r| r.into());
 
-            Self::from_parts(cstate, recover_until)
+            Ok(Self::from_parts(cstate, recover_until))
         }
     }
 
@@ -731,7 +743,7 @@ mod serialization {
             .unwrap();
 
             let proto_acc: proto::Account = acc.clone().into();
-            let acc2: Account = proto_acc.clone().into();
+            let acc2: Account = proto_acc.clone().try_into().unwrap();
             let proto_acc2: proto::Account = acc2.clone().into();
 
             assert_eq!(proto_acc, proto_acc2);

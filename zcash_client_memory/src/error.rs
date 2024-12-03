@@ -103,6 +103,10 @@ pub enum Error {
     NullifierFromSlice(#[from] TryFromSliceError),
     #[error("Error converting string to utf8: {0}")]
     StringConversion(#[from] std::string::FromUtf8Error),
+    #[error("Error converting int to zip32: {0}")]
+    Zip32FromInt(#[from] zip32::TryFromIntError),
+    #[error("Error decoding ufvk string: {0}")]
+    UfvkDecodeError(String),
 }
 #[cfg(feature = "transparent-inputs")]
 

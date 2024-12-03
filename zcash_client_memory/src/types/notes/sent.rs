@@ -163,7 +163,7 @@ pub(crate) struct SentNote {
 
 mod serialization {
     use super::*;
-    use crate::proto::memwallet as proto;
+    use crate::{error::Error, proto::memwallet as proto, read_optional};
     use zcash_address::ZcashAddress;
     use zcash_keys::encoding::AddressCodec;
     use zcash_primitives::{
@@ -181,14 +181,16 @@ mod serialization {
         }
     }
 
-    impl From<proto::SentNote> for SentNote {
-        fn from(note: proto::SentNote) -> Self {
-            Self {
+    impl TryFrom<proto::SentNote> for SentNote {
+        type Error = crate::Error;
+
+        fn try_from(note: proto::SentNote) -> Result<Self, Self::Error> {
+            Ok(Self {
                 from_account_id: note.from_account_id.into(),
-                to: note.to.unwrap().into(),
-                value: Zatoshis::from_u64(note.value).unwrap(),
-                memo: Memo::from_bytes(&note.memo).unwrap(),
-            }
+                to: read_optional!(note, to)?.into(),
+                value: Zatoshis::from_u64(note.value)?,
+                memo: Memo::from_bytes(&note.memo)?,
+            })
         }
     }
 
