@@ -2,7 +2,6 @@ use bytes::{Buf, BufMut};
 use consensus::Parameters;
 use prost::Message;
 
-
 use super::*;
 use crate::error::Result;
 use crate::proto::memwallet as proto;
@@ -169,21 +168,27 @@ impl<P: Parameters> MemoryWalletDb<P> {
             })
             .collect::<Result<_>>()?;
 
-        wallet.orchard_tree =
-            tree_from_protobuf(read_optional!(proto_wallet, orchard_tree)?, 100, 16.into())?;
+        #[cfg(feature = "orchard")]
+        {
+            wallet.orchard_tree =
+                tree_from_protobuf(read_optional!(proto_wallet, orchard_tree)?, 100, 16.into())?;
+        };
 
-        wallet.orchard_tree_shard_end_heights = proto_wallet
-            .orchard_tree_shard_end_heights
-            .into_iter()
-            .map(|proto_end_height| {
-                let address = Address::from_parts(
-                    Level::from(u8::try_from(proto_end_height.level)?),
-                    proto_end_height.index,
-                );
-                let height = proto_end_height.block_height.into();
-                Ok((address, height))
-            })
-            .collect::<Result<_>>()?;
+        #[cfg(feature = "orchard")]
+        {
+            wallet.orchard_tree_shard_end_heights = proto_wallet
+                .orchard_tree_shard_end_heights
+                .into_iter()
+                .map(|proto_end_height| {
+                    let address = Address::from_parts(
+                        Level::from(u8::try_from(proto_end_height.level)?),
+                        proto_end_height.index,
+                    );
+                    let height = proto_end_height.block_height.into();
+                    Ok((address, height))
+                })
+                .collect::<Result<_>>()?;
+        };
 
         wallet.transparent_received_outputs = TransparentReceivedOutputs(
             proto_wallet
@@ -192,10 +197,7 @@ impl<P: Parameters> MemoryWalletDb<P> {
                 .map(|proto_output| {
                     let outpoint = read_optional!(proto_output, outpoint)?;
                     let output = read_optional!(proto_output, output)?.try_into()?;
-                    Ok((
-                        OutPoint::try_from(outpoint)?,
-                        output,
-                    ))
+                    Ok((OutPoint::try_from(outpoint)?, output))
                 })
                 .collect::<Result<_>>()?,
         );
@@ -363,7 +365,12 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                 })
                 .collect(),
 
+            #[cfg(feature = "orchard")]
             orchard_tree: tree_to_protobuf(&wallet.orchard_tree).unwrap(),
+            #[cfg(not(feature = "orchard"))]
+            orchard_tree: None,
+
+            #[cfg(feature = "orchard")]
             orchard_tree_shard_end_heights: wallet
                 .orchard_tree_shard_end_heights
                 .clone()
@@ -374,6 +381,8 @@ impl<P: Parameters> From<&MemoryWalletDb<P>> for proto::MemoryWallet {
                     block_height: height.into(),
                 })
                 .collect(),
+            #[cfg(not(feature = "orchard"))]
+            orchard_tree_shard_end_heights: Vec::new(),
 
             transparent_received_outputs: wallet
                 .transparent_received_outputs

@@ -25,6 +25,8 @@ mod serialization {
                     zcash_protocol::ShieldedProtocol::Orchard => {
                         proto::PoolType::ShieldedOrchard.into()
                     }
+                    #[cfg(not(feature = "orchard"))]
+                    zcash_protocol::ShieldedProtocol::Orchard => panic!("Attempting to deserialize orchard supporting wallet using library built without orchard feature"),
                 },
                 output_index: note_id.output_index() as u32,
             }
@@ -83,8 +85,8 @@ mod serialization {
 
     impl From<proto::Note> for Note {
         fn from(note: proto::Note) -> Self {
-            match note.protocol {
-                0 => {
+            match note.protocol() {
+                proto::ShieldedProtocol::Sapling => {
                     let recipient =
                         sapling::PaymentAddress::from_bytes(&note.recipient.try_into().unwrap())
                             .unwrap();
@@ -104,7 +106,8 @@ mod serialization {
                     };
                     Self::Sapling(sapling::Note::from_parts(recipient, value, rseed))
                 }
-                1 => {
+                #[cfg(feature = "orchard")]
+                proto::ShieldedProtocol::Orchard => {
                     let recipient = orchard::Address::from_raw_address_bytes(
                         &note.recipient.try_into().unwrap(),
                     )
@@ -120,6 +123,7 @@ mod serialization {
                     .unwrap();
                     Self::Orchard(orchard::Note::from_parts(recipient, value, rho, rseed).unwrap())
                 }
+                #[cfg(not(feature = "orchard"))]
                 _ => panic!("invalid protocol"),
             }
         }

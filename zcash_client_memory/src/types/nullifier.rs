@@ -84,6 +84,7 @@ mod serialization {
         fn try_from(nullifier: proto::Nullifier) -> Result<Self, Self::Error> {
             Ok(match nullifier.protocol {
                 0 => Nullifier::Sapling(sapling::Nullifier::from_slice(&nullifier.nullifier)?),
+                #[cfg(feature = "orchard")]
                 1 => Nullifier::Orchard(
                     orchard::note::Nullifier::from_bytes(&nullifier.nullifier.try_into()?)
                         .into_option()

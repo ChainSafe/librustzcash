@@ -5,25 +5,23 @@ use std::{
 
 use subtle::ConditionallySelectable;
 use zcash_address::ZcashAddress;
+#[cfg(feature = "transparent-inputs")]
+use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_client_backend::{
     address::UnifiedAddress,
     data_api::{Account as _, AccountBirthday, AccountPurpose, AccountSource, GAP_LIMIT},
     keys::{UnifiedAddressRequest, UnifiedFullViewingKey},
-    wallet::{NoteId, TransparentAddressMetadata},
+    wallet::NoteId,
 };
 use zcash_keys::{
     address::Receiver,
     keys::{AddressGenerationError, UnifiedIncomingViewingKey},
 };
 #[cfg(feature = "transparent-inputs")]
-use zcash_primitives::legacy::keys::IncomingViewingKey;
-use zcash_primitives::{
-    legacy::{
-        keys::{AccountPubKey, EphemeralIvk, NonHardenedChildIndex, TransparentKeyScope},
-        TransparentAddress,
-    },
-    transaction::TxId,
+use zcash_primitives::legacy::keys::{
+    AccountPubKey, EphemeralIvk, IncomingViewingKey, NonHardenedChildIndex, TransparentKeyScope,
 };
+use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
 use zcash_protocol::consensus::NetworkType;
 use zip32::DiversifierIndex;
 
@@ -243,7 +241,6 @@ impl Account {
             kind,
             viewing_key,
             birthday,
-            #[cfg(feature = "transparent-inputs")]
             ephemeral_addresses: BTreeMap::new(),
             addresses: BTreeMap::new(),
             _notes: BTreeSet::new(),
@@ -526,7 +523,9 @@ mod serialization {
             Self {
                 account_nonce: accounts.nonce,
                 accounts: accounts
-                    .accounts.into_values().map(|acc| acc.into())
+                    .accounts
+                    .into_values()
+                    .map(|acc| acc.into())
                     .collect(),
             }
         }

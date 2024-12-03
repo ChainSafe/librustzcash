@@ -99,6 +99,22 @@ impl<P: consensus::Parameters + PartialEq> PartialEq for MemoryWalletDb<P> {
     /// Tests for equality between two `MemoryWalletDb` instances.
     /// but does NOT compare the sapling_tree and orchard_tree fields.
     fn eq(&self, other: &Self) -> bool {
+        #[cfg(feature = "orchard")]
+        let orchard_comparisons =
+            { self.orchard_tree_shard_end_heights == other.orchard_tree_shard_end_heights };
+        #[cfg(not(feature = "orchard"))]
+        let orchard_comparisons = true;
+
+        #[cfg(feature = "transparent-inputs")]
+        let transparent_comparisons = {
+            self.transparent_received_outputs == other.transparent_received_outputs
+                && self.transparent_received_output_spends
+                    == other.transparent_received_output_spends
+                && self.transparent_spend_map == other.transparent_spend_map
+        };
+        #[cfg(not(feature = "transparent-inputs"))]
+        let transparent_comparisons = true;
+
         self.params == other.params
             && self.accounts == other.accounts
             && self.blocks == other.blocks
@@ -110,10 +126,8 @@ impl<P: consensus::Parameters + PartialEq> PartialEq for MemoryWalletDb<P> {
             && self.tx_locator == other.tx_locator
             && self.scan_queue == other.scan_queue
             && self.sapling_tree_shard_end_heights == other.sapling_tree_shard_end_heights
-            && self.orchard_tree_shard_end_heights == other.orchard_tree_shard_end_heights
-            && self.transparent_received_outputs == other.transparent_received_outputs
-            && self.transparent_received_output_spends == other.transparent_received_output_spends
-            && self.transparent_spend_map == other.transparent_spend_map
+            && orchard_comparisons
+            && transparent_comparisons
             && self.transaction_data_request_queue == other.transaction_data_request_queue
     }
 }

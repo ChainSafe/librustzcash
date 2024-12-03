@@ -49,6 +49,7 @@ mod serialization {
                     block_range_start: None,
                     block_range_end: None,
                 },
+                #[cfg(feature = "transparent-inputs")]
                 TransactionDataRequest::SpendsFromAddress {
                     address,
                     block_range_start,
@@ -68,19 +69,25 @@ mod serialization {
         type Error = crate::Error;
 
         fn try_from(request: proto::TransactionDataRequest) -> Result<Self, crate::Error> {
-            Ok(match request.request_type {
-                0 => TransactionDataRequest::GetStatus(read_optional!(request, tx_id)?.try_into()?),
-                1 => {
+            Ok(match request.request_type() {
+                proto::TransactionDataRequestType::GetStatus => {
+                    TransactionDataRequest::GetStatus(read_optional!(request, tx_id)?.try_into()?)
+                }
+                proto::TransactionDataRequestType::Enhancement => {
                     TransactionDataRequest::Enhancement(read_optional!(request, tx_id)?.try_into()?)
                 }
-                2 => TransactionDataRequest::SpendsFromAddress {
-                    address: TransparentAddress::decode(
-                        &EncodingParams,
-                        &String::from_utf8(read_optional!(request, address)?)?,
-                    )?,
-                    block_range_start: read_optional!(request, block_range_start)?.into(),
-                    block_range_end: Some(read_optional!(request, block_range_end)?.into()),
-                },
+                #[cfg(feature = "transparent-inputs")]
+                proto::TransactionDataRequestType::SpendsFromAddress => {
+                    TransactionDataRequest::SpendsFromAddress {
+                        address: TransparentAddress::decode(
+                            &EncodingParams,
+                            &String::from_utf8(read_optional!(request, address)?)?,
+                        )?,
+                        block_range_start: read_optional!(request, block_range_start)?.into(),
+                        block_range_end: Some(read_optional!(request, block_range_end)?.into()),
+                    }
+                }
+                #[cfg(not(feature = "transparent-inputs"))]
                 _ => panic!("invalid request type"),
             })
         }

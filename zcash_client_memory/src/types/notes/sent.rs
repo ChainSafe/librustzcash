@@ -169,6 +169,7 @@ mod serialization {
     use zcash_primitives::{
         consensus::Network::MainNetwork as EncodingParams, legacy::TransparentAddress,
     };
+    use zcash_protocol::ShieldedProtocol;
 
     impl From<SentNote> for proto::SentNote {
         fn from(note: SentNote) -> Self {
@@ -201,9 +202,8 @@ mod serialization {
                     tx_id: Some(note_id.txid().into()),
                     output_index: note_id.output_index().into(),
                     pool: match note_id.protocol() {
-                        Sapling => proto::PoolType::ShieldedSapling as i32,
-                        #[cfg(feature = "orchard")]
-                        Orchard => proto::PoolType::ShieldedOrchard as i32,
+                        ShieldedProtocol::Sapling => proto::PoolType::ShieldedSapling as i32,
+                        ShieldedProtocol::Orchard => proto::PoolType::ShieldedOrchard as i32,
                     },
                 },
                 SentNoteId::Transparent { txid, output_index } => proto::NoteId {
@@ -231,6 +231,8 @@ mod serialization {
                     Orchard,
                     note_id.output_index.try_into()?,
                 )),
+                #[cfg(not(feature = "orchard"))]
+                proto::PoolType::ShieldedOrchard => return Err(Error::OrchardNotEnabled),
                 proto::PoolType::Transparent => SentNoteId::Transparent {
                     txid: read_optional!(note_id, tx_id)?.try_into()?,
                     output_index: note_id.output_index,
@@ -268,6 +270,8 @@ mod serialization {
                         PoolType::Shielded(Sapling) => proto::PoolType::ShieldedSapling,
                         #[cfg(feature = "orchard")]
                         PoolType::Shielded(Orchard) => proto::PoolType::ShieldedOrchard,
+                        #[cfg(not(feature = "orchard"))]
+                        _ => panic!("Orchard not enabled"),
                     } as i32),
 
                     account_id: None,
@@ -320,6 +324,10 @@ mod serialization {
                             proto::PoolType::ShieldedSapling => PoolType::Shielded(Sapling),
                             #[cfg(feature = "orchard")]
                             proto::PoolType::ShieldedOrchard => PoolType::Shielded(Orchard),
+                            #[cfg(not(feature = "orchard"))]
+                            proto::PoolType::ShieldedOrchard => {
+                                return Err(Error::OrchardNotEnabled)
+                            }
                         },
                     )
                 }
