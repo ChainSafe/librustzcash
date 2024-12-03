@@ -1,71 +1,68 @@
 #![allow(dead_code)]
+
+mod serialization;
+
+use std::{
+    cmp::min,
+    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    num::NonZeroU32,
+    ops::{Range, RangeInclusive},
+    usize,
+};
+
 use incrementalmerkletree::{Address, Level, Marking, Position, Retention};
 use scanning::ScanQueue;
-
 use shardtree::{
     store::{memory::MemoryShardStore, Checkpoint, ShardStore},
     LocatedPrunableTree, PrunableTree, ShardTree,
 };
-use std::{cmp::min, usize};
-use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet},
-    num::NonZeroU32,
-    ops::{Range, RangeInclusive},
-};
 use transparent::{
     TransparentReceivedOutputSpends, TransparentReceivedOutputs, TransparentSpendCache,
 };
-use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_protocol::{
-    consensus::{self, NetworkUpgrade},
-    ShieldedProtocol,
-};
-
-use zip32::fingerprint::SeedFingerprint;
-
-use zcash_client_backend::wallet::WalletTransparentOutput;
-use zcash_primitives::{
-    consensus::BlockHeight,
-    legacy::TransparentAddress,
-    transaction::{components::OutPoint, TxId},
-};
-
-use zcash_client_backend::data_api::{GAP_LIMIT, SAPLING_SHARD_HEIGHT};
 use zcash_client_backend::{
     data_api::{
         scanning::{ScanPriority, ScanRange},
         Account as _, AccountBirthday, AccountPurpose, AccountSource, InputSource, Ratio,
-        TransactionStatus, WalletRead,
+        TransactionStatus, WalletRead, GAP_LIMIT, SAPLING_SHARD_HEIGHT,
     },
-    wallet::{NoteId, WalletSaplingOutput},
+    wallet::{NoteId, WalletSaplingOutput, WalletTransparentOutput},
 };
+use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_primitives::{
+    consensus::{self, BlockHeight, NetworkUpgrade},
+    legacy::TransparentAddress,
+    transaction::{components::OutPoint, Transaction, TxId},
+};
+use zcash_protocol::ShieldedProtocol;
+use zip32::fingerprint::SeedFingerprint;
 
 #[cfg(feature = "orchard")]
 use zcash_client_backend::{data_api::ORCHARD_SHARD_HEIGHT, wallet::WalletOrchardOutput};
 
-mod serialization;
-
-pub use crate::block_source::*;
-pub use crate::error::Error;
-pub(crate) use crate::types::*;
-
-use zcash_primitives::transaction::Transaction;
+use crate::error::Error;
+use crate::types::*;
 
 /// The main in-memory wallet database. Implements all the traits needed to be used as a backend.
 #[derive(Debug)]
 pub struct MemoryWalletDb<P: consensus::Parameters> {
+    /// Zcash network parameters for wallet
     pub(crate) params: P,
+    /// The accounts in the wallet
     pub(crate) accounts: Accounts,
+    /// The wallet that have been scanned and cached that contain relevant wallet data
     pub(crate) blocks: BTreeMap<BlockHeight, MemoryWalletBlock>,
+    /// Scanned transactions relevant to accounts in this wallet
     pub(crate) tx_table: TransactionTable,
+    /// Notes that an account has received
     pub(crate) received_notes: ReceivedNoteTable,
+    /// Notes that have been spent
     pub(crate) received_note_spends: ReceievedNoteSpends,
+    /// Nullifiers for notes that have been spent
     pub(crate) nullifiers: NullifierMap,
     /// Stores the outputs of transactions created by the wallet.
     pub(crate) sent_notes: SentNoteTable,
-
+    /// Maps transaction ids to their block height and index
     pub(crate) tx_locator: TxLocatorMap,
-    pub(crate) scan_queue: ScanQueue,
 
     pub(crate) sapling_tree: ShardTree<
         MemoryShardStore<sapling::Node, BlockHeight>,
@@ -88,7 +85,9 @@ pub struct MemoryWalletDb<P: consensus::Parameters> {
     pub(crate) transparent_received_outputs: TransparentReceivedOutputs,
     pub(crate) transparent_received_output_spends: TransparentReceivedOutputSpends,
     pub(crate) transparent_spend_map: TransparentSpendCache,
+
     pub(crate) transaction_data_request_queue: TransactionDataRequestQueue,
+    pub(crate) scan_queue: ScanQueue,
 }
 
 impl<P: consensus::Parameters + PartialEq> PartialEq for MemoryWalletDb<P> {

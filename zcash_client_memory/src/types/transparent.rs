@@ -149,10 +149,6 @@ impl TransparentSpendCache {
     pub fn contains(&self, txid: &TxId, outpoint: &OutPoint) -> bool {
         self.0.contains(&(*txid, outpoint.clone()))
     }
-
-    pub fn insert(&mut self, txid: TxId, outpoint: OutPoint) {
-        self.0.insert((txid, outpoint));
-    }
 }
 
 impl Deref for TransparentSpendCache {

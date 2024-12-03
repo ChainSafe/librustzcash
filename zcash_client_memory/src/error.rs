@@ -77,6 +77,10 @@ pub enum Error {
     ProtoMissingField(&'static str),
     #[error("Failed to convert between integer types")]
     IntegerConversion(#[from] std::num::TryFromIntError),
+    #[error("Error encoding memwallet to protobuf: {0}")]
+    ProtoEncodingError(#[from] prost::EncodeError),
+    #[error("Error decoding memwallet to protobuf: {0}")]
+    ProtoDecodingError(#[from] prost::DecodeError),
 }
 #[cfg(feature = "transparent-inputs")]
 

@@ -1,17 +1,14 @@
-use incrementalmerkletree::Address;
-
-use shardtree::{error::ShardTreeError, store::memory::MemoryShardStore, ShardTree};
 use std::convert::Infallible;
-use zcash_protocol::consensus;
 
-use zcash_primitives::consensus::BlockHeight;
-
+use incrementalmerkletree::Address;
+use shardtree::{error::ShardTreeError, store::memory::MemoryShardStore, ShardTree};
+#[cfg(feature = "orchard")]
+use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
 use zcash_client_backend::data_api::{
     chain::CommitmentTreeRoot, WalletCommitmentTrees, SAPLING_SHARD_HEIGHT,
 };
-
-#[cfg(feature = "orchard")]
-use zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_protocol::consensus;
 
 use super::MemoryWalletDb;
 

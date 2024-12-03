@@ -126,3 +126,28 @@ fn multi_pool_checkpoint() {
 fn multi_pool_checkpoints_with_pruning() {
     testing::pool::multi_pool_checkpoints_with_pruning::<SaplingPoolTester, OrchardPoolTester>()
 }
+
+#[test]
+fn valid_chain_states() {
+    testing::pool::valid_chain_states::<SaplingPoolTester>()
+}
+
+#[test]
+fn invalid_chain_cache_disconnected() {
+    testing::pool::invalid_chain_cache_disconnected::<SaplingPoolTester>()
+}
+
+#[test]
+fn data_db_truncation() {
+    testing::pool::data_db_truncation::<SaplingPoolTester>()
+}
+
+#[test]
+fn scan_cached_blocks_allows_blocks_out_of_order() {
+    testing::pool::scan_cached_blocks_allows_blocks_out_of_order::<SaplingPoolTester>()
+}
+
+#[test]
+fn scan_cached_blocks_finds_received_notes() {
+    testing::pool::scan_cached_blocks_finds_received_notes::<SaplingPoolTester>()
+}
