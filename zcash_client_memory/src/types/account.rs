@@ -760,6 +760,7 @@ mod serialization {
                 AccountId(0),
                 AccountSource::Imported {
                     purpose: AccountPurpose::Spending,
+                    key_source: Some("test_key_source".to_string()),
                 },
                 UnifiedFullViewingKey::decode(&EncodingParams, TEST_VK).unwrap(),
                 AccountBirthday::from_sapling_activation(
