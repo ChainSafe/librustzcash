@@ -481,8 +481,9 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 AccountSource::Derived {
                     seed_fingerprint: sf,
                     account_index,
+                    key_source,
                 } => {
-                    if &sf == seed_fingerprint {
+                    if sf == seed_fingerprint {
                         Some(account_index)
                     } else {
                         None
@@ -490,7 +491,8 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 }
                 _ => None,
             })
-            .max())
+            .max()
+            .copied())
     }
     pub(crate) fn insert_received_sapling_note(
         &mut self,

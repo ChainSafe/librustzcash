@@ -493,8 +493,8 @@ impl zcash_client_backend::data_api::Account for Account {
         self.account_id
     }
 
-    fn source(&self) -> AccountSource {
-        self.kind
+    fn source(&self) -> &AccountSource {
+        &self.kind
     }
 
     fn ufvk(&self) -> Option<&UnifiedFullViewingKey> {
@@ -503,6 +503,10 @@ impl zcash_client_backend::data_api::Account for Account {
 
     fn uivk(&self) -> UnifiedIncomingViewingKey {
         self.viewing_key.to_unified_incoming_viewing_key()
+    }
+
+    fn name(&self) -> Option<&str> {
+        todo!()
     }
 }
 
@@ -564,7 +568,10 @@ mod serialization {
                 },
                 purpose: match acc.kind {
                     AccountSource::Derived { .. } => None,
-                    AccountSource::Imported { purpose } => match purpose {
+                    AccountSource::Imported {
+                        purpose,
+                        ref key_source,
+                    } => match purpose {
                         AccountPurpose::Spending => Some(0),
                         AccountPurpose::ViewOnly => Some(1),
                     },
@@ -610,6 +617,7 @@ mod serialization {
                             acc.seed_fingerprint().try_into()?,
                         ),
                         account_index: read_optional!(acc, account_index)?.try_into()?,
+                        key_source: todo!(),
                     },
                     1 => AccountSource::Imported {
                         purpose: match read_optional!(acc, purpose)? {
@@ -617,6 +625,7 @@ mod serialization {
                             1 => AccountPurpose::ViewOnly,
                             _ => unreachable!(),
                         },
+                        key_source: todo!(),
                     },
                     _ => unreachable!(),
                 },
