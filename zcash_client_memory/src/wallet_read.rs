@@ -74,7 +74,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                 AccountSource::Derived {
                     seed_fingerprint,
                     account_index,
-                    key_source,
+                    ..
                 } => {
                     if seed_fingerprint == seed && account_index == &account_id {
                         Some(acct.clone())
@@ -82,10 +82,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
                         None
                     }
                 }
-                AccountSource::Imported {
-                    purpose: _,
-                    key_source,
-                } => None,
+                AccountSource::Imported { purpose: _, .. } => None,
             }))
     }
 
@@ -99,7 +96,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             if let AccountSource::Derived {
                 seed_fingerprint,
                 account_index,
-                key_source,
+                ..
             } = account.source()
             {
                 seed_matches_derived_account(
@@ -138,7 +135,7 @@ impl<P: consensus::Parameters> WalletRead for MemoryWalletDb<P> {
             if let AccountSource::Derived {
                 seed_fingerprint,
                 account_index,
-                key_source,
+                ..
             } = account.source()
             {
                 has_derived = true;

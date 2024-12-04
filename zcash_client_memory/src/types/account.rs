@@ -580,14 +580,16 @@ mod serialization {
                 },
                 purpose: match acc.kind {
                     AccountSource::Derived { .. } => None,
-                    AccountSource::Imported {
-                        purpose,
-                        ref key_source,
-                    } => match purpose {
+                    AccountSource::Imported { purpose, .. } => match purpose {
                         AccountPurpose::Spending => Some(0),
                         AccountPurpose::ViewOnly => Some(1),
                     },
                 },
+                key_source: match acc.kind {
+                    AccountSource::Derived { ref key_source, .. } => key_source,
+                    AccountSource::Imported { ref key_source, .. } => key_source,
+                }
+                .clone(),
                 viewing_key: acc.viewing_key.encode(&EncodingParams),
                 birthday: Some(acc.birthday().clone().try_into().unwrap()),
                 addresses: acc
@@ -630,7 +632,7 @@ mod serialization {
                             acc.seed_fingerprint().try_into()?,
                         ),
                         account_index: read_optional!(acc, account_index)?.try_into()?,
-                        key_source: todo!(),
+                        key_source: acc.key_source,
                     },
                     1 => AccountSource::Imported {
                         purpose: match read_optional!(acc, purpose)? {
@@ -638,7 +640,7 @@ mod serialization {
                             1 => AccountPurpose::ViewOnly,
                             _ => unreachable!(),
                         },
-                        key_source: todo!(),
+                        key_source: acc.key_source,
                     },
                     _ => unreachable!(),
                 },

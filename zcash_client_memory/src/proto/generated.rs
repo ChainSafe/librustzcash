@@ -487,6 +487,9 @@ pub struct Account {
     /// human readable name for the account
     #[prost(string, tag = "11")]
     pub account_name: ::prost::alloc::string::String,
+    /// key source metadata
+    #[prost(string, optional, tag = "12")]
+    pub key_source: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountBirthday {

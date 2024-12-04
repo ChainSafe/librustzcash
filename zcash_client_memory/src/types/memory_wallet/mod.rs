@@ -485,7 +485,7 @@ impl<P: consensus::Parameters> MemoryWalletDb<P> {
                 AccountSource::Derived {
                     seed_fingerprint: sf,
                     account_index,
-                    key_source,
+                    ..
                 } => {
                     if sf == seed_fingerprint {
                         Some(account_index)
