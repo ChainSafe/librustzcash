@@ -87,6 +87,7 @@ impl<P: consensus::Parameters> WalletWrite for MemoryWalletDb<P> {
             let ufvk = usk.to_unified_full_viewing_key();
 
             let (id, _account) = self.add_account(
+                account_name,
                 AccountSource::Derived {
                     seed_fingerprint,
                     account_index,
@@ -1066,6 +1067,7 @@ Instead derive the ufvk in the calling code and import it using `import_account_
     ) -> Result<Self::Account, Self::Error> {
         tracing::debug!("import_account_ufvk");
         let (_id, account) = self.add_account(
+            account_name,
             AccountSource::Imported {
                 purpose,
                 key_source: key_source.map(str::to_owned),

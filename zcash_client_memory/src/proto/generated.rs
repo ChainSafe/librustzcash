@@ -484,6 +484,9 @@ pub struct Account {
     /// map from index to encoded unified address
     #[prost(message, repeated, tag = "10")]
     pub ephemeral_addresses: ::prost::alloc::vec::Vec<EphemeralAddressRecord>,
+    /// human readable name for the account
+    #[prost(string, tag = "11")]
+    pub account_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountBirthday {

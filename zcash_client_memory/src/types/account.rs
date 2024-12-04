@@ -74,6 +74,7 @@ impl Accounts {
     /// Otherwise the scan queue will not be correctly updated
     pub(crate) fn new_account(
         &mut self,
+        account_name: &str,
         kind: AccountSource,
         viewing_key: UnifiedFullViewingKey,
         birthday: AccountBirthday,
@@ -81,7 +82,13 @@ impl Accounts {
         self.nonce += 1;
         let account_id = AccountId(self.nonce);
 
-        let acc = Account::new(account_id, kind, viewing_key, birthday)?;
+        let acc = Account::new(
+            account_name.to_string(),
+            account_id,
+            kind,
+            viewing_key,
+            birthday,
+        )?;
 
         self.accounts.insert(account_id, acc.clone());
 
@@ -202,6 +209,7 @@ impl EphemeralAddress {
 /// An internal representation account stored in the database.
 #[derive(Debug, Clone)]
 pub struct Account {
+    account_name: String,
     account_id: AccountId,
     kind: AccountSource,
     viewing_key: UnifiedFullViewingKey,
@@ -214,7 +222,8 @@ pub struct Account {
 
 impl PartialEq for Account {
     fn eq(&self, other: &Self) -> bool {
-        self.account_id == other.account_id
+        self.account_name == other.account_name
+            && self.account_id == other.account_id
             && self.kind == other.kind
             && self
                 .viewing_key
@@ -231,12 +240,14 @@ impl PartialEq for Account {
 
 impl Account {
     pub(crate) fn new(
+        account_name: String,
         account_id: AccountId,
         kind: AccountSource,
         viewing_key: UnifiedFullViewingKey,
         birthday: AccountBirthday,
     ) -> Result<Self, Error> {
         let mut acc = Self {
+            account_name,
             account_id,
             kind,
             viewing_key,
@@ -551,6 +562,7 @@ mod serialization {
     impl From<Account> for proto::Account {
         fn from(acc: Account) -> Self {
             Self {
+                account_name: acc.account_name.clone(),
                 account_id: *acc.account_id,
                 kind: match acc.kind {
                     AccountSource::Derived { .. } => 0,
@@ -610,6 +622,7 @@ mod serialization {
 
         fn try_from(acc: proto::Account) -> Result<Self, Self::Error> {
             Ok(Self {
+                account_name: acc.account_name.clone(),
                 account_id: acc.account_id.into(),
                 kind: match acc.kind {
                     0 => AccountSource::Derived {
@@ -741,6 +754,7 @@ mod serialization {
         #[test]
         fn test_account_serialization_roundtrip() {
             let acc = Account::new(
+                "test_account_name".to_string(),
                 AccountId(0),
                 AccountSource::Imported {
                     purpose: AccountPurpose::Spending,
