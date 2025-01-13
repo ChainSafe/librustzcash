@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_primitives/src/transaction/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-dbdb5eec.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="zcash_primitives" data-themes="" data-resource-suffix="" data-rustdoc-version="1.85.0-nightly (d49be02cf 2024-12-02)" data-channel="nightly" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_primitives/transaction/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_primitives/src/transaction/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-46132b98.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="zcash_primitives" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (48a426eca 2025-01-12)" data-channel="nightly" data-search-js="search-75f5ac3e.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_primitives/transaction/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -1048,27 +1048,7 @@
 <a href="#1047" id="1047">1047</a>
 <a href="#1048" id="1048">1048</a>
 <a href="#1049" id="1049">1049</a>
-<a href="#1050" id="1050">1050</a>
-<a href="#1051" id="1051">1051</a>
-<a href="#1052" id="1052">1052</a>
-<a href="#1053" id="1053">1053</a>
-<a href="#1054" id="1054">1054</a>
-<a href="#1055" id="1055">1055</a>
-<a href="#1056" id="1056">1056</a>
-<a href="#1057" id="1057">1057</a>
-<a href="#1058" id="1058">1058</a>
-<a href="#1059" id="1059">1059</a>
-<a href="#1060" id="1060">1060</a>
-<a href="#1061" id="1061">1061</a>
-<a href="#1062" id="1062">1062</a>
-<a href="#1063" id="1063">1063</a>
-<a href="#1064" id="1064">1064</a>
-<a href="#1065" id="1065">1065</a>
-<a href="#1066" id="1066">1066</a>
-<a href="#1067" id="1067">1067</a>
-<a href="#1068" id="1068">1068</a>
-<a href="#1069" id="1069">1069</a>
-<a href="#1070" id="1070">1070</a></pre></div><pre class="rust"><code><span class="doccomment">//! Structs and methods for handling Zcash transactions.
+<a href="#1050" id="1050">1050</a></pre></div><pre class="rust"><code><span class="doccomment">//! Structs and methods for handling Zcash transactions.
 </span><span class="kw">pub mod </span>builder;
 <span class="kw">pub mod </span>components;
 <span class="kw">pub mod </span>fees;
@@ -1083,26 +1063,23 @@
 
 <span class="kw">use </span>blake2b_simd::Hash <span class="kw">as </span>Blake2bHash;
 <span class="kw">use </span>byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-<span class="kw">use </span>memuse::DynamicUsage;
 <span class="kw">use </span>std::convert::TryFrom;
-<span class="kw">use </span>std::fmt;
 <span class="kw">use </span>std::fmt::Debug;
 <span class="kw">use </span>std::io::{<span class="self">self</span>, Read, Write};
 <span class="kw">use </span>std::ops::Deref;
-<span class="kw">use </span>zcash_encoding::{CompactSize, Vector};
 
-<span class="kw">use crate</span>::{
+<span class="kw">use </span>::sapling::builder <span class="kw">as </span>sapling_builder;
+<span class="kw">use </span>::transparent::bundle::{<span class="self">self </span><span class="kw">as </span>transparent, OutPoint, TxIn, TxOut};
+<span class="kw">use </span>zcash_encoding::{CompactSize, Vector};
+<span class="kw">use </span>zcash_protocol::{
     consensus::{BlockHeight, BranchId},
-    sapling::{<span class="self">self</span>, builder <span class="kw">as </span>sapling_builder},
+    value::{BalanceError, ZatBalance},
 };
 
 <span class="kw">use </span><span class="self">self</span>::{
     components::{
-        amount::{Amount, BalanceError},
         orchard <span class="kw">as </span>orchard_serialization, sapling <span class="kw">as </span>sapling_serialization,
         sprout::{<span class="self">self</span>, JsDescription},
-        transparent::{<span class="self">self</span>, TxIn, TxOut},
-        OutPoint,
     },
     txid::{to_txid, BlockTxCommitmentDigester, TxIdDigester},
     util::sha256d::{HashReader, HashWriter},
@@ -1130,63 +1107,7 @@
 <span class="attr">#[cfg(zcash_unstable = <span class="string">"zfuture"</span>)]
 </span><span class="kw">const </span>ZFUTURE_TX_VERSION: u32 = <span class="number">0x0000FFFF</span>;
 
-<span class="doccomment">/// The identifier for a Zcash transaction.
-///
-/// - For v1-4 transactions, this is a double-SHA-256 hash of the encoded transaction.
-///   This means that it is malleable, and only a reliable identifier for transactions
-///   that have been mined.
-/// - For v5 transactions onwards, this identifier is derived only from "effecting" data,
-///   and is non-malleable in all contexts.
-</span><span class="attr">#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
-</span><span class="kw">pub struct </span>TxId([u8; <span class="number">32</span>]);
-
-<span class="macro">memuse::impl_no_dynamic_usage!</span>(TxId);
-
-<span class="kw">impl </span>fmt::Debug <span class="kw">for </span>TxId {
-    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
-        <span class="comment">// The (byte-flipped) hex string is more useful than the raw bytes, because we can
-        // look that up in RPC methods and block explorers.
-        </span><span class="kw">let </span>txid_str = <span class="self">self</span>.to_string();
-        f.debug_tuple(<span class="string">"TxId"</span>).field(<span class="kw-2">&amp;</span>txid_str).finish()
-    }
-}
-
-<span class="kw">impl </span>fmt::Display <span class="kw">for </span>TxId {
-    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, formatter: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
-        <span class="kw">let </span><span class="kw-2">mut </span>data = <span class="self">self</span>.<span class="number">0</span>;
-        data.reverse();
-        formatter.write_str(<span class="kw-2">&amp;</span>hex::encode(data))
-    }
-}
-
-<span class="kw">impl </span>AsRef&lt;[u8; <span class="number">32</span>]&gt; <span class="kw">for </span>TxId {
-    <span class="kw">fn </span>as_ref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[u8; <span class="number">32</span>] {
-        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0
-    </span>}
-}
-
-<span class="kw">impl </span>From&lt;TxId&gt; <span class="kw">for </span>[u8; <span class="number">32</span>] {
-    <span class="kw">fn </span>from(value: TxId) -&gt; <span class="self">Self </span>{
-        value.<span class="number">0
-    </span>}
-}
-
-<span class="kw">impl </span>TxId {
-    <span class="kw">pub fn </span>from_bytes(bytes: [u8; <span class="number">32</span>]) -&gt; <span class="self">Self </span>{
-        TxId(bytes)
-    }
-
-    <span class="kw">pub fn </span>read&lt;R: Read&gt;(<span class="kw-2">mut </span>reader: R) -&gt; io::Result&lt;<span class="self">Self</span>&gt; {
-        <span class="kw">let </span><span class="kw-2">mut </span>hash = [<span class="number">0u8</span>; <span class="number">32</span>];
-        reader.read_exact(<span class="kw-2">&amp;mut </span>hash)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(TxId::from_bytes(hash))
-    }
-
-    <span class="kw">pub fn </span>write&lt;W: Write&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut </span>writer: W) -&gt; io::Result&lt;()&gt; {
-        writer.write_all(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
-    }
-}
+<span class="kw">pub use </span>zcash_protocol::TxId;
 
 <span class="doccomment">/// The set of defined transaction format versions.
 ///
@@ -1357,7 +1278,7 @@
 </span><span class="kw">pub struct </span>Unauthorized;
 
 <span class="kw">impl </span>Authorization <span class="kw">for </span>Unauthorized {
-    <span class="kw">type </span>TransparentAuth = transparent::builder::Unauthorized;
+    <span class="kw">type </span>TransparentAuth = ::transparent::builder::Unauthorized;
     <span class="kw">type </span>SaplingAuth =
         sapling_builder::InProgress&lt;sapling_builder::Proven, sapling_builder::Unsigned&gt;;
     <span class="kw">type </span>OrchardAuth =
@@ -1397,8 +1318,8 @@
     expiry_height: BlockHeight,
     transparent_bundle: <span class="prelude-ty">Option</span>&lt;transparent::Bundle&lt;A::TransparentAuth&gt;&gt;,
     sprout_bundle: <span class="prelude-ty">Option</span>&lt;sprout::Bundle&gt;,
-    sapling_bundle: <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, Amount&gt;&gt;,
-    orchard_bundle: <span class="prelude-ty">Option</span>&lt;orchard::bundle::Bundle&lt;A::OrchardAuth, Amount&gt;&gt;,
+    sapling_bundle: <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, ZatBalance&gt;&gt;,
+    orchard_bundle: <span class="prelude-ty">Option</span>&lt;orchard::bundle::Bundle&lt;A::OrchardAuth, ZatBalance&gt;&gt;,
     <span class="attr">#[cfg(zcash_unstable = <span class="string">"zfuture"</span>)]
     </span>tze_bundle: <span class="prelude-ty">Option</span>&lt;tze::Bundle&lt;A::TzeAuth&gt;&gt;,
 }
@@ -1413,8 +1334,8 @@
         expiry_height: BlockHeight,
         transparent_bundle: <span class="prelude-ty">Option</span>&lt;transparent::Bundle&lt;A::TransparentAuth&gt;&gt;,
         sprout_bundle: <span class="prelude-ty">Option</span>&lt;sprout::Bundle&gt;,
-        sapling_bundle: <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, Amount&gt;&gt;,
-        orchard_bundle: <span class="prelude-ty">Option</span>&lt;orchard::Bundle&lt;A::OrchardAuth, Amount&gt;&gt;,
+        sapling_bundle: <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, ZatBalance&gt;&gt;,
+        orchard_bundle: <span class="prelude-ty">Option</span>&lt;orchard::Bundle&lt;A::OrchardAuth, ZatBalance&gt;&gt;,
     ) -&gt; <span class="self">Self </span>{
         TransactionData {
             version,
@@ -1441,8 +1362,8 @@
         expiry_height: BlockHeight,
         transparent_bundle: <span class="prelude-ty">Option</span>&lt;transparent::Bundle&lt;A::TransparentAuth&gt;&gt;,
         sprout_bundle: <span class="prelude-ty">Option</span>&lt;sprout::Bundle&gt;,
-        sapling_bundle: <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, Amount&gt;&gt;,
-        orchard_bundle: <span class="prelude-ty">Option</span>&lt;orchard::Bundle&lt;A::OrchardAuth, Amount&gt;&gt;,
+        sapling_bundle: <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, ZatBalance&gt;&gt;,
+        orchard_bundle: <span class="prelude-ty">Option</span>&lt;orchard::Bundle&lt;A::OrchardAuth, ZatBalance&gt;&gt;,
         tze_bundle: <span class="prelude-ty">Option</span>&lt;tze::Bundle&lt;A::TzeAuth&gt;&gt;,
     ) -&gt; <span class="self">Self </span>{
         TransactionData {
@@ -1484,11 +1405,11 @@
         <span class="self">self</span>.sprout_bundle.as_ref()
     }
 
-    <span class="kw">pub fn </span>sapling_bundle(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>sapling::Bundle&lt;A::SaplingAuth, Amount&gt;&gt; {
+    <span class="kw">pub fn </span>sapling_bundle(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>sapling::Bundle&lt;A::SaplingAuth, ZatBalance&gt;&gt; {
         <span class="self">self</span>.sapling_bundle.as_ref()
     }
 
-    <span class="kw">pub fn </span>orchard_bundle(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>orchard::Bundle&lt;A::OrchardAuth, Amount&gt;&gt; {
+    <span class="kw">pub fn </span>orchard_bundle(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>orchard::Bundle&lt;A::OrchardAuth, ZatBalance&gt;&gt; {
         <span class="self">self</span>.orchard_bundle.as_ref()
     }
 
@@ -1500,25 +1421,25 @@
     <span class="doccomment">/// Returns the total fees paid by the transaction, given a function that can be used to
     /// retrieve the value of previous transactions' transparent outputs that are being spent in
     /// this transaction.
-    </span><span class="kw">pub fn </span>fee_paid&lt;E, F&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, get_prevout: F) -&gt; <span class="prelude-ty">Result</span>&lt;Amount, E&gt;
+    </span><span class="kw">pub fn </span>fee_paid&lt;E, F&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, get_prevout: F) -&gt; <span class="prelude-ty">Result</span>&lt;ZatBalance, E&gt;
     <span class="kw">where
         </span>E: From&lt;BalanceError&gt;,
-        F: FnMut(<span class="kw-2">&amp;</span>OutPoint) -&gt; <span class="prelude-ty">Result</span>&lt;Amount, E&gt;,
+        F: FnMut(<span class="kw-2">&amp;</span>OutPoint) -&gt; <span class="prelude-ty">Result</span>&lt;ZatBalance, E&gt;,
     {
         <span class="kw">let </span>value_balances = [
             <span class="self">self</span>.transparent_bundle
                 .as_ref()
-                .map_or_else(|| <span class="prelude-val">Ok</span>(Amount::zero()), |b| b.value_balance(get_prevout))<span class="question-mark">?</span>,
+                .map_or_else(|| <span class="prelude-val">Ok</span>(ZatBalance::zero()), |b| b.value_balance(get_prevout))<span class="question-mark">?</span>,
             <span class="self">self</span>.sprout_bundle.as_ref().map_or_else(
-                || <span class="prelude-val">Ok</span>(Amount::zero()),
+                || <span class="prelude-val">Ok</span>(ZatBalance::zero()),
                 |b| b.value_balance().ok_or(BalanceError::Overflow),
             )<span class="question-mark">?</span>,
             <span class="self">self</span>.sapling_bundle
                 .as_ref()
-                .map_or_else(Amount::zero, |b| <span class="kw-2">*</span>b.value_balance()),
+                .map_or_else(ZatBalance::zero, |b| <span class="kw-2">*</span>b.value_balance()),
             <span class="self">self</span>.orchard_bundle
                 .as_ref()
-                .map_or_else(Amount::zero, |b| <span class="kw-2">*</span>b.value_balance()),
+                .map_or_else(ZatBalance::zero, |b| <span class="kw-2">*</span>b.value_balance()),
         ];
 
         value_balances
@@ -1553,11 +1474,11 @@
             <span class="prelude-ty">Option</span>&lt;transparent::Bundle&lt;A::TransparentAuth&gt;&gt;,
         ) -&gt; <span class="prelude-ty">Option</span>&lt;transparent::Bundle&lt;B::TransparentAuth&gt;&gt;,
         f_sapling: <span class="kw">impl </span>FnOnce(
-            <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, Amount&gt;&gt;,
-        ) -&gt; <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;B::SaplingAuth, Amount&gt;&gt;,
+            <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, ZatBalance&gt;&gt;,
+        ) -&gt; <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;B::SaplingAuth, ZatBalance&gt;&gt;,
         f_orchard: <span class="kw">impl </span>FnOnce(
-            <span class="prelude-ty">Option</span>&lt;orchard::bundle::Bundle&lt;A::OrchardAuth, Amount&gt;&gt;,
-        ) -&gt; <span class="prelude-ty">Option</span>&lt;orchard::bundle::Bundle&lt;B::OrchardAuth, Amount&gt;&gt;,
+            <span class="prelude-ty">Option</span>&lt;orchard::bundle::Bundle&lt;A::OrchardAuth, ZatBalance&gt;&gt;,
+        ) -&gt; <span class="prelude-ty">Option</span>&lt;orchard::bundle::Bundle&lt;B::OrchardAuth, ZatBalance&gt;&gt;,
         <span class="attr">#[cfg(zcash_unstable = <span class="string">"zfuture"</span>)] </span>f_tze: <span class="kw">impl </span>FnOnce(
             <span class="prelude-ty">Option</span>&lt;tze::Bundle&lt;A::TzeAuth&gt;&gt;,
         )
@@ -1575,6 +1496,45 @@
             <span class="attr">#[cfg(zcash_unstable = <span class="string">"zfuture"</span>)]
             </span>tze_bundle: f_tze(<span class="self">self</span>.tze_bundle),
         }
+    }
+
+    <span class="doccomment">/// Maps the bundles from one type to another with fallible closures.
+    ///
+    /// This shouldn't be necessary for most use cases; it is provided for handling the
+    /// transaction extraction logic in the `pczt` crate.
+    </span><span class="kw">pub fn </span>try_map_bundles&lt;B: Authorization, E&gt;(
+        <span class="self">self</span>,
+        f_transparent: <span class="kw">impl </span>FnOnce(
+            <span class="prelude-ty">Option</span>&lt;transparent::Bundle&lt;A::TransparentAuth&gt;&gt;,
+        )
+            -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;transparent::Bundle&lt;B::TransparentAuth&gt;&gt;, E&gt;,
+        f_sapling: <span class="kw">impl </span>FnOnce(
+            <span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;A::SaplingAuth, ZatBalance&gt;&gt;,
+        )
+            -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;B::SaplingAuth, ZatBalance&gt;&gt;, E&gt;,
+        f_orchard: <span class="kw">impl </span>FnOnce(
+            <span class="prelude-ty">Option</span>&lt;orchard::bundle::Bundle&lt;A::OrchardAuth, ZatBalance&gt;&gt;,
+        )
+            -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;orchard::bundle::Bundle&lt;B::OrchardAuth, ZatBalance&gt;&gt;, E&gt;,
+        <span class="attr">#[cfg(zcash_unstable = <span class="string">"zfuture"</span>)] </span>f_tze: <span class="kw">impl </span>FnOnce(
+            <span class="prelude-ty">Option</span>&lt;tze::Bundle&lt;A::TzeAuth&gt;&gt;,
+        ) -&gt; <span class="prelude-ty">Result</span>&lt;
+            <span class="prelude-ty">Option</span>&lt;tze::Bundle&lt;B::TzeAuth&gt;&gt;,
+            E,
+        &gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;TransactionData&lt;B&gt;, E&gt; {
+        <span class="prelude-val">Ok</span>(TransactionData {
+            version: <span class="self">self</span>.version,
+            consensus_branch_id: <span class="self">self</span>.consensus_branch_id,
+            lock_time: <span class="self">self</span>.lock_time,
+            expiry_height: <span class="self">self</span>.expiry_height,
+            transparent_bundle: f_transparent(<span class="self">self</span>.transparent_bundle)<span class="question-mark">?</span>,
+            sprout_bundle: <span class="self">self</span>.sprout_bundle,
+            sapling_bundle: f_sapling(<span class="self">self</span>.sapling_bundle)<span class="question-mark">?</span>,
+            orchard_bundle: f_orchard(<span class="self">self</span>.orchard_bundle)<span class="question-mark">?</span>,
+            <span class="attr">#[cfg(zcash_unstable = <span class="string">"zfuture"</span>)]
+            </span>tze_bundle: f_tze(<span class="self">self</span>.tze_bundle)<span class="question-mark">?</span>,
+        })
     }
 
     <span class="kw">pub fn </span>map_authorization&lt;B: Authorization&gt;(
@@ -1616,10 +1576,10 @@
 }
 
 <span class="kw">impl</span>&lt;A: Authorization&gt; TransactionData&lt;A&gt; {
-    <span class="kw">pub fn </span>sapling_value_balance(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Amount {
+    <span class="kw">pub fn </span>sapling_value_balance(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ZatBalance {
         <span class="self">self</span>.sapling_bundle
             .as_ref()
-            .map_or(Amount::zero(), |b| <span class="kw-2">*</span>b.value_balance())
+            .map_or(ZatBalance::zero(), |b| <span class="kw-2">*</span>b.value_balance())
     }
 }
 
@@ -1643,12 +1603,12 @@
 
     <span class="kw">fn </span>from_data_v4(data: TransactionData&lt;Authorized&gt;) -&gt; io::Result&lt;<span class="self">Self</span>&gt; {
         <span class="kw">let </span><span class="kw-2">mut </span>tx = Transaction {
-            txid: TxId([<span class="number">0</span>; <span class="number">32</span>]),
+            txid: TxId::from_bytes([<span class="number">0</span>; <span class="number">32</span>]),
             data,
         };
         <span class="kw">let </span><span class="kw-2">mut </span>writer = HashWriter::default();
         tx.write(<span class="kw-2">&amp;mut </span>writer)<span class="question-mark">?</span>;
-        tx.txid.<span class="number">0</span>.copy_from_slice(<span class="kw-2">&amp;</span>writer.into_hash());
+        tx.txid = TxId::from_bytes(writer.into_hash().into());
         <span class="prelude-val">Ok</span>(tx)
     }
 
@@ -1738,7 +1698,7 @@
         txid.copy_from_slice(<span class="kw-2">&amp;</span>hash_bytes);
 
         <span class="prelude-val">Ok</span>(Transaction {
-            txid: TxId(txid),
+            txid: TxId::from_bytes(txid),
             data: TransactionData {
                 version,
                 consensus_branch_id,
@@ -1777,10 +1737,10 @@
         })
     }
 
-    <span class="kw">fn </span>read_amount&lt;R: Read&gt;(<span class="kw-2">mut </span>reader: R) -&gt; io::Result&lt;Amount&gt; {
+    <span class="kw">fn </span>read_amount&lt;R: Read&gt;(<span class="kw-2">mut </span>reader: R) -&gt; io::Result&lt;ZatBalance&gt; {
         <span class="kw">let </span><span class="kw-2">mut </span>tmp = [<span class="number">0</span>; <span class="number">8</span>];
         reader.read_exact(<span class="kw-2">&amp;mut </span>tmp)<span class="question-mark">?</span>;
-        Amount::from_i64_le_bytes(tmp)
+        ZatBalance::from_i64_le_bytes(tmp)
             .map_err(|<span class="kw">_</span>| io::Error::new(io::ErrorKind::InvalidData, <span class="string">"valueBalance out of range"</span>))
     }
 
@@ -1831,7 +1791,7 @@
     <span class="attr">#[cfg(feature = <span class="string">"temporary-zcashd"</span>)]
     </span><span class="kw">pub fn </span>temporary_zcashd_read_v5_sapling&lt;R: Read&gt;(
         reader: R,
-    ) -&gt; io::Result&lt;<span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;sapling::bundle::Authorized, Amount&gt;&gt;&gt; {
+    ) -&gt; io::Result&lt;<span class="prelude-ty">Option</span>&lt;sapling::Bundle&lt;sapling::bundle::Authorized, ZatBalance&gt;&gt;&gt; {
         sapling_serialization::read_v5_bundle(reader)
     }
 
@@ -1940,7 +1900,7 @@
 
     <span class="attr">#[cfg(feature = <span class="string">"temporary-zcashd"</span>)]
     </span><span class="kw">pub fn </span>temporary_zcashd_write_v5_sapling&lt;W: Write&gt;(
-        sapling_bundle: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>sapling::Bundle&lt;sapling::bundle::Authorized, Amount&gt;&gt;,
+        sapling_bundle: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>sapling::Bundle&lt;sapling::bundle::Authorized, ZatBalance&gt;&gt;,
         writer: W,
     ) -&gt; io::Result&lt;()&gt; {
         sapling_serialization::write_v5_bundle(writer, sapling_bundle)
@@ -2019,12 +1979,12 @@
 
     <span class="kw">fn </span>digest_sapling(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        sapling_bundle: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>sapling::Bundle&lt;A::SaplingAuth, Amount&gt;&gt;,
+        sapling_bundle: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>sapling::Bundle&lt;A::SaplingAuth, ZatBalance&gt;&gt;,
     ) -&gt; <span class="self">Self</span>::SaplingDigest;
 
     <span class="kw">fn </span>digest_orchard(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        orchard_bundle: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>orchard::Bundle&lt;A::OrchardAuth, Amount&gt;&gt;,
+        orchard_bundle: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>orchard::Bundle&lt;A::OrchardAuth, ZatBalance&gt;&gt;,
     ) -&gt; <span class="self">Self</span>::OrchardDigest;
 
     <span class="attr">#[cfg(zcash_unstable = <span class="string">"zfuture"</span>)]
@@ -2048,13 +2008,13 @@
 </span><span class="kw">pub mod </span>testing {
     <span class="kw">use </span>proptest::prelude::<span class="kw-2">*</span>;
 
-    <span class="kw">use </span><span class="kw">crate</span>::consensus::BranchId;
+    <span class="kw">use </span>::transparent::bundle::testing::{<span class="self">self </span><span class="kw">as </span>transparent};
+    <span class="kw">use </span>zcash_protocol::consensus::BranchId;
 
     <span class="kw">use super</span>::{
         components::{
             orchard::testing::{<span class="self">self </span><span class="kw">as </span>orchard},
             sapling::testing::{<span class="self">self </span><span class="kw">as </span>sapling},
-            transparent::testing::{<span class="self">self </span><span class="kw">as </span>transparent},
         },
         Authorized, Transaction, TransactionData, TxId, TxVersion,
     };

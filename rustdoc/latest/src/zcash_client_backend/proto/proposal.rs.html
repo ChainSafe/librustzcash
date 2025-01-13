@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_client_backend/src/proto/proposal.rs`."><title>proposal.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-dbdb5eec.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="zcash_client_backend" data-themes="" data-resource-suffix="" data-rustdoc-version="1.85.0-nightly (d49be02cf 2024-12-02)" data-channel="nightly" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_client_backend/proto/</div>proposal.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_client_backend/src/proto/proposal.rs`."><title>proposal.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-46132b98.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="zcash_client_backend" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (48a426eca 2025-01-12)" data-channel="nightly" data-search-js="search-75f5ac3e.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_client_backend/proto/</div>proposal.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -223,21 +223,9 @@
 <a href="#222" id="222">222</a>
 <a href="#223" id="223">223</a>
 <a href="#224" id="224">224</a>
-<a href="#225" id="225">225</a>
-<a href="#226" id="226">226</a>
-<a href="#227" id="227">227</a>
-<a href="#228" id="228">228</a>
-<a href="#229" id="229">229</a>
-<a href="#230" id="230">230</a>
-<a href="#231" id="231">231</a>
-<a href="#232" id="232">232</a>
-<a href="#233" id="233">233</a>
-<a href="#234" id="234">234</a>
-<a href="#235" id="235">235</a>
-<a href="#236" id="236">236</a></pre></div><pre class="rust"><code><span class="comment">// This file is @generated by prost-build.
+<a href="#225" id="225">225</a></pre></div><pre class="rust"><code><span class="comment">// This file is @generated by prost-build.
 </span><span class="doccomment">/// A data structure that describes a series of transactions to be created.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>Proposal {
     <span class="doccomment">/// The version of this serialization format.
     </span><span class="attr">#[prost(uint32, tag = <span class="string">"1"</span>)]
@@ -257,8 +245,7 @@
 }
 <span class="doccomment">/// A data structure that describes the inputs to be consumed and outputs to
 /// be produced in a proposed transaction.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>ProposalStep {
     <span class="doccomment">/// ZIP 321 serialized transaction request
     </span><span class="attr">#[prost(string, tag = <span class="string">"1"</span>)]
@@ -287,8 +274,7 @@
 <span class="doccomment">/// A mapping from ZIP 321 payment index to the output pool that has been chosen
 /// for that payment, based upon the payment address and the selected inputs to
 /// the transaction.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>PaymentOutputPool {
     <span class="attr">#[prost(uint32, tag = <span class="string">"1"</span>)]
     </span><span class="kw">pub </span>payment_index: u32,
@@ -297,8 +283,7 @@
 }
 <span class="doccomment">/// The unique identifier and value for each proposed input that does not
 /// require a back-reference to a prior step of the proposal.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>ReceivedOutput {
     <span class="attr">#[prost(bytes = <span class="string">"vec"</span>, tag = <span class="string">"1"</span>)]
     </span><span class="kw">pub </span>txid: ::prost::alloc::vec::Vec&lt;u8&gt;,
@@ -311,8 +296,7 @@
 }
 <span class="doccomment">/// A reference to a payment in a prior step of the proposal. This payment must
 /// belong to the wallet.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>PriorStepOutput {
     <span class="attr">#[prost(uint32, tag = <span class="string">"1"</span>)]
     </span><span class="kw">pub </span>step_index: u32,
@@ -320,8 +304,7 @@
     </span><span class="kw">pub </span>payment_index: u32,
 }
 <span class="doccomment">/// A reference to a change or ephemeral output from a prior step of the proposal.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>PriorStepChange {
     <span class="attr">#[prost(uint32, tag = <span class="string">"1"</span>)]
     </span><span class="kw">pub </span>step_index: u32,
@@ -329,16 +312,14 @@
     </span><span class="kw">pub </span>change_index: u32,
 }
 <span class="doccomment">/// The unique identifier and value for an input to be used in the transaction.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>ProposedInput {
     <span class="attr">#[prost(oneof = <span class="string">"proposed_input::Value"</span>, tags = <span class="string">"1, 2, 3"</span>)]
     </span><span class="kw">pub </span>value: ::core::option::Option&lt;proposed_input::Value&gt;,
 }
 <span class="doccomment">/// Nested message and enum types in `ProposedInput`.
 </span><span class="kw">pub mod </span>proposed_input {
-    <span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    <span class="attr">#[derive(Clone, PartialEq, ::prost::Oneof)]
     </span><span class="kw">pub enum </span>Value {
         <span class="attr">#[prost(message, tag = <span class="string">"1"</span>)]
         </span>ReceivedOutput(<span class="kw">super</span>::ReceivedOutput),
@@ -349,8 +330,7 @@
     }
 }
 <span class="doccomment">/// The proposed change outputs and fee value.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>TransactionBalance {
     <span class="doccomment">/// A list of change or ephemeral output values.
     </span><span class="attr">#[prost(message, repeated, tag = <span class="string">"1"</span>)]
@@ -366,8 +346,7 @@
 /// an ephemeral output, which must be spent by a subsequent step. This is
 /// only supported for transparent outputs. Each ephemeral output will be
 /// given a unique t-address.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>ChangeValue {
     <span class="doccomment">/// The value of a change or ephemeral output to be created, in zatoshis.
     </span><span class="attr">#[prost(uint64, tag = <span class="string">"1"</span>)]
@@ -385,8 +364,7 @@
 }
 <span class="doccomment">/// An object wrapper for memo bytes, to facilitate representing the
 /// `change_memo == None` case.
-</span><span class="attr">#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+</span><span class="attr">#[derive(Clone, PartialEq, ::prost::Message)]
 </span><span class="kw">pub struct </span>MemoBytes {
     <span class="attr">#[prost(bytes = <span class="string">"vec"</span>, tag = <span class="string">"1"</span>)]
     </span><span class="kw">pub </span>value: ::prost::alloc::vec::Vec&lt;u8&gt;,
@@ -413,10 +391,10 @@
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     </span><span class="kw">pub fn </span>as_str_name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
         <span class="kw">match </span><span class="self">self </span>{
-            ValuePool::PoolNotSpecified =&gt; <span class="string">"PoolNotSpecified"</span>,
-            ValuePool::Transparent =&gt; <span class="string">"Transparent"</span>,
-            ValuePool::Sapling =&gt; <span class="string">"Sapling"</span>,
-            ValuePool::Orchard =&gt; <span class="string">"Orchard"</span>,
+            <span class="self">Self</span>::PoolNotSpecified =&gt; <span class="string">"PoolNotSpecified"</span>,
+            <span class="self">Self</span>::Transparent =&gt; <span class="string">"Transparent"</span>,
+            <span class="self">Self</span>::Sapling =&gt; <span class="string">"Sapling"</span>,
+            <span class="self">Self</span>::Orchard =&gt; <span class="string">"Orchard"</span>,
         }
     }
     <span class="doccomment">/// Creates an enum from field names used in the ProtoBuf definition.
@@ -453,10 +431,10 @@
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     </span><span class="kw">pub fn </span>as_str_name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
         <span class="kw">match </span><span class="self">self </span>{
-            FeeRule::NotSpecified =&gt; <span class="string">"FeeRuleNotSpecified"</span>,
-            FeeRule::PreZip313 =&gt; <span class="string">"PreZip313"</span>,
-            FeeRule::Zip313 =&gt; <span class="string">"Zip313"</span>,
-            FeeRule::Zip317 =&gt; <span class="string">"Zip317"</span>,
+            <span class="self">Self</span>::NotSpecified =&gt; <span class="string">"FeeRuleNotSpecified"</span>,
+            <span class="self">Self</span>::PreZip313 =&gt; <span class="string">"PreZip313"</span>,
+            <span class="self">Self</span>::Zip313 =&gt; <span class="string">"Zip313"</span>,
+            <span class="self">Self</span>::Zip317 =&gt; <span class="string">"Zip317"</span>,
         }
     }
     <span class="doccomment">/// Creates an enum from field names used in the ProtoBuf definition.

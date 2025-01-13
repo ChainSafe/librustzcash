@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_client_backend/src/data_api.rs`."><title>data_api.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-dbdb5eec.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="zcash_client_backend" data-themes="" data-resource-suffix="" data-rustdoc-version="1.85.0-nightly (d49be02cf 2024-12-02)" data-channel="nightly" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../../static.files/storage-59e33391.js"></script><script defer src="../../static.files/src-script-56102188.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_client_backend/</div>data_api.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_client_backend/src/data_api.rs`."><title>data_api.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-46132b98.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="zcash_client_backend" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (48a426eca 2025-01-12)" data-channel="nightly" data-search-js="search-75f5ac3e.js" data-settings-js="settings-0f613d39.js" ><script src="../../static.files/storage-59e33391.js"></script><script defer src="../../static.files/src-script-56102188.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_client_backend/</div>data_api.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -2501,7 +2501,54 @@
 <a href="#2500" id="2500">2500</a>
 <a href="#2501" id="2501">2501</a>
 <a href="#2502" id="2502">2502</a>
-<a href="#2503" id="2503">2503</a></pre></div><pre class="rust"><code><span class="doccomment">//! # Utilities for Zcash wallet construction
+<a href="#2503" id="2503">2503</a>
+<a href="#2504" id="2504">2504</a>
+<a href="#2505" id="2505">2505</a>
+<a href="#2506" id="2506">2506</a>
+<a href="#2507" id="2507">2507</a>
+<a href="#2508" id="2508">2508</a>
+<a href="#2509" id="2509">2509</a>
+<a href="#2510" id="2510">2510</a>
+<a href="#2511" id="2511">2511</a>
+<a href="#2512" id="2512">2512</a>
+<a href="#2513" id="2513">2513</a>
+<a href="#2514" id="2514">2514</a>
+<a href="#2515" id="2515">2515</a>
+<a href="#2516" id="2516">2516</a>
+<a href="#2517" id="2517">2517</a>
+<a href="#2518" id="2518">2518</a>
+<a href="#2519" id="2519">2519</a>
+<a href="#2520" id="2520">2520</a>
+<a href="#2521" id="2521">2521</a>
+<a href="#2522" id="2522">2522</a>
+<a href="#2523" id="2523">2523</a>
+<a href="#2524" id="2524">2524</a>
+<a href="#2525" id="2525">2525</a>
+<a href="#2526" id="2526">2526</a>
+<a href="#2527" id="2527">2527</a>
+<a href="#2528" id="2528">2528</a>
+<a href="#2529" id="2529">2529</a>
+<a href="#2530" id="2530">2530</a>
+<a href="#2531" id="2531">2531</a>
+<a href="#2532" id="2532">2532</a>
+<a href="#2533" id="2533">2533</a>
+<a href="#2534" id="2534">2534</a>
+<a href="#2535" id="2535">2535</a>
+<a href="#2536" id="2536">2536</a>
+<a href="#2537" id="2537">2537</a>
+<a href="#2538" id="2538">2538</a>
+<a href="#2539" id="2539">2539</a>
+<a href="#2540" id="2540">2540</a>
+<a href="#2541" id="2541">2541</a>
+<a href="#2542" id="2542">2542</a>
+<a href="#2543" id="2543">2543</a>
+<a href="#2544" id="2544">2544</a>
+<a href="#2545" id="2545">2545</a>
+<a href="#2546" id="2546">2546</a>
+<a href="#2547" id="2547">2547</a>
+<a href="#2548" id="2548">2548</a>
+<a href="#2549" id="2549">2549</a>
+<a href="#2550" id="2550">2550</a></pre></div><pre class="rust"><code><span class="doccomment">//! # Utilities for Zcash wallet construction
 //!
 //! This module defines a set of APIs for wallet data persistence, and provides a suite of methods
 //! based upon these APIs that can be used to implement a fully functional Zcash wallet. At
@@ -2558,7 +2605,9 @@
 //! [`TransactionRequest`]: crate::zip321::TransactionRequest
 //! [`propose_shielding`]: crate::data_api::wallet::propose_shielding
 
-</span><span class="kw">use </span>std::{
+</span><span class="kw">use </span>nonempty::NonEmpty;
+<span class="kw">use </span>secrecy::SecretVec;
+<span class="kw">use </span>std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
@@ -2567,9 +2616,21 @@
 };
 
 <span class="kw">use </span>incrementalmerkletree::{frontier::Frontier, Retention};
-<span class="kw">use </span>nonempty::NonEmpty;
-<span class="kw">use </span>secrecy::SecretVec;
 <span class="kw">use </span>shardtree::{error::ShardTreeError, store::ShardStore, ShardTree};
+
+<span class="kw">use </span>zcash_keys::{
+    address::UnifiedAddress,
+    keys::{
+        UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedIncomingViewingKey, UnifiedSpendingKey,
+    },
+};
+<span class="kw">use </span>zcash_primitives::{block::BlockHash, transaction::Transaction};
+<span class="kw">use </span>zcash_protocol::{
+    consensus::BlockHeight,
+    memo::{Memo, MemoBytes},
+    value::{BalanceError, Zatoshis},
+    ShieldedProtocol, TxId,
+};
 <span class="kw">use </span>zip32::fingerprint::SeedFingerprint;
 
 <span class="kw">use </span><span class="self">self</span>::{
@@ -2577,39 +2638,23 @@
     scanning::ScanRange,
 };
 <span class="kw">use crate</span>::{
-    address::UnifiedAddress,
     decrypt::DecryptedOutput,
-    keys::{
-        UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedIncomingViewingKey, UnifiedSpendingKey,
-    },
     proto::service::TreeState,
     wallet::{Note, NoteId, ReceivedNote, Recipient, WalletTransparentOutput, WalletTx},
-    ShieldedProtocol,
-};
-<span class="kw">use </span>zcash_primitives::{
-    block::BlockHash,
-    consensus::BlockHeight,
-    memo::{Memo, MemoBytes},
-    transaction::{
-        components::{
-            amount::{BalanceError, NonNegativeAmount},
-            OutPoint,
-        },
-        Transaction, TxId,
-    },
 };
 
 <span class="attr">#[cfg(feature = <span class="string">"transparent-inputs"</span>)]
 </span><span class="kw">use </span>{
-    <span class="kw">crate</span>::wallet::TransparentAddressMetadata, std::ops::Range,
-    zcash_primitives::legacy::TransparentAddress,
+    <span class="kw">crate</span>::wallet::TransparentAddressMetadata,
+    std::ops::Range,
+    transparent::{address::TransparentAddress, bundle::OutPoint, keys::NonHardenedChildIndex},
 };
 
 <span class="attr">#[cfg(feature = <span class="string">"test-dependencies"</span>)]
 </span><span class="kw">use </span>ambassador::delegatable_trait;
 
 <span class="attr">#[cfg(any(test, feature = <span class="string">"test-dependencies"</span>))]
-</span><span class="kw">use </span>{zcash_keys::address::Address, zcash_primitives::consensus::NetworkUpgrade};
+</span><span class="kw">use </span>{zcash_keys::address::Address, zcash_protocol::consensus::NetworkUpgrade};
 
 <span class="kw">pub mod </span>chain;
 <span class="kw">pub mod </span>error;
@@ -2646,23 +2691,20 @@
 <span class="doccomment">/// Balance information for a value within a single pool in an account.
 </span><span class="attr">#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 </span><span class="kw">pub struct </span>Balance {
-    spendable_value: NonNegativeAmount,
-    change_pending_confirmation: NonNegativeAmount,
-    value_pending_spendability: NonNegativeAmount,
+    spendable_value: Zatoshis,
+    change_pending_confirmation: Zatoshis,
+    value_pending_spendability: Zatoshis,
 }
 
 <span class="kw">impl </span>Balance {
     <span class="doccomment">/// The [`Balance`] value having zero values for all its fields.
     </span><span class="kw">pub const </span>ZERO: <span class="self">Self </span>= <span class="self">Self </span>{
-        spendable_value: NonNegativeAmount::ZERO,
-        change_pending_confirmation: NonNegativeAmount::ZERO,
-        value_pending_spendability: NonNegativeAmount::ZERO,
+        spendable_value: Zatoshis::ZERO,
+        change_pending_confirmation: Zatoshis::ZERO,
+        value_pending_spendability: Zatoshis::ZERO,
     };
 
-    <span class="kw">fn </span>check_total_adding(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        value: NonNegativeAmount,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;NonNegativeAmount, BalanceError&gt; {
+    <span class="kw">fn </span>check_total_adding(<span class="kw-2">&amp;</span><span class="self">self</span>, value: Zatoshis) -&gt; <span class="prelude-ty">Result</span>&lt;Zatoshis, BalanceError&gt; {
         (<span class="self">self</span>.spendable_value
             + <span class="self">self</span>.change_pending_confirmation
             + <span class="self">self</span>.value_pending_spendability
@@ -2673,12 +2715,12 @@
     <span class="doccomment">/// Returns the value in the account that may currently be spent; it is possible to compute
     /// witnesses for all the notes that comprise this value, and all of this value is confirmed to
     /// the required confirmation depth.
-    </span><span class="kw">pub fn </span>spendable_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>spendable_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         <span class="self">self</span>.spendable_value
     }
 
     <span class="doccomment">/// Adds the specified value to the spendable total, checking for overflow.
-    </span><span class="kw">pub fn </span>add_spendable_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: NonNegativeAmount) -&gt; <span class="prelude-ty">Result</span>&lt;(), BalanceError&gt; {
+    </span><span class="kw">pub fn </span>add_spendable_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: Zatoshis) -&gt; <span class="prelude-ty">Result</span>&lt;(), BalanceError&gt; {
         <span class="self">self</span>.check_total_adding(value)<span class="question-mark">?</span>;
         <span class="self">self</span>.spendable_value = (<span class="self">self</span>.spendable_value + value).unwrap();
         <span class="prelude-val">Ok</span>(())
@@ -2686,15 +2728,12 @@
 
     <span class="doccomment">/// Returns the value in the account of shielded change notes that do not yet have sufficient
     /// confirmations to be spendable.
-    </span><span class="kw">pub fn </span>change_pending_confirmation(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>change_pending_confirmation(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         <span class="self">self</span>.change_pending_confirmation
     }
 
     <span class="doccomment">/// Adds the specified value to the pending change total, checking for overflow.
-    </span><span class="kw">pub fn </span>add_pending_change_value(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        value: NonNegativeAmount,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), BalanceError&gt; {
+    </span><span class="kw">pub fn </span>add_pending_change_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: Zatoshis) -&gt; <span class="prelude-ty">Result</span>&lt;(), BalanceError&gt; {
         <span class="self">self</span>.check_total_adding(value)<span class="question-mark">?</span>;
         <span class="self">self</span>.change_pending_confirmation = (<span class="self">self</span>.change_pending_confirmation + value).unwrap();
         <span class="prelude-val">Ok</span>(())
@@ -2703,22 +2742,19 @@
     <span class="doccomment">/// Returns the value in the account of all remaining received notes that either do not have
     /// sufficient confirmations to be spendable, or for which witnesses cannot yet be constructed
     /// without additional scanning.
-    </span><span class="kw">pub fn </span>value_pending_spendability(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>value_pending_spendability(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         <span class="self">self</span>.value_pending_spendability
     }
 
     <span class="doccomment">/// Adds the specified value to the pending spendable total, checking for overflow.
-    </span><span class="kw">pub fn </span>add_pending_spendable_value(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        value: NonNegativeAmount,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), BalanceError&gt; {
+    </span><span class="kw">pub fn </span>add_pending_spendable_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: Zatoshis) -&gt; <span class="prelude-ty">Result</span>&lt;(), BalanceError&gt; {
         <span class="self">self</span>.check_total_adding(value)<span class="question-mark">?</span>;
         <span class="self">self</span>.value_pending_spendability = (<span class="self">self</span>.value_pending_spendability + value).unwrap();
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Returns the total value of funds represented by this [`Balance`].
-    </span><span class="kw">pub fn </span>total(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>total(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         (<span class="self">self</span>.spendable_value + <span class="self">self</span>.change_pending_confirmation + <span class="self">self</span>.value_pending_spendability)
             .expect(<span class="string">"Balance cannot overflow MAX_MONEY"</span>)
     }
@@ -2734,14 +2770,8 @@
     <span class="doccomment">/// The value of unspent Orchard outputs belonging to the account.
     </span>orchard_balance: Balance,
 
-    <span class="doccomment">/// The value of all unspent transparent outputs belonging to the account, irrespective of
-    /// confirmation depth.
-    ///
-    /// Unshielded balances are not subject to confirmation-depth constraints, because the only
-    /// possible operation on a transparent balance is to shield it, it is possible to create a
-    /// zero-conf transaction to perform that shielding, and the resulting shielded notes will be
-    /// subject to normal confirmation rules.
-    </span>unshielded: NonNegativeAmount,
+    <span class="doccomment">/// The value of all unspent transparent outputs belonging to the account.
+    </span>unshielded_balance: Balance,
 }
 
 <span class="kw">impl </span>AccountBalance {
@@ -2749,12 +2779,14 @@
     </span><span class="kw">pub const </span>ZERO: <span class="self">Self </span>= <span class="self">Self </span>{
         sapling_balance: Balance::ZERO,
         orchard_balance: Balance::ZERO,
-        unshielded: NonNegativeAmount::ZERO,
+        unshielded_balance: Balance::ZERO,
     };
 
-    <span class="kw">fn </span>check_total(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;NonNegativeAmount, BalanceError&gt; {
-        (<span class="self">self</span>.sapling_balance.total() + <span class="self">self</span>.orchard_balance.total() + <span class="self">self</span>.unshielded)
-            .ok_or(BalanceError::Overflow)
+    <span class="kw">fn </span>check_total(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Zatoshis, BalanceError&gt; {
+        (<span class="self">self</span>.sapling_balance.total()
+            + <span class="self">self</span>.orchard_balance.total()
+            + <span class="self">self</span>.unshielded_balance.total())
+        .ok_or(BalanceError::Overflow)
     }
 
     <span class="doccomment">/// Returns the [`Balance`] of Sapling funds in the account.
@@ -2762,7 +2794,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>.sapling_balance
     }
 
-    <span class="doccomment">/// Provides a `mutable reference to the [`Balance`] of Sapling funds in the account
+    <span class="doccomment">/// Provides a mutable reference to the [`Balance`] of Sapling funds in the account
     /// to the specified callback, checking invariants after the callback's action has been
     /// evaluated.
     </span><span class="kw">pub fn </span>with_sapling_balance_mut&lt;A, E: From&lt;BalanceError&gt;&gt;(
@@ -2779,7 +2811,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>.orchard_balance
     }
 
-    <span class="doccomment">/// Provides a `mutable reference to the [`Balance`] of Orchard funds in the account
+    <span class="doccomment">/// Provides a mutable reference to the [`Balance`] of Orchard funds in the account
     /// to the specified callback, checking invariants after the callback's action has been
     /// evaluated.
     </span><span class="kw">pub fn </span>with_orchard_balance_mut&lt;A, E: From&lt;BalanceError&gt;&gt;(
@@ -2792,34 +2824,48 @@
     }
 
     <span class="doccomment">/// Returns the total value of unspent transparent transaction outputs belonging to the wallet.
-    </span><span class="kw">pub fn </span>unshielded(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
-        <span class="self">self</span>.unshielded
+    </span><span class="attr">#[deprecated(
+        note = <span class="string">"this function is deprecated. Please use [`AccountBalance::unshielded_balance`] instead."
+    </span>)]
+    </span><span class="kw">pub fn </span>unshielded(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
+        <span class="self">self</span>.unshielded_balance.total()
     }
 
-    <span class="doccomment">/// Adds the specified value to the unshielded total, checking for overflow of
-    /// the total account balance.
-    </span><span class="kw">pub fn </span>add_unshielded_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: NonNegativeAmount) -&gt; <span class="prelude-ty">Result</span>&lt;(), BalanceError&gt; {
-        <span class="self">self</span>.unshielded = (<span class="self">self</span>.unshielded + value).ok_or(BalanceError::Overflow)<span class="question-mark">?</span>;
+    <span class="doccomment">/// Returns the [`Balance`] of unshielded funds in the account.
+    </span><span class="kw">pub fn </span>unshielded_balance(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Balance {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.unshielded_balance
+    }
+
+    <span class="doccomment">/// Provides a mutable reference to the [`Balance`] of transparent funds in the account
+    /// to the specified callback, checking invariants after the callback's action has been
+    /// evaluated.
+    </span><span class="kw">pub fn </span>with_unshielded_balance_mut&lt;A, E: From&lt;BalanceError&gt;&gt;(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        f: <span class="kw">impl </span>FnOnce(<span class="kw-2">&amp;mut </span>Balance) -&gt; <span class="prelude-ty">Result</span>&lt;A, E&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;A, E&gt; {
+        <span class="kw">let </span>result = f(<span class="kw-2">&amp;mut </span><span class="self">self</span>.unshielded_balance)<span class="question-mark">?</span>;
         <span class="self">self</span>.check_total()<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
+        <span class="prelude-val">Ok</span>(result)
     }
 
     <span class="doccomment">/// Returns the total value of funds belonging to the account.
-    </span><span class="kw">pub fn </span>total(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
-        (<span class="self">self</span>.sapling_balance.total() + <span class="self">self</span>.orchard_balance.total() + <span class="self">self</span>.unshielded)
-            .expect(<span class="string">"Account balance cannot overflow MAX_MONEY"</span>)
+    </span><span class="kw">pub fn </span>total(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
+        (<span class="self">self</span>.sapling_balance.total()
+            + <span class="self">self</span>.orchard_balance.total()
+            + <span class="self">self</span>.unshielded_balance.total())
+        .expect(<span class="string">"Account balance cannot overflow MAX_MONEY"</span>)
     }
 
     <span class="doccomment">/// Returns the total value of shielded (Sapling and Orchard) funds that may immediately be
     /// spent.
-    </span><span class="kw">pub fn </span>spendable_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>spendable_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         (<span class="self">self</span>.sapling_balance.spendable_value + <span class="self">self</span>.orchard_balance.spendable_value)
             .expect(<span class="string">"Account balance cannot overflow MAX_MONEY"</span>)
     }
 
     <span class="doccomment">/// Returns the total value of change and/or shielding transaction outputs that are awaiting
     /// sufficient confirmations for spendability.
-    </span><span class="kw">pub fn </span>change_pending_confirmation(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>change_pending_confirmation(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         (<span class="self">self</span>.sapling_balance.change_pending_confirmation
             + <span class="self">self</span>.orchard_balance.change_pending_confirmation)
             .expect(<span class="string">"Account balance cannot overflow MAX_MONEY"</span>)
@@ -2827,20 +2873,47 @@
 
     <span class="doccomment">/// Returns the value of shielded funds that are not yet spendable because additional scanning
     /// is required before it will be possible to derive witnesses for the associated notes.
-    </span><span class="kw">pub fn </span>value_pending_spendability(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>value_pending_spendability(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         (<span class="self">self</span>.sapling_balance.value_pending_spendability
             + <span class="self">self</span>.orchard_balance.value_pending_spendability)
             .expect(<span class="string">"Account balance cannot overflow MAX_MONEY"</span>)
     }
 }
 
+<span class="doccomment">/// Source metadata for a ZIP 32-derived key.
+</span><span class="attr">#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+</span><span class="kw">pub struct </span>Zip32Derivation {
+    seed_fingerprint: SeedFingerprint,
+    account_index: zip32::AccountId,
+}
+
+<span class="kw">impl </span>Zip32Derivation {
+    <span class="doccomment">/// Constructs new derivation metadata from its constituent parts.
+    </span><span class="kw">pub fn </span>new(seed_fingerprint: SeedFingerprint, account_index: zip32::AccountId) -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{
+            seed_fingerprint,
+            account_index,
+        }
+    }
+
+    <span class="doccomment">/// Returns the seed fingerprint.
+    </span><span class="kw">pub fn </span>seed_fingerprint(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>SeedFingerprint {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.seed_fingerprint
+    }
+
+    <span class="doccomment">/// Returns the account-level index in the ZIP 32 derivation path.
+    </span><span class="kw">pub fn </span>account_index(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; zip32::AccountId {
+        <span class="self">self</span>.account_index
+    }
+}
+
 <span class="doccomment">/// An enumeration used to control what information is tracked by the wallet for
 /// notes received by a given account.
-</span><span class="attr">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+</span><span class="attr">#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 </span><span class="kw">pub enum </span>AccountPurpose {
     <span class="doccomment">/// For spending accounts, the wallet will track information needed to spend
     /// received notes.
-    </span>Spending,
+    </span>Spending { derivation: <span class="prelude-ty">Option</span>&lt;Zip32Derivation&gt; },
     <span class="doccomment">/// For view-only accounts, the wallet will not track spend information.
     </span>ViewOnly,
 }
@@ -2850,8 +2923,7 @@
 </span><span class="kw">pub enum </span>AccountSource {
     <span class="doccomment">/// An account derived from a known seed.
     </span>Derived {
-        seed_fingerprint: SeedFingerprint,
-        account_index: zip32::AccountId,
+        derivation: Zip32Derivation,
         key_source: <span class="prelude-ty">Option</span>&lt;String&gt;,
     },
 
@@ -2860,6 +2932,28 @@
         purpose: AccountPurpose,
         key_source: <span class="prelude-ty">Option</span>&lt;String&gt;,
     },
+}
+
+<span class="kw">impl </span>AccountSource {
+    <span class="doccomment">/// Returns the key derivation metadata for the account source, if any is available.
+    </span><span class="kw">pub fn </span>key_derivation(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Zip32Derivation&gt; {
+        <span class="kw">match </span><span class="self">self </span>{
+            AccountSource::Derived { derivation, .. } =&gt; <span class="prelude-val">Some</span>(derivation),
+            AccountSource::Imported {
+                purpose: AccountPurpose::Spending { derivation },
+                ..
+            } =&gt; derivation.as_ref(),
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+        }
+    }
+
+    <span class="doccomment">/// Returns the application-level key source identifier.
+    </span><span class="kw">pub fn </span>key_source(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt; {
+        <span class="kw">match </span><span class="self">self </span>{
+            AccountSource::Derived { key_source, .. } =&gt; key_source.as_ref().map(|s| s.as_str()),
+            AccountSource::Imported { key_source, .. } =&gt; key_source.as_ref().map(|s| s.as_str()),
+        }
+    }
 }
 
 <span class="doccomment">/// A set of capabilities that a client account must provide.
@@ -2879,8 +2973,10 @@
     <span class="doccomment">/// Returns whether the account is a spending account or a view-only account.
     </span><span class="kw">fn </span>purpose(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; AccountPurpose {
         <span class="kw">match </span><span class="self">self</span>.source() {
-            AccountSource::Derived { .. } =&gt; AccountPurpose::Spending,
-            AccountSource::Imported { purpose, .. } =&gt; <span class="kw-2">*</span>purpose,
+            AccountSource::Derived { derivation, .. } =&gt; AccountPurpose::Spending {
+                derivation: <span class="prelude-val">Some</span>(derivation.clone()),
+            },
+            AccountSource::Imported { purpose, .. } =&gt; purpose.clone(),
         }
     }
 
@@ -3264,26 +3360,22 @@
     }
 
     <span class="doccomment">/// Computes the total value of Sapling notes.
-    </span><span class="kw">pub fn </span>sapling_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;NonNegativeAmount, BalanceError&gt; {
-        <span class="self">self</span>.sapling
-            .iter()
-            .try_fold(NonNegativeAmount::ZERO, |acc, n| {
-                (acc + n.note_value()<span class="question-mark">?</span>).ok_or(BalanceError::Overflow)
-            })
+    </span><span class="kw">pub fn </span>sapling_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Zatoshis, BalanceError&gt; {
+        <span class="self">self</span>.sapling.iter().try_fold(Zatoshis::ZERO, |acc, n| {
+            (acc + n.note_value()<span class="question-mark">?</span>).ok_or(BalanceError::Overflow)
+        })
     }
 
     <span class="doccomment">/// Computes the total value of Sapling notes.
     </span><span class="attr">#[cfg(feature = <span class="string">"orchard"</span>)]
-    </span><span class="kw">pub fn </span>orchard_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;NonNegativeAmount, BalanceError&gt; {
-        <span class="self">self</span>.orchard
-            .iter()
-            .try_fold(NonNegativeAmount::ZERO, |acc, n| {
-                (acc + n.note_value()<span class="question-mark">?</span>).ok_or(BalanceError::Overflow)
-            })
+    </span><span class="kw">pub fn </span>orchard_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Zatoshis, BalanceError&gt; {
+        <span class="self">self</span>.orchard.iter().try_fold(Zatoshis::ZERO, |acc, n| {
+            (acc + n.note_value()<span class="question-mark">?</span>).ok_or(BalanceError::Overflow)
+        })
     }
 
     <span class="doccomment">/// Computes the total value of spendable inputs
-    </span><span class="kw">pub fn </span>total_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;NonNegativeAmount, BalanceError&gt; {
+    </span><span class="kw">pub fn </span>total_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Zatoshis, BalanceError&gt; {
         <span class="attr">#[cfg(not(feature = <span class="string">"orchard"</span>))]
         </span><span class="kw">return </span><span class="self">self</span>.sapling_value();
 
@@ -3321,12 +3413,12 @@
 </span><span class="attr">#[derive(Debug, Clone)]
 </span><span class="kw">pub struct </span>PoolMeta {
     note_count: usize,
-    value: NonNegativeAmount,
+    value: Zatoshis,
 }
 
 <span class="kw">impl </span>PoolMeta {
     <span class="doccomment">/// Constructs a new [`PoolMeta`] value from its constituent parts.
-    </span><span class="kw">pub fn </span>new(note_count: usize, value: NonNegativeAmount) -&gt; <span class="self">Self </span>{
+    </span><span class="kw">pub fn </span>new(note_count: usize, value: Zatoshis) -&gt; <span class="self">Self </span>{
         <span class="self">Self </span>{ note_count, value }
     }
 
@@ -3338,7 +3430,7 @@
 
     <span class="doccomment">/// Returns the total value of unspent outputs in the account that are accounted for in
     /// [`Self::note_count`].
-    </span><span class="kw">pub fn </span>value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         <span class="self">self</span>.value
     }
 }
@@ -3410,11 +3502,11 @@
         s.zip(o).map(|(s, o)| s + o).or(s).or(o)
     }
 
-    <span class="kw">fn </span>sapling_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;NonNegativeAmount&gt; {
+    <span class="kw">fn </span>sapling_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Zatoshis&gt; {
         <span class="self">self</span>.sapling.as_ref().map(|m| m.value)
     }
 
-    <span class="kw">fn </span>orchard_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;NonNegativeAmount&gt; {
+    <span class="kw">fn </span>orchard_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Zatoshis&gt; {
         <span class="self">self</span>.orchard.as_ref().map(|m| m.value)
     }
 
@@ -3423,7 +3515,7 @@
     /// Returns [`None`] if no metadata is available or it was not possible to evaluate the query
     /// described by a [`NoteFilter`] given the available wallet data. If metadata is available
     /// only for a single pool, the metadata for that pool will be returned.
-    </span><span class="kw">pub fn </span>total_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;NonNegativeAmount&gt; {
+    </span><span class="kw">pub fn </span>total_value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Zatoshis&gt; {
         <span class="kw">let </span>s = <span class="self">self</span>.sapling_value();
         <span class="kw">let </span>o = <span class="self">self</span>.orchard_value();
         s.zip(o)
@@ -3484,7 +3576,7 @@
 </span><span class="attr">#[derive(Clone, Debug, PartialEq, Eq)]
 </span><span class="kw">pub enum </span>NoteFilter {
     <span class="doccomment">/// Selects notes having value greater than or equal to the provided value.
-    </span>ExceedsMinValue(NonNegativeAmount),
+    </span>ExceedsMinValue(Zatoshis),
     <span class="doccomment">/// Selects notes having value greater than or equal to approximately the n'th percentile of
     /// previously sent notes in the account, irrespective of pool. The wrapped value must be in
     /// the range `1..=99`. The value `n` is respected in a best-effort fashion; results are likely
@@ -3566,7 +3658,7 @@
     </span><span class="kw">fn </span>select_spendable_notes(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         account: <span class="self">Self</span>::AccountId,
-        target_value: NonNegativeAmount,
+        target_value: Zatoshis,
         sources: <span class="kw-2">&amp;</span>[ShieldedProtocol],
         anchor_height: BlockHeight,
         exclude: <span class="kw-2">&amp;</span>[<span class="self">Self</span>::NoteRef],
@@ -3707,8 +3799,9 @@
     /// or `Ok(None)` if the wallet has no initialized accounts.
     </span><span class="kw">fn </span>get_wallet_birthday(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;BlockHeight&gt;, <span class="self">Self</span>::Error&gt;;
 
-    <span class="doccomment">/// Returns the wallet balances and sync status for an account given the specified minimum
-    /// number of confirmations, or `Ok(None)` if the wallet has no balance data available.
+    <span class="doccomment">/// Returns a [`WalletSummary`] that represents the sync status, and the wallet balances
+    /// given the specified minimum number of confirmations for all accounts known to the
+    /// wallet; or `Ok(None)` if the wallet has no summary data available.
     </span><span class="kw">fn </span>get_wallet_summary(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         min_confirmations: u32,
@@ -3840,7 +3933,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         _account: <span class="self">Self</span>::AccountId,
         _max_height: BlockHeight,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;HashMap&lt;TransparentAddress, NonNegativeAmount&gt;, <span class="self">Self</span>::Error&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;HashMap&lt;TransparentAddress, Zatoshis&gt;, <span class="self">Self</span>::Error&gt; {
         <span class="prelude-val">Ok</span>(HashMap::new())
     }
 
@@ -3919,7 +4012,7 @@
     </span><span class="kw">fn </span>get_known_ephemeral_addresses(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         _account: <span class="self">Self</span>::AccountId,
-        _index_range: <span class="prelude-ty">Option</span>&lt;Range&lt;u32&gt;&gt;,
+        _index_range: <span class="prelude-ty">Option</span>&lt;Range&lt;NonHardenedChildIndex&gt;&gt;,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;(TransparentAddress, TransparentAddressMetadata)&gt;, <span class="self">Self</span>::Error&gt; {
         <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[])
     }
@@ -4042,7 +4135,7 @@
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 </span><span class="kw">pub struct </span>OutputOfSentTx {
-    value: NonNegativeAmount,
+    value: Zatoshis,
     external_recipient: <span class="prelude-ty">Option</span>&lt;Address&gt;,
     ephemeral_address: <span class="prelude-ty">Option</span>&lt;(Address, u32)&gt;,
 }
@@ -4055,7 +4148,7 @@
     /// address along with the `address_index` it was derived from under the BIP 32 path
     /// `m/44'/&lt;coin_type&gt;'/&lt;account&gt;'/2/&lt;address_index&gt;`.
     </span><span class="kw">pub fn </span>from_parts(
-        value: NonNegativeAmount,
+        value: Zatoshis,
         external_recipient: <span class="prelude-ty">Option</span>&lt;Address&gt;,
         ephemeral_address: <span class="prelude-ty">Option</span>&lt;(Address, u32)&gt;,
     ) -&gt; <span class="self">Self </span>{
@@ -4345,7 +4438,7 @@
     target_height: BlockHeight,
     account: AccountId,
     outputs: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[SentTransactionOutput&lt;AccountId&gt;],
-    fee_amount: NonNegativeAmount,
+    fee_amount: Zatoshis,
     <span class="attr">#[cfg(feature = <span class="string">"transparent-inputs"</span>)]
     </span>utxos_spent: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[OutPoint],
 }
@@ -4368,7 +4461,7 @@
         target_height: BlockHeight,
         account: AccountId,
         outputs: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[SentTransactionOutput&lt;AccountId&gt;],
-        fee_amount: NonNegativeAmount,
+        fee_amount: Zatoshis,
         <span class="attr">#[cfg(feature = <span class="string">"transparent-inputs"</span>)] </span>utxos_spent: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[OutPoint],
     ) -&gt; <span class="self">Self </span>{
         <span class="self">Self </span>{
@@ -4400,7 +4493,7 @@
         <span class="self">self</span>.outputs
     }
     <span class="doccomment">/// Returns the fee paid by the transaction.
-    </span><span class="kw">pub fn </span>fee_amount(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>fee_amount(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         <span class="self">self</span>.fee_amount
     }
     <span class="doccomment">/// Returns the list of UTXOs spent in the created transaction.
@@ -4420,8 +4513,8 @@
 /// This type is capable of representing both shielded and transparent outputs.
 </span><span class="kw">pub struct </span>SentTransactionOutput&lt;AccountId&gt; {
     output_index: usize,
-    recipient: Recipient&lt;AccountId, Note, OutPoint&gt;,
-    value: NonNegativeAmount,
+    recipient: Recipient&lt;AccountId&gt;,
+    value: Zatoshis,
     memo: <span class="prelude-ty">Option</span>&lt;MemoBytes&gt;,
 }
 
@@ -4437,8 +4530,8 @@
     /// * `memo` - the memo that was sent with this output
     </span><span class="kw">pub fn </span>from_parts(
         output_index: usize,
-        recipient: Recipient&lt;AccountId, Note, OutPoint&gt;,
-        value: NonNegativeAmount,
+        recipient: Recipient&lt;AccountId&gt;,
+        value: Zatoshis,
         memo: <span class="prelude-ty">Option</span>&lt;MemoBytes&gt;,
     ) -&gt; <span class="self">Self </span>{
         <span class="self">Self </span>{
@@ -4460,11 +4553,11 @@
     }
     <span class="doccomment">/// Returns the recipient address of the transaction, or the account id and
     /// resulting note/outpoint for wallet-internal outputs.
-    </span><span class="kw">pub fn </span>recipient(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Recipient&lt;AccountId, Note, OutPoint&gt; {
+    </span><span class="kw">pub fn </span>recipient(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Recipient&lt;AccountId&gt; {
         <span class="kw-2">&amp;</span><span class="self">self</span>.recipient
     }
     <span class="doccomment">/// Returns the value of the newly created output.
-    </span><span class="kw">pub fn </span>value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; NonNegativeAmount {
+    </span><span class="kw">pub fn </span>value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Zatoshis {
         <span class="self">self</span>.value
     }
     <span class="doccomment">/// Returns the memo that was attached to the output, if any. This will only be `None`
@@ -4578,7 +4671,7 @@
     /// # Panics
     ///
     /// Panics if the activation height for the given network upgrade is not set.
-    </span><span class="kw">pub fn </span>from_activation&lt;P: zcash_primitives::consensus::Parameters&gt;(
+    </span><span class="kw">pub fn </span>from_activation&lt;P: zcash_protocol::consensus::Parameters&gt;(
         params: <span class="kw-2">&amp;</span>P,
         network_upgrade: NetworkUpgrade,
         prior_block_hash: BlockHash,
@@ -4599,7 +4692,7 @@
     /// # Panics
     ///
     /// Panics if the Sapling activation height is not set.
-    </span><span class="kw">pub fn </span>from_sapling_activation&lt;P: zcash_primitives::consensus::Parameters&gt;(
+    </span><span class="kw">pub fn </span>from_sapling_activation&lt;P: zcash_protocol::consensus::Parameters&gt;(
         params: <span class="kw-2">&amp;</span>P,
         prior_block_hash: BlockHash,
     ) -&gt; AccountBirthday {
@@ -4817,15 +4910,16 @@
         key_source: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Account, <span class="self">Self</span>::Error&gt;;
 
-    <span class="doccomment">/// Generates and persists the next available diversified address, given the current
-    /// addresses known to the wallet.
+    <span class="doccomment">/// Generates and persists the next available diversified address for the specified account,
+    /// given the current addresses known to the wallet. If the `request` parameter is `None`,
+    /// an address should be generated using all of the available receivers for the account's UFVK.
     ///
     /// Returns `Ok(None)` if the account identifier does not correspond to a known
     /// account.
     </span><span class="kw">fn </span>get_next_available_address(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         account: <span class="self">Self</span>::AccountId,
-        request: UnifiedAddressRequest,
+        request: <span class="prelude-ty">Option</span>&lt;UnifiedAddressRequest&gt;,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;UnifiedAddress&gt;, <span class="self">Self</span>::Error&gt;;
 
     <span class="doccomment">/// Updates the wallet's view of the blockchain.

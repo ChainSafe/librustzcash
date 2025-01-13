@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `components/zcash_address/src/kind/unified/fvk.rs`."><title>fvk.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dbdb5eec.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="zcash_address" data-themes="" data-resource-suffix="" data-rustdoc-version="1.85.0-nightly (d49be02cf 2024-12-02)" data-channel="nightly" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_address/kind/unified/</div>fvk.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `components/zcash_address/src/kind/unified/fvk.rs`."><title>fvk.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-46132b98.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="zcash_address" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (48a426eca 2025-01-12)" data-channel="nightly" data-search-js="search-75f5ac3e.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_address/kind/unified/</div>fvk.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -373,7 +373,18 @@
 <a href="#372" id="372">372</a>
 <a href="#373" id="373">373</a>
 <a href="#374" id="374">374</a>
-<a href="#375" id="375">375</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::convert::{TryFrom, TryInto};
+<a href="#375" id="375">375</a>
+<a href="#376" id="376">376</a>
+<a href="#377" id="377">377</a>
+<a href="#378" id="378">378</a>
+<a href="#379" id="379">379</a>
+<a href="#380" id="380">380</a>
+<a href="#381" id="381">381</a>
+<a href="#382" id="382">382</a>
+<a href="#383" id="383">383</a>
+<a href="#384" id="384">384</a></pre></div><pre class="rust"><code><span class="kw">use </span>alloc::vec::Vec;
+<span class="kw">use </span>core::convert::{TryFrom, TryInto};
+<span class="kw">use </span>zcash_protocol::constants;
 
 <span class="kw">use super</span>::{
     private::{SealedContainer, SealedItem},
@@ -457,10 +468,12 @@
 /// # Examples
 ///
 /// ```
-/// # use std::error::Error;
 /// use zcash_address::unified::{self, Container, Encoding};
 ///
-/// # fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+/// # #[cfg(not(feature = "std"))]
+/// # fn main() {}
+/// # #[cfg(feature = "std")]
+/// # fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
 /// # let ufvk_from_user = || "uview1cgrqnry478ckvpr0f580t6fsahp0a5mj2e9xl7hv2d2jd4ldzy449mwwk2l9yeuts85wjls6hjtghdsy5vhhvmjdw3jxl3cxhrg3vs296a3czazrycrr5cywjhwc5c3ztfyjdhmz0exvzzeyejamyp0cr9z8f9wj0953fzht0m4lenk94t70ruwgjxag2tvp63wn9ftzhtkh20gyre3w5s24f6wlgqxnjh40gd2lxe75sf3z8h5y2x0atpxcyf9t3em4h0evvsftluruqne6w4sm066sw0qe5y8qg423grple5fftxrqyy7xmqmatv7nzd7tcjadu8f7mqz4l83jsyxy4t8pkayytyk7nrp467ds85knekdkvnd7hqkfer8mnqd7pv";
 /// let example_ufvk: &amp;str = ufvk_from_user();
 ///
@@ -500,17 +513,21 @@
     /// Defined in [ZIP 316][zip-0316].
     ///
     /// [zip-0316]: https://zips.z.cash/zip-0316
-    </span><span class="kw">const </span>MAINNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"uview"</span>;
+    </span><span class="kw">const </span>MAINNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::mainnet::HRP_UNIFIED_FVK;
 
     <span class="doccomment">/// The HRP for a Bech32m-encoded testnet Unified FVK.
     ///
     /// Defined in [ZIP 316][zip-0316].
     ///
     /// [zip-0316]: https://zips.z.cash/zip-0316
-    </span><span class="kw">const </span>TESTNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"uviewtest"</span>;
+    </span><span class="kw">const </span>TESTNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::testnet::HRP_UNIFIED_FVK;
 
     <span class="doccomment">/// The HRP for a Bech32m-encoded regtest Unified FVK.
-    </span><span class="kw">const </span>REGTEST: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"uviewregtest"</span>;
+    ///
+    /// Defined in [ZIP 316][zip-0316].
+    ///
+    /// [zip-0316]: https://zips.z.cash/zip-0316
+    </span><span class="kw">const </span>REGTEST: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::regtest::HRP_UNIFIED_FVK;
 
     <span class="kw">fn </span>from_inner(fvks: Vec&lt;<span class="self">Self</span>::Item&gt;) -&gt; <span class="self">Self </span>{
         <span class="self">Self</span>(fvks)
@@ -519,18 +536,19 @@
 
 <span class="attr">#[cfg(test)]
 </span><span class="kw">mod </span>tests {
+    <span class="kw">use </span>alloc::borrow::ToOwned;
+    <span class="kw">use </span>alloc::vec::Vec;
+
     <span class="kw">use </span>assert_matches::assert_matches;
 
     <span class="kw">use </span>proptest::{array::uniform1, array::uniform32, prelude::<span class="kw-2">*</span>, sample::select};
 
     <span class="kw">use super</span>::{Fvk, ParseError, Typecode, Ufvk};
-    <span class="kw">use crate</span>::{
-        kind::unified::{
-            private::{SealedContainer, SealedItem},
-            Container, Encoding,
-        },
-        Network,
+    <span class="kw">use </span><span class="kw">crate</span>::kind::unified::{
+        private::{SealedContainer, SealedItem},
+        Container, Encoding,
     };
+    <span class="kw">use </span>zcash_protocol::consensus::NetworkType;
 
     <span class="macro">prop_compose!</span> {
         <span class="kw">fn </span>uniform128()(a <span class="kw">in </span>uniform96(), b <span class="kw">in </span>uniform32(<span class="number">0u8</span>..)) -&gt; [u8; <span class="number">128</span>] {
@@ -595,7 +613,7 @@
     <span class="macro">proptest!</span> {
         <span class="attr">#[test]
         </span><span class="kw">fn </span>ufvk_roundtrip(
-            network <span class="kw">in </span>select(<span class="macro">vec!</span>[Network::Main, Network::Test, Network::Regtest]),
+            network <span class="kw">in </span>select(<span class="macro">vec!</span>[NetworkType::Main, NetworkType::Test, NetworkType::Regtest]),
             ufvk <span class="kw">in </span>arb_unified_fvk(),
         ) {
             <span class="kw">let </span>encoded = ufvk.encode(<span class="kw-2">&amp;</span>network);

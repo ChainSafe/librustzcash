@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_client_sqlite/src/wallet/db.rs`."><title>db.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-dbdb5eec.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="zcash_client_sqlite" data-themes="" data-resource-suffix="" data-rustdoc-version="1.85.0-nightly (d49be02cf 2024-12-02)" data-channel="nightly" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_client_sqlite/wallet/</div>db.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_client_sqlite/src/wallet/db.rs`."><title>db.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-46132b98.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="zcash_client_sqlite" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (48a426eca 2025-01-12)" data-channel="nightly" data-search-js="search-75f5ac3e.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_client_sqlite/wallet/</div>db.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -1060,7 +1060,19 @@
 <a href="#1059" id="1059">1059</a>
 <a href="#1060" id="1060">1060</a>
 <a href="#1061" id="1061">1061</a>
-<a href="#1062" id="1062">1062</a></pre></div><pre class="rust"><code><span class="doccomment">//! Documentation about the wallet database structure.
+<a href="#1062" id="1062">1062</a>
+<a href="#1063" id="1063">1063</a>
+<a href="#1064" id="1064">1064</a>
+<a href="#1065" id="1065">1065</a>
+<a href="#1066" id="1066">1066</a>
+<a href="#1067" id="1067">1067</a>
+<a href="#1068" id="1068">1068</a>
+<a href="#1069" id="1069">1069</a>
+<a href="#1070" id="1070">1070</a>
+<a href="#1071" id="1071">1071</a>
+<a href="#1072" id="1072">1072</a>
+<a href="#1073" id="1073">1073</a>
+<a href="#1074" id="1074">1074</a></pre></div><pre class="rust"><code><span class="doccomment">//! Documentation about the wallet database structure.
 //!
 //! The database structure is managed by [`crate::wallet::init::init_wallet_db`], which
 //! applies migrations (defined in `crate::wallet::init::migrations`) that produce the
@@ -1103,18 +1115,17 @@ CREATE TABLE "accounts" (
     recover_until_height INTEGER,
     has_spend_key INTEGER NOT NULL DEFAULT 1,
     CHECK (
-        (
+      (
         account_kind = 0
         AND hd_seed_fingerprint IS NOT NULL
         AND hd_account_index IS NOT NULL
         AND ufvk IS NOT NULL
-        )
-        OR
-        (
+      )
+      OR
+      (
         account_kind = 1
-        AND hd_seed_fingerprint IS NULL
-        AND hd_account_index IS NULL
-        )
+        AND (hd_seed_fingerprint IS NULL) = (hd_account_index IS NULL)
+      )
     )
 )"#</span>;
 <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">const </span>INDEX_ACCOUNTS_UUID: <span class="kw-2">&amp;</span>str =
@@ -1446,8 +1457,8 @@ CREATE TABLE transparent_spend_map (
     prevout_txid BLOB NOT NULL,
     prevout_output_index INTEGER NOT NULL,
     FOREIGN KEY (spending_transaction_id) REFERENCES transactions(id_tx)
-    -- NOTE: We can't create a unique constraint on just (prevout_txid, prevout_output_index) 
-    -- because the same output may be attempted to be spent in multiple transactions, even 
+    -- NOTE: We can't create a unique constraint on just (prevout_txid, prevout_output_index)
+    -- because the same output may be attempted to be spent in multiple transactions, even
     -- though only one will ever be mined.
     CONSTRAINT transparent_spend_map_unique UNIQUE (
         spending_transaction_id, prevout_txid, prevout_output_index
@@ -1922,7 +1933,7 @@ SELECT accounts.uuid                AS account_uuid,
             AND MAX(COALESCE(sent_note_counts.sent_notes, 0)) = 0
        ) AS is_shielding
 FROM notes
-JOIN accounts ON accounts.id = notes.account_id
+LEFT JOIN accounts ON accounts.id = notes.account_id
 LEFT JOIN transactions
      ON notes.txid = transactions.txid
 JOIN blocks_max_height
@@ -1947,43 +1958,56 @@ GROUP BY notes.account_id, notes.txid"</span>;
 /// that controls the output.
 </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">const </span>VIEW_TX_OUTPUTS: <span class="kw-2">&amp;</span>str = <span class="string">"
 CREATE VIEW v_tx_outputs AS
--- select all outputs received by the wallet
-SELECT transactions.txid            AS txid,
-       ro.pool                      AS output_pool,
-       ro.output_index              AS output_index,
-       from_account.uuid            AS from_account_uuid,
-       to_account.uuid              AS to_account_uuid,
-       NULL                         AS to_address,
-       ro.value                     AS value,
-       ro.is_change                 AS is_change,
-       ro.memo                      AS memo
-FROM v_received_outputs ro
-JOIN transactions
-    ON transactions.id_tx = ro.transaction_id
--- join to the sent_notes table to obtain `from_account_id`
-LEFT JOIN sent_notes ON sent_notes.id = ro.sent_note_id
--- join on the accounts table to obtain account UUIDs
-JOIN accounts from_account ON accounts.id = sent_notes.from_account_id
-JOIN accounts to_account ON accounts.id = ro.account_id
-UNION
--- select all outputs sent from the wallet to external recipients
-SELECT transactions.txid            AS txid,
-       sent_notes.output_pool       AS output_pool,
-       sent_notes.output_index      AS output_index,
-       from_account.uuid            AS from_account_uuid,
-       NULL                         AS to_account_uuid,
-       sent_notes.to_address        AS to_address,
-       sent_notes.value             AS value,
-       0                            AS is_change,
-       sent_notes.memo              AS memo
-FROM sent_notes
-JOIN transactions
-    ON transactions.id_tx = sent_notes.tx
-LEFT JOIN v_received_outputs ro ON ro.sent_note_id = sent_notes.id
--- join on the accounts table to obtain account UUIDs
-JOIN accounts from_account ON accounts.id = sent_notes.from_account_id
--- exclude any sent notes for which a row exists in the v_received_outputs view
-WHERE ro.account_id IS NULL"</span>;
+WITH unioned AS (
+    -- select all outputs received by the wallet
+    SELECT transactions.txid            AS txid,
+           ro.pool                      AS output_pool,
+           ro.output_index              AS output_index,
+           from_account.uuid            AS from_account_uuid,
+           to_account.uuid              AS to_account_uuid,
+           NULL                         AS to_address,
+           ro.value                     AS value,
+           ro.is_change                 AS is_change,
+           ro.memo                      AS memo
+    FROM v_received_outputs ro
+    JOIN transactions
+        ON transactions.id_tx = ro.transaction_id
+    -- join to the sent_notes table to obtain `from_account_id`
+    LEFT JOIN sent_notes ON sent_notes.id = ro.sent_note_id
+    -- join on the accounts table to obtain account UUIDs
+    LEFT JOIN accounts from_account ON from_account.id = sent_notes.from_account_id
+    LEFT JOIN accounts to_account ON to_account.id = ro.account_id
+    UNION ALL
+    -- select all outputs sent from the wallet to external recipients
+    SELECT transactions.txid            AS txid,
+           sent_notes.output_pool       AS output_pool,
+           sent_notes.output_index      AS output_index,
+           from_account.uuid            AS from_account_uuid,
+           NULL                         AS to_account_uuid,
+           sent_notes.to_address        AS to_address,
+           sent_notes.value             AS value,
+           0                            AS is_change,
+           sent_notes.memo              AS memo
+    FROM sent_notes
+    JOIN transactions
+        ON transactions.id_tx = sent_notes.tx
+    LEFT JOIN v_received_outputs ro ON ro.sent_note_id = sent_notes.id
+    -- join on the accounts table to obtain account UUIDs
+    LEFT JOIN accounts from_account ON from_account.id = sent_notes.from_account_id
+)
+-- merge duplicate rows while retaining maximum information
+SELECT
+    txid,
+    output_pool,
+    output_index,
+    max(from_account_uuid) AS from_account_uuid,
+    max(to_account_uuid) AS to_account_uuid,
+    max(to_address) AS to_address,
+    max(value) AS value,
+    max(is_change) AS is_change,
+    max(memo) AS memo
+FROM unioned
+GROUP BY txid, output_pool, output_index"</span>;
 
 <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>view_sapling_shard_scan_ranges&lt;P: Parameters&gt;(params: <span class="kw-2">&amp;</span>P) -&gt; String {
     <span class="macro">format!</span>(

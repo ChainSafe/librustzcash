@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_client_sqlite/src/wallet.rs`."><title>wallet.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-dbdb5eec.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="zcash_client_sqlite" data-themes="" data-resource-suffix="" data-rustdoc-version="1.85.0-nightly (d49be02cf 2024-12-02)" data-channel="nightly" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../../static.files/storage-59e33391.js"></script><script defer src="../../static.files/src-script-56102188.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_client_sqlite/</div>wallet.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zcash_client_sqlite/src/wallet.rs`."><title>wallet.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-46132b98.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="zcash_client_sqlite" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (48a426eca 2025-01-12)" data-channel="nightly" data-search-js="search-75f5ac3e.js" data-settings-js="settings-0f613d39.js" ><script src="../../static.files/storage-59e33391.js"></script><script defer src="../../static.files/src-script-56102188.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_client_sqlite/</div>wallet.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -3863,7 +3863,26 @@
 <a href="#3862" id="3862">3862</a>
 <a href="#3863" id="3863">3863</a>
 <a href="#3864" id="3864">3864</a>
-<a href="#3865" id="3865">3865</a></pre></div><pre class="rust"><code><span class="doccomment">//! Functions for querying information in the wallet database.
+<a href="#3865" id="3865">3865</a>
+<a href="#3866" id="3866">3866</a>
+<a href="#3867" id="3867">3867</a>
+<a href="#3868" id="3868">3868</a>
+<a href="#3869" id="3869">3869</a>
+<a href="#3870" id="3870">3870</a>
+<a href="#3871" id="3871">3871</a>
+<a href="#3872" id="3872">3872</a>
+<a href="#3873" id="3873">3873</a>
+<a href="#3874" id="3874">3874</a>
+<a href="#3875" id="3875">3875</a>
+<a href="#3876" id="3876">3876</a>
+<a href="#3877" id="3877">3877</a>
+<a href="#3878" id="3878">3878</a>
+<a href="#3879" id="3879">3879</a>
+<a href="#3880" id="3880">3880</a>
+<a href="#3881" id="3881">3881</a>
+<a href="#3882" id="3882">3882</a>
+<a href="#3883" id="3883">3883</a>
+<a href="#3884" id="3884">3884</a></pre></div><pre class="rust"><code><span class="doccomment">//! Functions for querying information in the wallet database.
 //!
 //! These functions should generally not be used directly; instead,
 //! their functionality is available via the [`WalletRead`] and
@@ -3937,6 +3956,7 @@
 <span class="kw">use </span>uuid::Uuid;
 <span class="kw">use </span>zcash_client_backend::data_api::{
     AccountPurpose, DecryptedTransaction, Progress, TransactionDataRequest, TransactionStatus,
+    Zip32Derivation,
 };
 <span class="kw">use </span>zip32::fingerprint::SeedFingerprint;
 
@@ -3955,42 +3975,41 @@
         Account <span class="kw">as _</span>, AccountBalance, AccountBirthday, AccountSource, BlockMetadata, Ratio,
         SentTransaction, SentTransactionOutput, WalletSummary, SAPLING_SHARD_HEIGHT,
     },
-    encoding::AddressCodec,
-    keys::UnifiedFullViewingKey,
     wallet::{Note, NoteId, Recipient, WalletTx},
-    DecryptedOutput, PoolType, ShieldedProtocol,
+    DecryptedOutput,
 };
 <span class="kw">use </span>zcash_keys::{
     address::{Address, Receiver, UnifiedAddress},
+    encoding::AddressCodec,
     keys::{
-        AddressGenerationError, UnifiedAddressRequest, UnifiedIncomingViewingKey,
-        UnifiedSpendingKey,
+        AddressGenerationError, UnifiedAddressRequest, UnifiedFullViewingKey,
+        UnifiedIncomingViewingKey, UnifiedSpendingKey,
     },
 };
 <span class="kw">use </span>zcash_primitives::{
     block::BlockHash,
+    merkle_tree::read_commitment_tree,
+    transaction::{Transaction, TransactionData, TxId},
+};
+<span class="kw">use </span>zcash_protocol::{
     consensus::{<span class="self">self</span>, BlockHeight, BranchId, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
-    merkle_tree::read_commitment_tree,
-    transaction::{
-        components::{amount::NonNegativeAmount, Amount, OutPoint},
-        Transaction, TransactionData, TxId,
-    },
+    value::{ZatBalance, Zatoshis},
+    PoolType, ShieldedProtocol,
 };
-<span class="kw">use </span>zip32::{<span class="self">self</span>, DiversifierIndex, Scope};
+<span class="kw">use </span>zip32::{DiversifierIndex, Scope};
 
+<span class="kw">use </span><span class="self">self</span>::scanning::{parse_priority_code, priority_code, replace_queue_entries};
 <span class="kw">use crate</span>::{
     error::SqliteClientError,
     wallet::commitment_tree::{get_max_checkpointed_height, SqliteShardStore},
-    AccountRef, SqlTransaction, TransferType, WalletCommitmentTrees, WalletDb, DEFAULT_UA_REQUEST,
-    PRUNING_DEPTH, SAPLING_TABLES_PREFIX,
+    AccountRef, SqlTransaction, TransferType, WalletCommitmentTrees, WalletDb, PRUNING_DEPTH,
+    SAPLING_TABLES_PREFIX,
 };
 <span class="kw">use crate</span>::{AccountUuid, TxRef, VERIFY_LOOKAHEAD};
 
 <span class="attr">#[cfg(feature = <span class="string">"transparent-inputs"</span>)]
-</span><span class="kw">use </span>zcash_primitives::transaction::components::TxOut;
-
-<span class="kw">use </span><span class="self">self</span>::scanning::{parse_priority_code, priority_code, replace_queue_entries};
+</span><span class="kw">use </span>::transparent::bundle::{OutPoint, TxOut};
 
 <span class="attr">#[cfg(feature = <span class="string">"orchard"</span>)]
 </span><span class="kw">use </span>{<span class="kw">crate</span>::ORCHARD_TABLES_PREFIX, zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT};
@@ -4015,28 +4034,36 @@
     spending_key_available: bool,
     key_source: <span class="prelude-ty">Option</span>&lt;String&gt;,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;AccountSource, SqliteClientError&gt; {
-    <span class="kw">match </span>(account_kind, hd_seed_fingerprint, hd_account_index) {
-        (<span class="number">0</span>, <span class="prelude-val">Some</span>(seed_fp), <span class="prelude-val">Some</span>(account_index)) =&gt; <span class="prelude-val">Ok</span>(AccountSource::Derived {
-            seed_fingerprint: SeedFingerprint::from_bytes(seed_fp),
-            account_index: zip32::AccountId::try_from(account_index).map_err(|<span class="kw">_</span>| {
-                SqliteClientError::CorruptedData(
-                    <span class="string">"ZIP-32 account ID from wallet DB is out of range."</span>.to_string(),
-                )
-            })<span class="question-mark">?</span>,
+    <span class="kw">let </span>derivation = hd_seed_fingerprint
+        .zip(hd_account_index)
+        .map(|(seed_fp, idx)| {
+            zip32::AccountId::try_from(idx)
+                .map_err(|<span class="kw">_</span>| {
+                    SqliteClientError::CorruptedData(
+                        <span class="string">"ZIP-32 account ID from wallet DB is out of range."</span>.to_string(),
+                    )
+                })
+                .map(|idx| Zip32Derivation::new(SeedFingerprint::from_bytes(seed_fp), idx))
+        })
+        .transpose()<span class="question-mark">?</span>;
+
+    <span class="kw">match </span>(account_kind, derivation) {
+        (<span class="number">0</span>, <span class="prelude-val">Some</span>(derivation)) =&gt; <span class="prelude-val">Ok</span>(AccountSource::Derived {
+            derivation,
             key_source,
         }),
-        (<span class="number">1</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>) =&gt; <span class="prelude-val">Ok</span>(AccountSource::Imported {
+        (<span class="number">1</span>, derivation) =&gt; <span class="prelude-val">Ok</span>(AccountSource::Imported {
             purpose: <span class="kw">if </span>spending_key_available {
-                AccountPurpose::Spending
+                AccountPurpose::Spending { derivation }
             } <span class="kw">else </span>{
                 AccountPurpose::ViewOnly
             },
             key_source,
         }),
-        (<span class="number">0</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>) | (<span class="number">1</span>, <span class="prelude-val">Some</span>(<span class="kw">_</span>), <span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; <span class="prelude-val">Err</span>(SqliteClientError::CorruptedData(
+        (<span class="number">0</span>, <span class="prelude-val">None</span>) =&gt; <span class="prelude-val">Err</span>(SqliteClientError::CorruptedData(
             <span class="string">"Wallet DB account_kind constraint violated"</span>.to_string(),
         )),
-        (<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; <span class="prelude-val">Err</span>(SqliteClientError::CorruptedData(
+        (<span class="kw">_</span>, <span class="kw">_</span>) =&gt; <span class="prelude-val">Err</span>(SqliteClientError::CorruptedData(
             <span class="string">"Unrecognized account_kind"</span>.to_string(),
         )),
     }
@@ -4075,14 +4102,14 @@
 }
 
 <span class="kw">impl </span>Account {
-    <span class="doccomment">/// Returns the default Unified Address for the account,
-    /// along with the diversifier index that generated it.
+    <span class="doccomment">/// Returns the default Unified Address for the account, along with the diversifier index that
+    /// generated it.
     ///
     /// The diversifier index may be non-zero if the Unified Address includes a Sapling
     /// receiver, and there was no valid Sapling receiver at diversifier index zero.
     </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>default_address(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        request: UnifiedAddressRequest,
+        request: <span class="prelude-ty">Option</span>&lt;UnifiedAddressRequest&gt;,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(UnifiedAddress, DiversifierIndex), AddressGenerationError&gt; {
         <span class="self">self</span>.uivk().default_address(request)
     }
@@ -4142,24 +4169,39 @@
             )
         })<span class="question-mark">? </span>== seed_fingerprint;
 
-    <span class="comment">// Keys are not comparable with `Eq`, but addresses are, so we derive what should
-    // be equivalent addresses for each key and use those to check for key equality.
-    </span><span class="kw">let </span>uivk_match =
-        <span class="kw">match </span>UnifiedSpendingKey::from_seed(params, <span class="kw-2">&amp;</span>seed.expose_secret()[..], account_index) {
-            <span class="comment">// If we can't derive a USK from the given seed with the account's ZIP 32
-            // account index, then we immediately know the UIVK won't match because wallet
-            // accounts are required to have a known UIVK.
-            </span><span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
-            <span class="prelude-val">Ok</span>(usk) =&gt; UnifiedAddressRequest::all().map_or(
-                <span class="prelude-val">Ok</span>::&lt;<span class="kw">_</span>, SqliteClientError&gt;(<span class="bool-val">false</span>),
-                |ua_request| {
-                    <span class="prelude-val">Ok</span>(usk
-                        .to_unified_full_viewing_key()
-                        .default_address(ua_request)<span class="question-mark">?
-                        </span>== uivk.default_address(ua_request)<span class="question-mark">?</span>)
-                },
-            )<span class="question-mark">?</span>,
-        };
+    <span class="comment">// `UnifiedIncomingViewingKey`s are not comparable with `Eq`, but Unified Address
+    // components are, so we derive corresponding addresses for each key and use
+    // those to check whether any components match.
+    </span><span class="kw">let </span>uivk_match = {
+        <span class="kw">let </span>usk = UnifiedSpendingKey::from_seed(params, <span class="kw-2">&amp;</span>seed.expose_secret()[..], account_index)
+            .map_err(|<span class="kw">_</span>| SqliteClientError::KeyDerivationError(account_index))<span class="question-mark">?</span>;
+
+        <span class="kw">let </span>(seed_addr, <span class="kw">_</span>) = usk.to_unified_full_viewing_key().default_address(<span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+        <span class="kw">let </span>(uivk_addr, <span class="kw">_</span>) = uivk.default_address(<span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+
+        <span class="attr">#[cfg(not(feature = <span class="string">"orchard"</span>))]
+        </span><span class="kw">let </span>orchard_match = <span class="bool-val">false</span>;
+        <span class="attr">#[cfg(feature = <span class="string">"orchard"</span>)]
+        </span><span class="kw">let </span>orchard_match = seed_addr
+            .orchard()
+            .zip(uivk_addr.orchard())
+            .map(|(a, b)| a == b)
+            == <span class="prelude-val">Some</span>(<span class="bool-val">true</span>);
+
+        <span class="kw">let </span>sapling_match = seed_addr
+            .sapling()
+            .zip(uivk_addr.sapling())
+            .map(|(a, b)| a == b)
+            == <span class="prelude-val">Some</span>(<span class="bool-val">true</span>);
+
+        <span class="kw">let </span>p2pkh_match = seed_addr
+            .transparent()
+            .zip(uivk_addr.transparent())
+            .map(|(a, b)| a == b)
+            == <span class="prelude-val">Some</span>(<span class="bool-val">true</span>);
+
+        orchard_match || sapling_match || p2pkh_match
+    };
 
     <span class="kw">if </span>seed_fingerprint_match != uivk_match {
         <span class="comment">// If these mismatch, it suggests database corruption.
@@ -4243,21 +4285,19 @@
 
     </span><span class="kw">let </span>account_uuid = AccountUuid(Uuid::new_v4());
 
-    <span class="kw">let </span>(hd_seed_fingerprint, hd_account_index, spending_key_available, key_source) = <span class="kw">match </span>kind {
+    <span class="kw">let </span>(derivation, spending_key_available, key_source) = <span class="kw">match </span>kind {
         AccountSource::Derived {
-            seed_fingerprint,
-            account_index,
+            derivation,
             key_source,
-        } =&gt; (
-            <span class="prelude-val">Some</span>(seed_fingerprint),
-            <span class="prelude-val">Some</span>(account_index),
-            <span class="bool-val">true</span>,
-            key_source,
-        ),
+        } =&gt; (<span class="prelude-val">Some</span>(derivation), <span class="bool-val">true</span>, key_source),
         AccountSource::Imported {
-            purpose,
+            purpose: AccountPurpose::Spending { derivation },
             key_source,
-        } =&gt; (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="kw-2">*</span>purpose == AccountPurpose::Spending, key_source),
+        } =&gt; (derivation.as_ref(), <span class="bool-val">true</span>, key_source),
+        AccountSource::Imported {
+            purpose: AccountPurpose::ViewOnly,
+            key_source,
+        } =&gt; (<span class="prelude-val">None</span>, <span class="bool-val">false</span>, key_source),
     };
 
     <span class="attr">#[cfg(feature = <span class="string">"orchard"</span>)]
@@ -4314,8 +4354,8 @@
                 <span class="string">":account_name"</span>: account_name,
                 <span class="string">":uuid"</span>: account_uuid.<span class="number">0</span>,
                 <span class="string">":account_kind"</span>: account_kind_code(kind),
-                <span class="string">":hd_seed_fingerprint"</span>: hd_seed_fingerprint.as_ref().map(|fp| fp.to_bytes()),
-                <span class="string">":hd_account_index"</span>: hd_account_index.map(|i| u32::from(<span class="kw-2">*</span>i)),
+                <span class="string">":hd_seed_fingerprint"</span>: derivation.map(|d| d.seed_fingerprint().to_bytes()),
+                <span class="string">":hd_account_index"</span>: derivation.map(|d| u32::from(d.account_index())),
                 <span class="string">":key_source"</span>: key_source,
                 <span class="string">":ufvk"</span>: ufvk_encoded,
                 <span class="string">":uivk"</span>: viewing_key.uivk().encode(params),
@@ -4454,14 +4494,7 @@
     <span class="comment">// Always derive the default Unified Address for the account. If the account's viewing
     // key has fewer components than the wallet supports (most likely due to this being an
     // imported viewing key), derive an address containing the common subset of receivers.
-    </span><span class="kw">let </span>ua_request = account
-        .uivk()
-        .to_address_request()
-        .and_then(|ua_request| ua_request.intersect(<span class="kw-2">&amp;</span>DEFAULT_UA_REQUEST))
-        .ok_or_else(|| {
-            SqliteClientError::AddressGeneration(AddressGenerationError::ShieldedReceiverRequired)
-        })<span class="question-mark">?</span>;
-    <span class="kw">let </span>(address, d_idx) = account.default_address(ua_request)<span class="question-mark">?</span>;
+    </span><span class="kw">let </span>(address, d_idx) = account.default_address(<span class="prelude-val">None</span>)<span class="question-mark">?</span>;
     insert_address(conn, params, account_id, d_idx, <span class="kw-2">&amp;</span>address)<span class="question-mark">?</span>;
 
     <span class="comment">// Initialize the `ephemeral_addresses` table.
@@ -4579,6 +4612,73 @@
     <span class="prelude-val">Ok</span>(res)
 }
 
+<span class="kw">fn </span>parse_account_row&lt;P: consensus::Parameters&gt;(
+    row: <span class="kw-2">&amp;</span>rusqlite::Row&lt;<span class="lifetime">'_</span>&gt;,
+    params: <span class="kw-2">&amp;</span>P,
+) -&gt; <span class="prelude-ty">Result</span>&lt;Account, SqliteClientError&gt; {
+    <span class="kw">let </span>account_name = row.get(<span class="string">"name"</span>)<span class="question-mark">?</span>;
+    <span class="kw">let </span>account_uuid = AccountUuid(row.get(<span class="string">"uuid"</span>)<span class="question-mark">?</span>);
+    <span class="kw">let </span>kind = parse_account_source(
+        row.get(<span class="string">"account_kind"</span>)<span class="question-mark">?</span>,
+        row.get(<span class="string">"hd_seed_fingerprint"</span>)<span class="question-mark">?</span>,
+        row.get(<span class="string">"hd_account_index"</span>)<span class="question-mark">?</span>,
+        row.get(<span class="string">"has_spend_key"</span>)<span class="question-mark">?</span>,
+        row.get(<span class="string">"key_source"</span>)<span class="question-mark">?</span>,
+    )<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>ufvk_str: <span class="prelude-ty">Option</span>&lt;String&gt; = row.get(<span class="string">"ufvk"</span>)<span class="question-mark">?</span>;
+    <span class="kw">let </span>viewing_key = <span class="kw">if let </span><span class="prelude-val">Some</span>(ufvk_str) = ufvk_str {
+        ViewingKey::Full(Box::new(
+            UnifiedFullViewingKey::decode(params, <span class="kw-2">&amp;</span>ufvk_str).map_err(|e| {
+                SqliteClientError::CorruptedData(<span class="macro">format!</span>(
+                    <span class="string">"Could not decode unified full viewing key for account {}: {}"</span>,
+                    account_uuid.<span class="number">0</span>, e
+                ))
+            })<span class="question-mark">?</span>,
+        ))
+    } <span class="kw">else </span>{
+        <span class="kw">let </span>uivk_str: String = row.get(<span class="string">"uivk"</span>)<span class="question-mark">?</span>;
+        ViewingKey::Incoming(Box::new(
+            UnifiedIncomingViewingKey::decode(params, <span class="kw-2">&amp;</span>uivk_str).map_err(|e| {
+                SqliteClientError::CorruptedData(<span class="macro">format!</span>(
+                    <span class="string">"Could not decode unified incoming viewing key for account {}: {}"</span>,
+                    account_uuid.<span class="number">0</span>, e
+                ))
+            })<span class="question-mark">?</span>,
+        ))
+    };
+
+    <span class="prelude-val">Ok</span>(Account {
+        name: account_name,
+        uuid: account_uuid,
+        kind,
+        viewing_key,
+    })
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>get_account&lt;P: Parameters&gt;(
+    conn: <span class="kw-2">&amp;</span>rusqlite::Connection,
+    params: <span class="kw-2">&amp;</span>P,
+    account_uuid: AccountUuid,
+) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;Account&gt;, SqliteClientError&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>stmt = conn.prepare_cached(
+        <span class="string">r#"
+        SELECT name, uuid, account_kind,
+               hd_seed_fingerprint, hd_account_index, key_source,
+               ufvk, uivk, has_spend_key
+        FROM accounts
+        WHERE uuid = :account_uuid
+        "#</span>,
+    )<span class="question-mark">?</span>;
+
+    <span class="kw">let </span><span class="kw-2">mut </span>rows = stmt.query_and_then::&lt;<span class="kw">_</span>, SqliteClientError, <span class="kw">_</span>, <span class="kw">_</span>&gt;(
+        <span class="macro">named_params!</span>[<span class="string">":account_uuid"</span>: account_uuid.<span class="number">0</span>],
+        |row| parse_account_row(row, params),
+    )<span class="question-mark">?</span>;
+
+    rows.next().transpose()
+}
+
 <span class="doccomment">/// Returns the account id corresponding to a given [`UnifiedFullViewingKey`],
 /// if any.
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>get_account_for_ufvk&lt;P: consensus::Parameters&gt;(
@@ -4599,9 +4699,9 @@
     </span><span class="kw">let </span>transparent_item: <span class="prelude-ty">Option</span>&lt;Vec&lt;u8&gt;&gt; = <span class="prelude-val">None</span>;
 
     <span class="kw">let </span><span class="kw-2">mut </span>stmt = conn.prepare(
-        <span class="string">"SELECT name, uuid, account_kind, 
-                hd_seed_fingerprint, hd_account_index, key_source, 
-                ufvk, has_spend_key
+        <span class="string">"SELECT name, uuid, account_kind,
+                hd_seed_fingerprint, hd_account_index, key_source,
+                ufvk, uivk, has_spend_key
          FROM accounts
          WHERE orchard_fvk_item_cache = :orchard_fvk_item_cache
             OR sapling_fvk_item_cache = :sapling_fvk_item_cache
@@ -4615,36 +4715,7 @@
                 <span class="string">":sapling_fvk_item_cache"</span>: sapling_item,
                 <span class="string">":p2pkh_fvk_item_cache"</span>: transparent_item,
             ],
-            |row| {
-                <span class="kw">let </span>account_name = row.get(<span class="string">"name"</span>)<span class="question-mark">?</span>;
-                <span class="kw">let </span>account_uuid = AccountUuid(row.get(<span class="string">"uuid"</span>)<span class="question-mark">?</span>);
-                <span class="kw">let </span>kind = parse_account_source(
-                    row.get(<span class="string">"account_kind"</span>)<span class="question-mark">?</span>,
-                    row.get(<span class="string">"hd_seed_fingerprint"</span>)<span class="question-mark">?</span>,
-                    row.get(<span class="string">"hd_account_index"</span>)<span class="question-mark">?</span>,
-                    row.get(<span class="string">"has_spend_key"</span>)<span class="question-mark">?</span>,
-                    row.get(<span class="string">"key_source"</span>)<span class="question-mark">?</span>,
-                )<span class="question-mark">?</span>;
-
-                <span class="comment">// We looked up the account by FVK components, so the UFVK column must be
-                // non-null.
-                </span><span class="kw">let </span>ufvk_str: String = row.get(<span class="string">"ufvk"</span>)<span class="question-mark">?</span>;
-                <span class="kw">let </span>viewing_key = ViewingKey::Full(Box::new(
-                    UnifiedFullViewingKey::decode(params, <span class="kw-2">&amp;</span>ufvk_str).map_err(|e| {
-                        SqliteClientError::CorruptedData(<span class="macro">format!</span>(
-                            <span class="string">"Could not decode unified full viewing key for account {}: {}"</span>,
-                            account_uuid.<span class="number">0</span>, e
-                        ))
-                    })<span class="question-mark">?</span>,
-                ));
-
-                <span class="prelude-val">Ok</span>(Account {
-                    name: account_name,
-                    uuid: account_uuid,
-                    kind,
-                    viewing_key,
-                })
-            },
+            |row| parse_account_row(row, params),
         )<span class="question-mark">?
         </span>.collect::&lt;<span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="kw">_</span>&gt;, <span class="kw">_</span>&gt;&gt;()<span class="question-mark">?</span>;
 
@@ -4697,8 +4768,7 @@
                 name: account_name,
                 uuid: account_uuid,
                 kind: AccountSource::Derived {
-                    seed_fingerprint: <span class="kw-2">*</span>seed_fp,
-                    account_index,
+                    derivation: Zip32Derivation::new(<span class="kw-2">*</span>seed_fp, account_index),
                     key_source,
                 },
                 viewing_key: ViewingKey::Full(Box::new(ufvk)),
@@ -5185,7 +5255,8 @@
 /// that they are not yet spendable, or for which it is not yet possible to construct witnesses.
 ///
 /// `min_confirmations` can be 0, but that case is currently treated identically to
-/// `min_confirmations == 1` for shielded notes. This behaviour may change in the future.
+/// `min_confirmations == 1` for both shielded and transparent TXOs. This behaviour
+/// may change in the future.
 </span><span class="attr">#[tracing::instrument(skip(tx, params, progress))]
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>get_wallet_summary&lt;P: consensus::Parameters&gt;(
     tx: <span class="kw-2">&amp;</span>rusqlite::Transaction,
@@ -5279,12 +5350,7 @@
         with_pool_balance: F,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(), SqliteClientError&gt;
     <span class="kw">where
-        </span>F: Fn(
-            <span class="kw-2">&amp;mut </span>AccountBalance,
-            NonNegativeAmount,
-            NonNegativeAmount,
-            NonNegativeAmount,
-        ) -&gt; <span class="prelude-ty">Result</span>&lt;(), SqliteClientError&gt;,
+        </span>F: Fn(<span class="kw-2">&amp;mut </span>AccountBalance, Zatoshis, Zatoshis, Zatoshis) -&gt; <span class="prelude-ty">Result</span>&lt;(), SqliteClientError&gt;,
     {
         <span class="comment">// If the shard containing the summary height contains any unscanned ranges that start below or
         // including that height, none of our shielded balance is currently spendable.
@@ -5341,7 +5407,7 @@
             <span class="kw">let </span>account = AccountUuid(row.get::&lt;<span class="kw">_</span>, Uuid&gt;(<span class="number">0</span>)<span class="question-mark">?</span>);
 
             <span class="kw">let </span>value_raw = row.get::&lt;<span class="kw">_</span>, i64&gt;(<span class="number">1</span>)<span class="question-mark">?</span>;
-            <span class="kw">let </span>value = NonNegativeAmount::from_nonnegative_i64(value_raw).map_err(|<span class="kw">_</span>| {
+            <span class="kw">let </span>value = Zatoshis::from_nonnegative_i64(value_raw).map_err(|<span class="kw">_</span>| {
                 SqliteClientError::CorruptedData(<span class="macro">format!</span>(
                     <span class="string">"Negative received note value: {}"</span>,
                     value_raw
@@ -5376,7 +5442,7 @@
                 is_change &amp;&amp; received_height.iter().all(|h| h &gt; <span class="kw-2">&amp;</span>summary_height);
 
             <span class="kw">let </span>(spendable_value, change_pending_confirmation, value_pending_spendability) = {
-                <span class="kw">let </span>zero = NonNegativeAmount::ZERO;
+                <span class="kw">let </span>zero = Zatoshis::ZERO;
                 <span class="kw">if </span>is_spendable {
                     (value, zero, zero)
                 } <span class="kw">else if </span>is_pending_change {
@@ -5436,7 +5502,12 @@
     drop(sapling_trace);
 
     <span class="attr">#[cfg(feature = <span class="string">"transparent-inputs"</span>)]
-    </span>transparent::add_transparent_account_balances(tx, chain_tip_height + <span class="number">1</span>, <span class="kw-2">&amp;mut </span>account_balances)<span class="question-mark">?</span>;
+    </span>transparent::add_transparent_account_balances(
+        tx,
+        chain_tip_height + <span class="number">1</span>,
+        min_confirmations,
+        <span class="kw-2">&amp;mut </span>account_balances,
+    )<span class="question-mark">?</span>;
 
     <span class="comment">// The approach used here for Sapling and Orchard subtree indexing was a quick hack
     // that has not yet been replaced. TODO: Make less hacky.
@@ -5760,57 +5831,6 @@
     </span>.ok_or(SqliteClientError::AccountUnknown)
 }
 
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>get_account&lt;P: Parameters&gt;(
-    conn: <span class="kw-2">&amp;</span>rusqlite::Connection,
-    params: <span class="kw-2">&amp;</span>P,
-    account_uuid: AccountUuid,
-) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;Account&gt;, SqliteClientError&gt; {
-    <span class="kw">let </span><span class="kw-2">mut </span>sql = conn.prepare_cached(
-        <span class="string">r#"
-        SELECT name, account_kind, hd_seed_fingerprint, hd_account_index, key_source, ufvk, uivk, has_spend_key
-        FROM accounts
-        WHERE uuid = :account_uuid
-        "#</span>,
-    )<span class="question-mark">?</span>;
-
-    <span class="kw">let </span><span class="kw-2">mut </span>result = sql.query(<span class="macro">named_params!</span>[<span class="string">":account_uuid"</span>: account_uuid.<span class="number">0</span>])<span class="question-mark">?</span>;
-    <span class="kw">let </span>row = result.next()<span class="question-mark">?</span>;
-    <span class="kw">match </span>row {
-        <span class="prelude-val">Some</span>(row) =&gt; {
-            <span class="kw">let </span>account_name = row.get(<span class="string">"name"</span>)<span class="question-mark">?</span>;
-            <span class="kw">let </span>kind = parse_account_source(
-                row.get(<span class="string">"account_kind"</span>)<span class="question-mark">?</span>,
-                row.get(<span class="string">"hd_seed_fingerprint"</span>)<span class="question-mark">?</span>,
-                row.get(<span class="string">"hd_account_index"</span>)<span class="question-mark">?</span>,
-                row.get(<span class="string">"has_spend_key"</span>)<span class="question-mark">?</span>,
-                row.get(<span class="string">"key_source"</span>)<span class="question-mark">?</span>,
-            )<span class="question-mark">?</span>;
-
-            <span class="kw">let </span>ufvk_str: <span class="prelude-ty">Option</span>&lt;String&gt; = row.get(<span class="string">"ufvk"</span>)<span class="question-mark">?</span>;
-            <span class="kw">let </span>viewing_key = <span class="kw">if let </span><span class="prelude-val">Some</span>(ufvk_str) = ufvk_str {
-                ViewingKey::Full(Box::new(
-                    UnifiedFullViewingKey::decode(params, <span class="kw-2">&amp;</span>ufvk_str[..])
-                        .map_err(SqliteClientError::BadAccountData)<span class="question-mark">?</span>,
-                ))
-            } <span class="kw">else </span>{
-                <span class="kw">let </span>uivk_str: String = row.get(<span class="string">"uivk"</span>)<span class="question-mark">?</span>;
-                ViewingKey::Incoming(Box::new(
-                    UnifiedIncomingViewingKey::decode(params, <span class="kw-2">&amp;</span>uivk_str[..])
-                        .map_err(SqliteClientError::BadAccountData)<span class="question-mark">?</span>,
-                ))
-            };
-
-            <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Account {
-                name: account_name,
-                uuid: account_uuid,
-                kind,
-                viewing_key,
-            }))
-        }
-        <span class="prelude-val">None </span>=&gt; <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
-    }
-}
-
 <span class="doccomment">/// Returns the minimum and maximum heights of blocks in the chain which may be scanned.
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>chain_tip_height(
     conn: <span class="kw-2">&amp;</span>rusqlite::Connection,
@@ -6128,55 +6148,53 @@
         <span class="kw">match </span>output.recipient() {
             Recipient::InternalAccount {
                 receiving_account,
-                note: Note::Sapling(note),
+                note,
                 ..
-            } =&gt; {
-                sapling::put_received_note(
-                    wdb.conn.<span class="number">0</span>,
-                    <span class="kw-2">&amp;</span>DecryptedOutput::new(
-                        output.output_index(),
-                        note.clone(),
-                        <span class="kw-2">*</span>receiving_account,
-                        output
-                            .memo()
-                            .map_or_else(MemoBytes::empty, |memo| memo.clone()),
-                        TransferType::WalletInternal,
-                    ),
-                    tx_ref,
-                    <span class="prelude-val">None</span>,
-                )<span class="question-mark">?</span>;
-            }
-            <span class="attr">#[cfg(feature = <span class="string">"orchard"</span>)]
-            </span>Recipient::InternalAccount {
-                receiving_account,
-                note: Note::Orchard(note),
-                ..
-            } =&gt; {
-                orchard::put_received_note(
-                    wdb.conn.<span class="number">0</span>,
-                    <span class="kw-2">&amp;</span>DecryptedOutput::new(
-                        output.output_index(),
-                        <span class="kw-2">*</span>note,
-                        <span class="kw-2">*</span>receiving_account,
-                        output
-                            .memo()
-                            .map_or_else(MemoBytes::empty, |memo| memo.clone()),
-                        TransferType::WalletInternal,
-                    ),
-                    tx_ref,
-                    <span class="prelude-val">None</span>,
-                )<span class="question-mark">?</span>;
-            }
+            } =&gt; <span class="kw">match </span>note.as_ref() {
+                Note::Sapling(note) =&gt; {
+                    sapling::put_received_note(
+                        wdb.conn.<span class="number">0</span>,
+                        <span class="kw-2">&amp;</span>DecryptedOutput::new(
+                            output.output_index(),
+                            note.clone(),
+                            <span class="kw-2">*</span>receiving_account,
+                            output
+                                .memo()
+                                .map_or_else(MemoBytes::empty, |memo| memo.clone()),
+                            TransferType::WalletInternal,
+                        ),
+                        tx_ref,
+                        <span class="prelude-val">None</span>,
+                    )<span class="question-mark">?</span>;
+                }
+                <span class="attr">#[cfg(feature = <span class="string">"orchard"</span>)]
+                </span>Note::Orchard(note) =&gt; {
+                    orchard::put_received_note(
+                        wdb.conn.<span class="number">0</span>,
+                        <span class="kw-2">&amp;</span>DecryptedOutput::new(
+                            output.output_index(),
+                            <span class="kw-2">*</span>note,
+                            <span class="kw-2">*</span>receiving_account,
+                            output
+                                .memo()
+                                .map_or_else(MemoBytes::empty, |memo| memo.clone()),
+                            TransferType::WalletInternal,
+                        ),
+                        tx_ref,
+                        <span class="prelude-val">None</span>,
+                    )<span class="question-mark">?</span>;
+                }
+            },
             <span class="attr">#[cfg(feature = <span class="string">"transparent-inputs"</span>)]
             </span>Recipient::EphemeralTransparent {
                 receiving_account,
                 ephemeral_address,
-                outpoint_metadata,
+                outpoint,
             } =&gt; {
                 transparent::put_transparent_output(
                     wdb.conn.<span class="number">0</span>,
                     <span class="kw-2">&amp;</span>wdb.params,
-                    outpoint_metadata,
+                    outpoint,
                     <span class="kw-2">&amp;</span>TxOut {
                         value: output.value(),
                         script_pubkey: ephemeral_address.script(),
@@ -6592,11 +6610,14 @@
             TransferType::Outgoing =&gt; {
                 <span class="kw">let </span>recipient = {
                     <span class="kw">let </span>receiver = Receiver::Sapling(output.note().recipient());
-                    <span class="kw">let </span>wallet_address =
+                    <span class="kw">let </span>recipient_address =
                         select_receiving_address(params, conn, <span class="kw-2">*</span>output.account(), <span class="kw-2">&amp;</span>receiver)<span class="question-mark">?
                             </span>.unwrap_or_else(|| receiver.to_zcash_address(params.network_type()));
 
-                    Recipient::External(wallet_address, PoolType::SAPLING)
+                    Recipient::External {
+                        recipient_address,
+                        output_pool: PoolType::SAPLING,
+                    }
                 };
 
                 put_sent_output(
@@ -6616,7 +6637,7 @@
                 <span class="kw">let </span>recipient = Recipient::InternalAccount {
                     receiving_account: <span class="kw-2">*</span>output.account(),
                     external_address: <span class="prelude-val">None</span>,
-                    note: Note::Sapling(output.note().clone()),
+                    note: Box::new(Note::Sapling(output.note().clone())),
                 };
 
                 put_sent_output(
@@ -6650,7 +6671,7 @@
                                 }),
                             )
                         },
-                        note: Note::Sapling(output.note().clone()),
+                        note: Box::new(Note::Sapling(output.note().clone())),
                     };
 
                     put_sent_output(
@@ -6678,11 +6699,14 @@
             TransferType::Outgoing =&gt; {
                 <span class="kw">let </span>recipient = {
                     <span class="kw">let </span>receiver = Receiver::Orchard(output.note().recipient());
-                    <span class="kw">let </span>wallet_address =
+                    <span class="kw">let </span>recipient_address =
                         select_receiving_address(params, conn, <span class="kw-2">*</span>output.account(), <span class="kw-2">&amp;</span>receiver)<span class="question-mark">?
                             </span>.unwrap_or_else(|| receiver.to_zcash_address(params.network_type()));
 
-                    Recipient::External(wallet_address, PoolType::ORCHARD)
+                    Recipient::External {
+                        recipient_address,
+                        output_pool: PoolType::ORCHARD,
+                    }
                 };
 
                 put_sent_output(
@@ -6702,7 +6726,7 @@
                 <span class="kw">let </span>recipient = Recipient::InternalAccount {
                     receiving_account: <span class="kw-2">*</span>output.account(),
                     external_address: <span class="prelude-val">None</span>,
-                    note: Note::Orchard(<span class="kw-2">*</span>output.note()),
+                    note: Box::new(Note::Orchard(<span class="kw-2">*</span>output.note())),
                 };
 
                 put_sent_output(
@@ -6737,7 +6761,7 @@
                                 }),
                             )
                         },
-                        note: Note::Orchard(<span class="kw-2">*</span>output.note()),
+                        note: Box::new(Note::Orchard(<span class="kw-2">*</span>output.note())),
                     };
 
                     put_sent_output(
@@ -6848,14 +6872,17 @@
                     <span class="kw">let </span>receiver = Receiver::Transparent(address);
 
                     <span class="attr">#[cfg(feature = <span class="string">"transparent-inputs"</span>)]
-                    </span><span class="kw">let </span>recipient_addr =
+                    </span><span class="kw">let </span>recipient_address =
                         select_receiving_address(params, conn, account_uuid, <span class="kw-2">&amp;</span>receiver)<span class="question-mark">?
                             </span>.unwrap_or_else(|| receiver.to_zcash_address(params.network_type()));
 
                     <span class="attr">#[cfg(not(feature = <span class="string">"transparent-inputs"</span>))]
-                    </span><span class="kw">let </span>recipient_addr = receiver.to_zcash_address(params.network_type());
+                    </span><span class="kw">let </span>recipient_address = receiver.to_zcash_address(params.network_type());
 
-                    <span class="kw">let </span>recipient = Recipient::External(recipient_addr, PoolType::TRANSPARENT);
+                    <span class="kw">let </span>recipient = Recipient::External {
+                        recipient_address,
+                        output_pool: PoolType::TRANSPARENT,
+                    };
 
                     put_sent_output(
                         conn,
@@ -6984,7 +7011,7 @@
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>put_tx_data(
     conn: <span class="kw-2">&amp;</span>rusqlite::Connection,
     tx: <span class="kw-2">&amp;</span>Transaction,
-    fee: <span class="prelude-ty">Option</span>&lt;NonNegativeAmount&gt;,
+    fee: <span class="prelude-ty">Option</span>&lt;Zatoshis&gt;,
     created_at: <span class="prelude-ty">Option</span>&lt;time::OffsetDateTime&gt;,
     target_height: <span class="prelude-ty">Option</span>&lt;BlockHeight&gt;,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;TxRef, SqliteClientError&gt; {
@@ -7154,14 +7181,24 @@
 // and `put_sent_output`
 </span><span class="kw">fn </span>recipient_params&lt;P: consensus::Parameters&gt;(
     conn: <span class="kw-2">&amp;</span>Connection,
-    params: <span class="kw-2">&amp;</span>P,
+    _params: <span class="kw-2">&amp;</span>P,
     from: AccountUuid,
-    to: <span class="kw-2">&amp;</span>Recipient&lt;AccountUuid, Note, OutPoint&gt;,
+    to: <span class="kw-2">&amp;</span>Recipient&lt;AccountUuid&gt;,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;(AccountRef, <span class="prelude-ty">Option</span>&lt;String&gt;, <span class="prelude-ty">Option</span>&lt;AccountRef&gt;, PoolType), SqliteClientError&gt; {
     <span class="kw">let </span>from_account_id = get_account_ref(conn, from)<span class="question-mark">?</span>;
     <span class="kw">match </span>to {
-        Recipient::External(addr, pool) =&gt; <span class="prelude-val">Ok</span>((from_account_id, <span class="prelude-val">Some</span>(addr.encode()), <span class="prelude-val">None</span>, <span class="kw-2">*</span>pool)),
-        Recipient::EphemeralTransparent {
+        Recipient::External {
+            recipient_address,
+            output_pool,
+            ..
+        } =&gt; <span class="prelude-val">Ok</span>((
+            from_account_id,
+            <span class="prelude-val">Some</span>(recipient_address.encode()),
+            <span class="prelude-val">None</span>,
+            <span class="kw-2">*</span>output_pool,
+        )),
+        <span class="attr">#[cfg(feature = <span class="string">"transparent-inputs"</span>)]
+        </span>Recipient::EphemeralTransparent {
             receiving_account,
             ephemeral_address,
             ..
@@ -7169,7 +7206,7 @@
             <span class="kw">let </span>to_account = get_account_ref(conn, <span class="kw-2">*</span>receiving_account)<span class="question-mark">?</span>;
             <span class="prelude-val">Ok</span>((
                 from_account_id,
-                <span class="prelude-val">Some</span>(ephemeral_address.encode(params)),
+                <span class="prelude-val">Some</span>(ephemeral_address.encode(_params)),
                 <span class="prelude-val">Some</span>(to_account),
                 PoolType::TRANSPARENT,
             ))
@@ -7245,7 +7282,7 @@
         <span class="string">":from_account_id"</span>: from_account_id.<span class="number">0</span>,
         <span class="string">":to_address"</span>: <span class="kw-2">&amp;</span>to_address,
         <span class="string">":to_account_id"</span>: to_account_id.map(|a| a.<span class="number">0</span>),
-        <span class="string">":value"</span>: <span class="kw-2">&amp;</span>i64::from(Amount::from(output.value())),
+        <span class="string">":value"</span>: <span class="kw-2">&amp;</span>i64::from(ZatBalance::from(output.value())),
         <span class="string">":memo"</span>: memo_repr(output.memo())
     ];
 
@@ -7273,8 +7310,8 @@
     from_account_uuid: AccountUuid,
     tx_ref: TxRef,
     output_index: usize,
-    recipient: <span class="kw-2">&amp;</span>Recipient&lt;AccountUuid, Note, OutPoint&gt;,
-    value: NonNegativeAmount,
+    recipient: <span class="kw-2">&amp;</span>Recipient&lt;AccountUuid&gt;,
+    value: Zatoshis,
     memo: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>MemoBytes&gt;,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;(), SqliteClientError&gt; {
     <span class="kw">let </span><span class="kw-2">mut </span>stmt_upsert_sent_output = conn.prepare_cached(
@@ -7301,7 +7338,7 @@
         <span class="string">":from_account_id"</span>: from_account_id.<span class="number">0</span>,
         <span class="string">":to_address"</span>: <span class="kw-2">&amp;</span>to_address,
         <span class="string">":to_account_id"</span>: <span class="kw-2">&amp;</span>to_account_id.map(|a| a.<span class="number">0</span>),
-        <span class="string">":value"</span>: <span class="kw-2">&amp;</span>i64::from(Amount::from(value)),
+        <span class="string">":value"</span>: <span class="kw-2">&amp;</span>i64::from(ZatBalance::from(value)),
         <span class="string">":memo"</span>: memo_repr(memo)
     ];
 
@@ -7576,7 +7613,8 @@
         testing::{AddressType, DataStoreFactory, FakeCompactOutput, TestBuilder, TestState},
         Account <span class="kw">as _</span>, AccountSource, WalletRead, WalletWrite,
     };
-    <span class="kw">use </span>zcash_primitives::{block::BlockHash, transaction::components::amount::NonNegativeAmount};
+    <span class="kw">use </span>zcash_primitives::block::BlockHash;
+    <span class="kw">use </span>zcash_protocol::value::Zatoshis;
 
     <span class="kw">use crate</span>::{
         testing::{db::TestDbFactory, BlockCache},
@@ -7626,7 +7664,7 @@
         <span class="kw">let </span>expected_account_index = zip32::AccountId::try_from(<span class="number">0</span>).unwrap();
         <span class="macro">assert_matches!</span>(
             account_parameters.kind,
-            AccountSource::Derived{account_index, ..} <span class="kw">if </span>account_index == expected_account_index
+            AccountSource::Derived{derivation, ..} <span class="kw">if </span>derivation.account_index() == expected_account_index
         );
     }
 
@@ -7673,7 +7711,7 @@
 
         <span class="comment">// Scan a block above the wallet's birthday height.
         </span><span class="kw">let </span>not_our_key = ExtendedSpendingKey::master(<span class="kw-2">&amp;</span>[]).to_diversifiable_full_viewing_key();
-        <span class="kw">let </span>not_our_value = NonNegativeAmount::const_from_u64(<span class="number">10000</span>);
+        <span class="kw">let </span>not_our_value = Zatoshis::const_from_u64(<span class="number">10000</span>);
         <span class="kw">let </span>start_height = st.sapling_activation_height();
         <span class="kw">let _ </span>= st.generate_block_at(
             start_height,

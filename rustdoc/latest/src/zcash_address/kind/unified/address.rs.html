@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `components/zcash_address/src/kind/unified/address.rs`."><title>address.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dbdb5eec.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="zcash_address" data-themes="" data-resource-suffix="" data-rustdoc-version="1.85.0-nightly (d49be02cf 2024-12-02)" data-channel="nightly" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_address/kind/unified/</div>address.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `components/zcash_address/src/kind/unified/address.rs`."><title>address.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-46132b98.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="zcash_address" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (48a426eca 2025-01-12)" data-channel="nightly" data-search-js="search-75f5ac3e.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_address/kind/unified/</div>address.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -428,11 +428,19 @@
 <a href="#427" id="427">427</a>
 <a href="#428" id="428">428</a>
 <a href="#429" id="429">429</a>
-<a href="#430" id="430">430</a></pre></div><pre class="rust"><code><span class="kw">use </span>zcash_protocol::PoolType;
+<a href="#430" id="430">430</a>
+<a href="#431" id="431">431</a>
+<a href="#432" id="432">432</a>
+<a href="#433" id="433">433</a>
+<a href="#434" id="434">434</a>
+<a href="#435" id="435">435</a>
+<a href="#436" id="436">436</a>
+<a href="#437" id="437">437</a></pre></div><pre class="rust"><code><span class="kw">use </span>zcash_protocol::{constants, PoolType};
 
 <span class="kw">use super</span>::{private::SealedItem, ParseError, Typecode};
 
-<span class="kw">use </span>std::convert::{TryFrom, TryInto};
+<span class="kw">use </span>alloc::vec::Vec;
+<span class="kw">use </span>core::convert::{TryFrom, TryInto};
 
 <span class="doccomment">/// The set of known Receivers for Unified Addresses.
 </span><span class="attr">#[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -491,14 +499,16 @@
 /// # Examples
 ///
 /// ```
-/// # use std::convert::Infallible;
-/// # use std::error::Error;
+/// # use core::convert::Infallible;
 /// use zcash_address::{
 ///     unified::{self, Container, Encoding},
 ///     ConversionError, TryFromRawAddress, ZcashAddress,
 /// };
 ///
-/// # fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+/// # #[cfg(not(feature = "std"))]
+/// # fn main() {}
+/// # #[cfg(feature = "std")]
+/// # fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
 /// # let address_from_user = || "u1pg2aaph7jp8rpf6yhsza25722sg5fcn3vaca6ze27hqjw7jvvhhuxkpcg0ge9xh6drsgdkda8qjq5chpehkcpxf87rnjryjqwymdheptpvnljqqrjqzjwkc2ma6hcq666kgwfytxwac8eyex6ndgr6ezte66706e3vaqrd25dzvzkc69kw0jgywtd0cmq52q5lkw6uh7hyvzjse8ksx";
 /// let example_ua: &amp;str = address_from_user();
 ///
@@ -563,17 +573,17 @@
     /// Defined in [ZIP 316][zip-0316].
     ///
     /// [zip-0316]: https://zips.z.cash/zip-0316
-    </span><span class="kw">const </span>MAINNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"u"</span>;
+    </span><span class="kw">const </span>MAINNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::mainnet::HRP_UNIFIED_ADDRESS;
 
     <span class="doccomment">/// The HRP for a Bech32m-encoded testnet Unified Address.
     ///
     /// Defined in [ZIP 316][zip-0316].
     ///
     /// [zip-0316]: https://zips.z.cash/zip-0316
-    </span><span class="kw">const </span>TESTNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"utest"</span>;
+    </span><span class="kw">const </span>TESTNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::testnet::HRP_UNIFIED_ADDRESS;
 
     <span class="doccomment">/// The HRP for a Bech32m-encoded regtest Unified Address.
-    </span><span class="kw">const </span>REGTEST: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"uregtest"</span>;
+    </span><span class="kw">const </span>REGTEST: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::regtest::HRP_UNIFIED_ADDRESS;
 
     <span class="kw">fn </span>from_inner(receivers: Vec&lt;<span class="self">Self</span>::Item&gt;) -&gt; <span class="self">Self </span>{
         <span class="self">Self</span>(receivers)
@@ -591,6 +601,8 @@
 
 <span class="attr">#[cfg(any(test, feature = <span class="string">"test-dependencies"</span>))]
 </span><span class="kw">pub mod </span>testing {
+    <span class="kw">use </span>alloc::vec::Vec;
+
     <span class="kw">use </span>proptest::{
         array::{uniform11, uniform20, uniform32},
         collection::vec,
@@ -676,12 +688,14 @@
 
 <span class="attr">#[cfg(test)]
 </span><span class="kw">mod </span>tests {
+    <span class="kw">use </span>alloc::borrow::ToOwned;
+
     <span class="kw">use </span>assert_matches::assert_matches;
+    <span class="kw">use </span>zcash_protocol::consensus::NetworkType;
 
     <span class="kw">use crate</span>::{
         kind::unified::{private::SealedContainer, Container, Encoding},
         unified::address::testing::arb_unified_address,
-        Network,
     };
 
     <span class="kw">use </span>proptest::{prelude::<span class="kw-2">*</span>, sample::select};
@@ -691,7 +705,7 @@
     <span class="macro">proptest!</span> {
         <span class="attr">#[test]
         </span><span class="kw">fn </span>ua_roundtrip(
-            network <span class="kw">in </span>select(<span class="macro">vec!</span>[Network::Main, Network::Test, Network::Regtest]),
+            network <span class="kw">in </span>select(<span class="macro">vec!</span>[NetworkType::Main, NetworkType::Test, NetworkType::Regtest]),
             ua <span class="kw">in </span>arb_unified_address(),
         ) {
             <span class="kw">let </span>encoded = ua.encode(<span class="kw-2">&amp;</span>network);

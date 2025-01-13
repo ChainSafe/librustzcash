@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `components/zcash_address/src/kind/unified/ivk.rs`."><title>ivk.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dbdb5eec.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="zcash_address" data-themes="" data-resource-suffix="" data-rustdoc-version="1.85.0-nightly (d49be02cf 2024-12-02)" data-channel="nightly" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_address/kind/unified/</div>ivk.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `components/zcash_address/src/kind/unified/ivk.rs`."><title>ivk.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-46132b98.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="zcash_address" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (48a426eca 2025-01-12)" data-channel="nightly" data-search-js="search-75f5ac3e.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">zcash_address/kind/unified/</div>ivk.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -355,7 +355,14 @@
 <a href="#354" id="354">354</a>
 <a href="#355" id="355">355</a>
 <a href="#356" id="356">356</a>
-<a href="#357" id="357">357</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::convert::{TryFrom, TryInto};
+<a href="#357" id="357">357</a>
+<a href="#358" id="358">358</a>
+<a href="#359" id="359">359</a>
+<a href="#360" id="360">360</a>
+<a href="#361" id="361">361</a>
+<a href="#362" id="362">362</a></pre></div><pre class="rust"><code><span class="kw">use </span>alloc::vec::Vec;
+<span class="kw">use </span>core::convert::{TryFrom, TryInto};
+<span class="kw">use </span>zcash_protocol::constants;
 
 <span class="kw">use super</span>::{
     private::{SealedContainer, SealedItem},
@@ -444,10 +451,12 @@
 /// # Examples
 ///
 /// ```
-/// # use std::error::Error;
 /// use zcash_address::unified::{self, Container, Encoding};
 ///
-/// # fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+/// # #[cfg(not(feature = "std"))]
+/// # fn main() {}
+/// # #[cfg(feature = "std")]
+/// # fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
 /// # let uivk_from_user = || "uivk1djetqg3fws7y7qu5tekynvcdhz69gsyq07ewvppmzxdqhpfzdgmx8urnkqzv7ylz78ez43ux266pqjhecd59fzhn7wpe6zarnzh804hjtkyad25ryqla5pnc8p5wdl3phj9fczhz64zprun3ux7y9jc08567xryumuz59rjmg4uuflpjqwnq0j0tzce0x74t4tv3gfjq7nczkawxy6y7hse733ae3vw7qfjd0ss0pytvezxp42p6rrpzeh6t2zrz7zpjk0xhngcm6gwdppxs58jkx56gsfflugehf5vjlmu7vj3393gj6u37wenavtqyhdvcdeaj86s6jczl4zq";
 /// let example_uivk: &amp;str = uivk_from_user();
 ///
@@ -487,17 +496,17 @@
     /// Defined in [ZIP 316][zip-0316].
     ///
     /// [zip-0316]: https://zips.z.cash/zip-0316
-    </span><span class="kw">const </span>MAINNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"uivk"</span>;
+    </span><span class="kw">const </span>MAINNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::mainnet::HRP_UNIFIED_IVK;
 
     <span class="doccomment">/// The HRP for a Bech32m-encoded testnet Unified IVK.
     ///
     /// Defined in [ZIP 316][zip-0316].
     ///
     /// [zip-0316]: https://zips.z.cash/zip-0316
-    </span><span class="kw">const </span>TESTNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"uivktest"</span>;
+    </span><span class="kw">const </span>TESTNET: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::testnet::HRP_UNIFIED_IVK;
 
     <span class="doccomment">/// The HRP for a Bech32m-encoded regtest Unified IVK.
-    </span><span class="kw">const </span>REGTEST: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"uivkregtest"</span>;
+    </span><span class="kw">const </span>REGTEST: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = constants::regtest::HRP_UNIFIED_IVK;
 
     <span class="kw">fn </span>from_inner(ivks: Vec&lt;<span class="self">Self</span>::Item&gt;) -&gt; <span class="self">Self </span>{
         <span class="self">Self</span>(ivks)
@@ -506,6 +515,9 @@
 
 <span class="attr">#[cfg(test)]
 </span><span class="kw">mod </span>tests {
+    <span class="kw">use </span>alloc::borrow::ToOwned;
+    <span class="kw">use </span>alloc::vec::Vec;
+
     <span class="kw">use </span>assert_matches::assert_matches;
 
     <span class="kw">use </span>proptest::{
@@ -515,13 +527,11 @@
     };
 
     <span class="kw">use super</span>::{Ivk, ParseError, Typecode, Uivk};
-    <span class="kw">use crate</span>::{
-        kind::unified::{
-            private::{SealedContainer, SealedItem},
-            Container, Encoding,
-        },
-        Network,
+    <span class="kw">use </span><span class="kw">crate</span>::kind::unified::{
+        private::{SealedContainer, SealedItem},
+        Container, Encoding,
     };
+    <span class="kw">use </span>zcash_protocol::consensus::NetworkType;
 
     <span class="macro">prop_compose!</span> {
         <span class="kw">fn </span>uniform64()(a <span class="kw">in </span>uniform32(<span class="number">0u8</span>..), b <span class="kw">in </span>uniform32(<span class="number">0u8</span>..)) -&gt; [u8; <span class="number">64</span>] {
@@ -570,7 +580,7 @@
     <span class="macro">proptest!</span> {
         <span class="attr">#[test]
         </span><span class="kw">fn </span>uivk_roundtrip(
-            network <span class="kw">in </span>select(<span class="macro">vec!</span>[Network::Main, Network::Test, Network::Regtest]),
+            network <span class="kw">in </span>select(<span class="macro">vec!</span>[NetworkType::Main, NetworkType::Test, NetworkType::Regtest]),
             uivk <span class="kw">in </span>arb_unified_ivk(),
         ) {
             <span class="kw">let </span>encoded = uivk.encode(<span class="kw-2">&amp;</span>network);
@@ -659,7 +669,7 @@
     </span><span class="kw">fn </span>duplicate_typecode() {
         <span class="comment">// Construct and serialize an invalid UIVK.
         </span><span class="kw">let </span>uivk = Uivk(<span class="macro">vec!</span>[Ivk::Sapling([<span class="number">1</span>; <span class="number">64</span>]), Ivk::Sapling([<span class="number">2</span>; <span class="number">64</span>])]);
-        <span class="kw">let </span>encoded = uivk.encode(<span class="kw-2">&amp;</span>Network::Main);
+        <span class="kw">let </span>encoded = uivk.encode(<span class="kw-2">&amp;</span>NetworkType::Main);
         <span class="macro">assert_eq!</span>(
             Uivk::decode(<span class="kw-2">&amp;</span>encoded),
             <span class="prelude-val">Err</span>(ParseError::DuplicateTypecode(Typecode::Sapling))
